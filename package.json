@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "db:migrate": "node ./db/apply_migration.js",
     "db:migrate:all": "node ./db/run_migrations.js",
+    "start:upload": "node server/upload.js",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "type-check": "tsc --noEmit --project tsconfig.app.json"
   },
