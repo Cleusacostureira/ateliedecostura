@@ -1,8 +1,55 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import StatCard from '../../components/dashboard/StatCard';
+import { clientsSummaryForMonth } from '../../lib/clients';
+
+const loadOrders = () => {
+  try {
+    const raw = localStorage.getItem('orders');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed;
+  } catch (e) { return []; }
+};
 
 export default function DashboardPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
+  const [inProgress, setInProgress] = useState(0);
+  const [lateCount, setLateCount] = useState(0);
+  const [readyCount, setReadyCount] = useState(0);
+  const [topClients, setTopClients] = useState<any[]>([]);
+
+  const computeCounts = () => {
+    const orders = loadOrders();
+    const now = new Date(); now.setHours(0,0,0,0);
+    const inProg = orders.filter((o: any) => o.status === 'Em costura').length;
+    const ready = orders.filter((o: any) => o.status === 'Pronto').length;
+    const late = orders.filter((o: any) => {
+      if (!o.dateOut) return false;
+      if (['Pronto','Retirado','Cancelado'].includes(o.status)) return false;
+      const parts = o.dateOut.split('/');
+      if (parts.length !== 3) return false;
+      const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+      d.setHours(0,0,0,0);
+      return d < now;
+    }).length;
+    setInProgress(inProg);
+    setLateCount(late);
+    setReadyCount(ready);
+    try {
+      const top = clientsSummaryForMonth(now.getMonth(), now.getFullYear()).slice(0,5);
+      setTopClients(top);
+    } catch (e) { setTopClients([]); }
+  };
+
+  useEffect(() => {
+    computeCounts();
+    const h = () => computeCounts();
+    window.addEventListener('ordersUpdated', h);
+    window.addEventListener('clientsUpdated', h);
+    return () => { window.removeEventListener('ordersUpdated', h); window.removeEventListener('clientsUpdated', h); };
+  }, []);
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -16,56 +63,38 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6 mb-4 lg:mb-6">
-            <div className="bg-white rounded-lg p-3 lg:p-6 border border-gray-200">
-              <div className="flex flex-col gap-2">
-                <div className="w-8 h-8 lg:w-12 lg:h-12 bg-rose-100 rounded-lg flex items-center justify-center">
-                  <i className="ri-money-dollar-circle-line text-base lg:text-2xl text-rose-600 w-4 h-4 lg:w-6 lg:h-6 flex items-center justify-center"></i>
-                </div>
-                <div>
-                  <p className="text-[10px] lg:text-sm text-gray-600 mb-0.5">Faturamento do Mês</p>
-                  <p className="text-sm lg:text-2xl font-bold text-gray-900">R$ 6.240</p>
-                  <span className="text-[9px] lg:text-xs text-green-600 font-medium">+12,5%</span>
-                </div>
-              </div>
+            <div>
+              <StatCard icon="ri-money-dollar-circle-line" label="Faturamento do Mês" value="R$ 6.240" trend="+12,5%" trendUp={true} color="bg-rose-400" />
             </div>
-
-            <div className="bg-white rounded-lg p-3 lg:p-6 border border-gray-200">
-              <div className="flex flex-col gap-2">
-                <div className="w-8 h-8 lg:w-12 lg:h-12 bg-amber-100 rounded-lg flex items-center justify-center">
-                  <i className="ri-file-list-3-line text-base lg:text-2xl text-amber-600 w-4 h-4 lg:w-6 lg:h-6 flex items-center justify-center"></i>
-                </div>
-                <div>
-                  <p className="text-[10px] lg:text-sm text-gray-600 mb-0.5">Ordens em Andamento</p>
-                  <p className="text-sm lg:text-2xl font-bold text-gray-900">18</p>
-                  <span className="text-[9px] lg:text-xs text-gray-500">3 urgentes</span>
-                </div>
-              </div>
+            <div>
+              <StatCard icon="ri-file-list-3-line" label="OS em costura" value={String(inProgress)} trend="" trendUp={false} color="bg-amber-400" />
             </div>
-
-            <div className="bg-white rounded-lg p-3 lg:p-6 border border-gray-200">
-              <div className="flex flex-col gap-2">
-                <div className="w-8 h-8 lg:w-12 lg:h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                  <i className="ri-checkbox-circle-line text-base lg:text-2xl text-green-600 w-4 h-4 lg:w-6 lg:h-6 flex items-center justify-center"></i>
-                </div>
-                <div>
-                  <p className="text-[10px] lg:text-sm text-gray-600 mb-0.5">Ordens Finalizadas</p>
-                  <p className="text-sm lg:text-2xl font-bold text-gray-900">142</p>
-                  <span className="text-[9px] lg:text-xs text-green-600 font-medium">+8,2%</span>
-                </div>
-              </div>
+            <div>
+              <StatCard icon="ri-alarm-warning-line" label="OS atrasadas" value={String(lateCount)} trend="" trendUp={false} color="bg-red-400" />
             </div>
+            <div>
+              <StatCard icon="ri-checkbox-circle-line" label="OS prontas para retirada" value={String(readyCount)} trend="" trendUp={true} color="bg-green-400" />
+            </div>
+          </div>
 
-            <div className="bg-white rounded-lg p-3 lg:p-6 border border-gray-200">
-              <div className="flex flex-col gap-2">
-                <div className="w-8 h-8 lg:w-12 lg:h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <i className="ri-line-chart-line text-base lg:text-2xl text-blue-600 w-4 h-4 lg:w-6 lg:h-6 flex items-center justify-center"></i>
-                </div>
-                <div>
-                  <p className="text-[10px] lg:text-sm text-gray-600 mb-0.5">Faturamento do Ano</p>
-                  <p className="text-sm lg:text-2xl font-bold text-gray-900">R$ 68.5k</p>
-                  <span className="text-[9px] lg:text-xs text-green-600 font-medium">+15,3%</span>
-                </div>
-              </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-6">
+            <div className="bg-white rounded-lg p-4 border border-gray-200">
+              <a href="/agenda" className="no-underline text-inherit">
+                <div className="text-sm font-semibold">OS para hoje</div>
+                <div className="text-2xl font-bold text-rose-600">{String(todayCount || 0)}</div>
+              </a>
+            </div>
+            <div className="bg-white rounded-lg p-4 border border-gray-200">
+              <a href="/agenda" className="no-underline text-inherit">
+                <div className="text-sm font-semibold">OS urgentes</div>
+                <div className="text-2xl font-bold text-red-600">{String(urgentCount || 0)}</div>
+              </a>
+            </div>
+            <div className="bg-white rounded-lg p-4 border border-gray-200">
+              <a href="/agenda" className="no-underline text-inherit">
+                <div className="text-sm font-semibold">Próxima entrega</div>
+                <div className="text-2xl font-bold text-green-600">{/* compute next */ '-'} </div>
+              </a>
             </div>
           </div>
 
@@ -174,24 +203,23 @@ export default function DashboardPage() {
             <div className="bg-white rounded-lg p-4 lg:p-6 border border-gray-200">
               <h2 className="text-sm lg:text-lg font-bold text-gray-900 mb-4">Top Clientes</h2>
               <div className="space-y-3">
-                {[
+                {(topClients && topClients.length > 0 ? topClients : [
                   { name: 'Carla Mendes', orders: 20, total: 2150 },
                   { name: 'Ana Costa', orders: 15, total: 1580 },
                   { name: 'Maria Silva', orders: 12, total: 1240 },
-                  { name: 'Juliana Rocha', orders: 10, total: 950 },
-                  { name: 'João Santos', orders: 8, total: 680 },
-                ].map((item, index) => (
+                ])
+                .map((item: any, index: number) => (
                   <div key={index} className="flex items-center justify-between p-2 lg:p-3 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-2 lg:gap-3 min-w-0 flex-1">
                       <div className="w-8 h-8 lg:w-10 lg:h-10 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-xs lg:text-sm flex-shrink-0">
-                        {item.name.charAt(0)}
+                        {(item.name || item.name)?.charAt(0)}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-[10px] lg:text-sm font-medium text-gray-900 truncate">{item.name}</p>
-                        <p className="text-[9px] lg:text-xs text-gray-600">{item.orders} ordens</p>
+                        <p className="text-[9px] lg:text-xs text-gray-600">{item.count || item.orders || 0} ordens</p>
                       </div>
                     </div>
-                    <span className="text-[10px] lg:text-sm font-bold text-green-600 whitespace-nowrap ml-2">R$ {item.total.toLocaleString('pt-BR')}</span>
+                    <span className="text-[10px] lg:text-sm font-bold text-green-600 whitespace-nowrap ml-2">R$ {(item.total || 0).toLocaleString('pt-BR')}</span>
                   </div>
                 ))}
               </div>

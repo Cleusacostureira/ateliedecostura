@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { loadClients, upsertClient } from '../../lib/clients';
 import ClienteModal from './components/ClienteModal';
+import { useNavigate } from 'react-router-dom';
 import Sidebar from '../../components/layout/Sidebar';
 
 export default function ClientesPage() {
@@ -7,46 +9,30 @@ export default function ClientesPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedCliente, setSelectedCliente] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [clientes, setClientes] = useState<any[]>([]);
+  const navigate = useNavigate();
 
-  const [clientes, setClientes] = useState([
-    {
-      id: 1,
-      nome: 'Maria Silva',
-      telefone: '(11) 98765-4321',
-      cpf: '123.456.789-00',
-      endereco: 'Rua das Flores, 123 - Centro, São Paulo - SP',
-      foto: 'https://readdy.ai/api/search-image?query=professional%20woman%20portrait%20smiling%20friendly%20business%20casual%20attire%20natural%20lighting%20studio%20photography%20high%20quality%20headshot&width=200&height=200&seq=cliente1&orientation=squarish',
-      observacoes: 'Cliente frequente, prefere urgência',
-      totalGasto: 850.00,
-      servicosRealizados: 12
-    },
-    {
-      id: 2,
-      nome: 'João Santos',
-      telefone: '(11) 97654-3210',
-      cpf: '987.654.321-00',
-      endereco: 'Av. Paulista, 1000 - Bela Vista, São Paulo - SP',
-      foto: 'https://readdy.ai/api/search-image?query=professional%20man%20portrait%20smiling%20confident%20business%20casual%20attire%20natural%20lighting%20studio%20photography%20high%20quality%20headshot&width=200&height=200&seq=cliente2&orientation=squarish',
-      observacoes: 'Sempre paga em dinheiro',
-      totalGasto: 420.00,
-      servicosRealizados: 7
-    },
-    {
-      id: 3,
-      nome: 'Ana Paula Costa',
-      telefone: '(11) 96543-2109',
-      cpf: '456.789.123-00',
-      endereco: 'Rua Augusta, 500 - Consolação, São Paulo - SP',
-      foto: 'https://readdy.ai/api/search-image?query=young%20professional%20woman%20portrait%20smiling%20elegant%20business%20attire%20natural%20lighting%20studio%20photography%20high%20quality%20headshot&width=200&height=200&seq=cliente3&orientation=squarish',
-      observacoes: 'Gosta de ajustes bem feitos',
-      totalGasto: 1250.00,
-      servicosRealizados: 18
-    },
-  ]);
+  useEffect(() => {
+    const list = loadClients();
+    if (list.length === 0) {
+      // initialize with a few sample clients if none
+      // keep existing inline sample for first run
+      setClientes([]);
+    } else {
+      setClientes(list);
+    }
+    const h = () => setClientes(loadClients());
+    window.addEventListener('clientsUpdated', h);
+    return () => window.removeEventListener('clientsUpdated', h);
+  }, []);
 
   const handleEdit = (cliente: any) => {
     setSelectedCliente(cliente);
     setShowModal(true);
+  };
+
+  const openDetail = (cliente: any) => {
+    navigate(`/clientes/${cliente.id}`);
   };
 
   const handleDelete = (cliente: any) => {
@@ -61,11 +47,9 @@ export default function ClientesPage() {
   };
 
   const handleSave = (clienteData: any) => {
-    if (selectedCliente) {
-      setClientes(clientes.map(c => c.id === clienteData.id ? clienteData : c));
-    } else {
-      setClientes([...clientes, clienteData]);
-    }
+    const saved = upsertClient(clienteData as any);
+    const list = loadClients();
+    setClientes(list);
     setSelectedCliente(null);
   };
 
@@ -118,7 +102,7 @@ export default function ClientesPage() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm lg:text-base font-semibold text-gray-900 truncate">{cliente.nome}</h3>
+                    <h3 onClick={() => openDetail(cliente)} className="text-sm lg:text-base font-semibold text-gray-900 truncate cursor-pointer">{cliente.nome}</h3>
                     <p className="text-xs text-gray-600 flex items-center gap-1 mt-1">
                       <i className="ri-phone-line w-3 h-3 flex items-center justify-center"></i>
                       {cliente.telefone}

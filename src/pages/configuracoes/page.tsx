@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import { supabase } from '../../lib/supabaseClient';
+import { loadTemplates, saveTemplates, loadSettings, saveSettings } from '../../lib/messages';
 
 export default function ConfiguracoesPage() {
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
@@ -34,6 +35,28 @@ export default function ConfiguracoesPage() {
     }
     loadLogo();
   }, []);
+
+  // Mensagens automáticas
+  const [templates, setTemplates] = useState<Record<string,string>>(() => loadTemplates());
+  const [msgSettings, setMsgSettings] = useState<any>(() => loadSettings());
+
+  const handleTemplateChange = (key: string, value: string) => {
+    const next = { ...templates, [key]: value };
+    setTemplates(next);
+    saveTemplates(next);
+  };
+
+  const handleSettingToggle = (key: string, value: boolean) => {
+    const next = { ...msgSettings, enabled: { ...(msgSettings.enabled||{}), [key]: value } };
+    setMsgSettings(next);
+    saveSettings(next);
+  };
+
+  const handleAtelierNameChange = (v: string) => {
+    const next = { ...(msgSettings || {}), atelierName: v };
+    setMsgSettings(next);
+    saveSettings(next);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
@@ -176,7 +199,8 @@ export default function ConfiguracoesPage() {
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1">Nome do Ateliê</label>
                   <input
                     type="text"
-                    defaultValue="Cleusa Ateliê de Costura"
+                    value={msgSettings?.atelierName || 'Cleusa Ateliê de Costura'}
+                    onChange={(e) => handleAtelierNameChange(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
@@ -289,6 +313,25 @@ export default function ConfiguracoesPage() {
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* Mensagens Automáticas */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6 mt-4">
+            <h2 className="text-base lg:text-lg font-semibold text-gray-900 mb-4">Mensagens Automáticas (WhatsApp)</h2>
+            <p className="text-xs text-gray-600 mb-3">Edite os textos e ative/desative envios automáticos por status. Envio automático está desativado por padrão — sempre será pedido confirmação.</p>
+            {['Recebido','Em costura','Pronto','Retirado'].map((s) => (
+              <div key={s} className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-700">{s}</label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={!!(msgSettings?.enabled?.[s])} onChange={(e) => handleSettingToggle(s, e.target.checked)} className="sr-only peer" />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-rose-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                  </label>
+                </div>
+                <textarea value={templates[s] || ''} onChange={(e) => handleTemplateChange(s, e.target.value)} rows={4} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500" />
+                <p className="text-[11px] text-gray-500 mt-1">Use {"{nome_cliente}"}, {"{servico}"} e {"{data_entrega}"} para variáveis.</p>
+              </div>
+            ))}
           </div>
 
           {/* Botão Salvar */}

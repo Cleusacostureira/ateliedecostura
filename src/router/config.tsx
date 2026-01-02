@@ -6,7 +6,10 @@ const DashboardPage = lazy(() => import('../pages/dashboard/page'));
 const SplashPage = lazy(() => import('../pages/splash/page'));
 const LoginPage = lazy(() => import('../pages/login/page'));
 const OrdensPage = lazy(() => import('../pages/ordens/page'));
+const OrdensEntreguesPage = lazy(() => import('../pages/ordens/entregues/page'));
+const AgendaPage = lazy(() => import('../pages/agenda/page'));
 const ClientesPage = lazy(() => import('../pages/clientes/page'));
+const ClienteDetalhePage = lazy(() => import('../pages/clientes/detalhe/page'));
 const ServicosPage = lazy(() => import('../pages/servicos/page'));
 const FinanceiroPage = lazy(() => import('../pages/financeiro/page'));
 const RelatoriosPage = lazy(() => import('../pages/relatorios/page'));
@@ -32,9 +35,21 @@ const routes: RouteObject[] = [
     element: <OrdensPage />,
   },
   {
+    path: '/ordens/entregues',
+    element: <OrdensEntreguesPage />,
+  },
+  {
+    path: '/agenda',
+    element: <AgendaPage />,
+  },
+  {
     path: '/clientes',
     element: <ClientesPage />,
   },
+    {
+      path: '/clientes/:id',
+      element: <ClienteDetalhePage />,
+    },
   {
     path: '/servicos',
     element: <ServicosPage />,

@@ -88,7 +88,8 @@ export default function SplashPage() {
               className="name name-anim glow"
               d="M10 60 C30 10, 90 0, 120 40 C150 80, 210 90, 250 50"
             />
-            <text x="8" y="110" className="label label-fade" fontSize="28">Ateliê de Costura</text>
+            {/* moved down to avoid overlapping the stitch */}
+            <text x="8" y="130" className="label label-fade" fontSize="28">Ateliê de Costura</text>
           </g>
         </svg>
         {/* reveal company name/logo after animation */}
@@ -108,8 +109,8 @@ function SplashLogo() {
   const src = logo || '/assets/cleusa-logo.svg';
   return (
     <div className="company-reveal mt-6 text-center">
-      <div className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#3A3A3A]">Cleusa</div>
-      <div className="text-sm md:text-base text-[#3A3A3A] mt-1">Ateliê de Costura</div>
+      <div className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#6D114F]">Cleusa</div>
+      <div className="text-sm md:text-base text-[#6D114F] mt-0">Ateliê de Costura</div>
     </div>
   );
 }

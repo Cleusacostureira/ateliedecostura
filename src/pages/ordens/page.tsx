@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import { addPointsForOrder } from '../../lib/clients';
+import { formatMessageForStatus } from '../../lib/messages';
 
 export default function OrdensPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
@@ -11,6 +13,14 @@ export default function OrdensPage() {
   const [showDeliverModal, setShowDeliverModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('Todos');
+  const [clientFilter, setClientFilter] = useState('');
+  const [periodStart, setPeriodStart] = useState('');
+  const [periodEnd, setPeriodEnd] = useState('');
+  const [onlyLateFilter, setOnlyLateFilter] = useState(false);
+  const [showStatusOnlyModal, setShowStatusOnlyModal] = useState(false);
+  const [statusSelection, setStatusSelection] = useState('');
+  const [statusChangeMessage, setStatusChangeMessage] = useState('');
+  const [showStatusMessageOptions, setShowStatusMessageOptions] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedMaterialId, setSelectedMaterialId] = useState('');
   const [materialQuantity, setMaterialQuantity] = useState('1');
@@ -25,18 +35,55 @@ export default function OrdensPage() {
   const [serviceValue, setServiceValue] = useState('');
   const [serviceObservation, setServiceObservation] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showConfirmDeliverPrompt, setShowConfirmDeliverPrompt] = useState(false);
   const [showAdvancePaymentModal, setShowAdvancePaymentModal] = useState(false);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
 
-  const [orders, setOrders] = useState([
-    { id: 'OS-1234', client: 'Maria Silva', phone: '11987654321', category: '👖 Barras', service: 'Barra de Calça', value: 'R$ 35,00', status: 'Em andamento', dateIn: '15/12/2024', dateOut: '20/12/2024', priority: 'normal', paymentStatus: null },
-    { id: 'OS-1235', client: 'João Santos', phone: '11976543210', category: '👗 Vestidos', service: 'Ajuste de Vestido', value: 'R$ 80,00', status: 'Em fila', dateIn: '16/12/2024', dateOut: '22/12/2024', priority: 'normal', paymentStatus: null },
-    { id: 'OS-1236', client: 'Ana Costa', phone: '11965432109', category: '🧵 Consertos Gerais', service: 'Troca de Zíper', value: 'R$ 45,00', status: 'Finalizado', dateIn: '14/12/2024', dateOut: '18/12/2024', priority: 'urgente', paymentStatus: null },
-    { id: 'OS-1237', client: 'Pedro Oliveira', phone: '11954321098', category: '🧵 Consertos Gerais', service: 'Conserto Geral', value: 'R$ 120,00', status: 'Em andamento', dateIn: '15/12/2024', dateOut: '25/12/2024', priority: 'normal', paymentStatus: null },
-    { id: 'OS-1238', client: 'Carla Mendes', phone: '11943210987', category: '👖 Barras', service: 'Barra de Calça', value: 'R$ 35,00', status: 'Entregue', dateIn: '13/12/2024', dateOut: '17/12/2024', priority: 'normal', paymentStatus: 'Pago' },
-    { id: 'OS-1239', client: 'Lucas Ferreira', phone: '11932109876', category: '👔 Roupas Sociais', service: 'Ajuste de Blazer', value: 'R$ 95,00', status: 'Em fila', dateIn: '17/12/2024', dateOut: '23/12/2024', priority: 'urgente', paymentStatus: null },
-    { id: 'OS-1240', client: 'Juliana Rocha', phone: '11921098765', category: '👗 Vestidos', service: 'Barra de Vestido', value: 'R$ 50,00', status: 'Em andamento', dateIn: '16/12/2024', dateOut: '21/12/2024', priority: 'normal', paymentStatus: null },
-    { id: 'OS-1241', client: 'Roberto Lima', phone: '11910987654', category: '🧵 Consertos Gerais', service: 'Troca de Botões', value: 'R$ 25,00', status: 'Finalizado', dateIn: '12/12/2024', dateOut: '16/12/2024', priority: 'normal', paymentStatus: null },
-  ]);
+  // Edit modal controlled fields
+  const [editClient, setEditClient] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editServiceName, setEditServiceName] = useState('');
+  const [editValue, setEditValue] = useState('');
+  const [editStatus, setEditStatus] = useState('');
+  const [editDateIn, setEditDateIn] = useState('');
+  const [editDateOut, setEditDateOut] = useState('');
+  const [editObservation, setEditObservation] = useState('');
+
+  // New order modal: filter services by selected category
+  const [newServiceCategoryFilter, setNewServiceCategoryFilter] = useState('');
+  const [newOrderDate, setNewOrderDate] = useState('');
+  const [newOrderStatus, setNewOrderStatus] = useState('Recebido');
+  const [newOrderPaymentStatus, setNewOrderPaymentStatus] = useState<string | null>(null);
+  const [showInlineServiceForm, setShowInlineServiceForm] = useState(false);
+  const [inlineServiceName, setInlineServiceName] = useState('');
+  const [inlineServicePrice, setInlineServicePrice] = useState('');
+  const [inlineServiceCategory, setInlineServiceCategory] = useState('');
+
+  const defaultSampleOrders = [
+    { id: 'OS-1234', client: 'Maria Silva', phone: '11987654321', category: '👖 Barras', service: 'Barra de Calça', value: 'R$ 35,00', status: 'Recebido', dateIn: '15/12/2024', dateOut: '20/12/2024', priority: 'normal', paymentStatus: null },
+    { id: 'OS-1235', client: 'João Santos', phone: '11976543210', category: '👗 Vestidos', service: 'Ajuste de Vestido', value: 'R$ 80,00', status: 'Recebido', dateIn: '16/12/2024', dateOut: '22/12/2024', priority: 'normal', paymentStatus: null },
+    { id: 'OS-1236', client: 'Ana Costa', phone: '11965432109', category: '🧵 Consertos Gerais', service: 'Troca de Zíper', value: 'R$ 45,00', status: 'Pronto', dateIn: '14/12/2024', dateOut: '18/12/2024', priority: 'urgente', paymentStatus: null },
+    { id: 'OS-1237', client: 'Pedro Oliveira', phone: '11954321098', category: '🧵 Consertos Gerais', service: 'Conserto Geral', value: 'R$ 120,00', status: 'Em costura', dateIn: '15/12/2024', dateOut: '25/12/2024', priority: 'normal', paymentStatus: null },
+    { id: 'OS-1238', client: 'Carla Mendes', phone: '11943210987', category: '👖 Barras', service: 'Barra de Calça', value: 'R$ 35,00', status: 'Retirado', dateIn: '13/12/2024', dateOut: '17/12/2024', priority: 'normal', paymentStatus: 'Pago' },
+    { id: 'OS-1239', client: 'Lucas Ferreira', phone: '11932109876', category: '👔 Roupas Sociais', service: 'Ajuste de Blazer', value: 'R$ 95,00', status: 'Recebido', dateIn: '17/12/2024', dateOut: '23/12/2024', priority: 'urgente', paymentStatus: null },
+    { id: 'OS-1240', client: 'Juliana Rocha', phone: '11921098765', category: '👗 Vestidos', service: 'Barra de Vestido', value: 'R$ 50,00', status: 'Em costura', dateIn: '16/12/2024', dateOut: '21/12/2024', priority: 'normal', paymentStatus: null },
+    { id: 'OS-1241', client: 'Roberto Lima', phone: '11910987654', category: '🧵 Consertos Gerais', service: 'Troca de Botões', value: 'R$ 25,00', status: 'Pronto', dateIn: '12/12/2024', dateOut: '16/12/2024', priority: 'normal', paymentStatus: null },
+  ];
+
+  const loadOrders = () => {
+    try {
+      const raw = localStorage.getItem('orders');
+      if (!raw) return defaultSampleOrders;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return defaultSampleOrders;
+      // ensure old orders have a status
+      return parsed.map((o: any) => ({ ...o, status: o.status || 'Recebido' }));
+    } catch (e) {
+      return defaultSampleOrders;
+    }
+  };
+
+  const [orders, setOrders] = useState<any[]>(loadOrders);
 
   const [clientes] = useState([
     { id: 1, nome: 'Maria Silva', telefone: '(11) 98765-4321', phone: '11987654321' },
@@ -47,18 +94,64 @@ export default function OrdensPage() {
   ]);
 
   const servicosDisponiveis = [
-    { id: 1, name: 'Barra de Calça', category: '👖 Barras', price: 35.00 },
-    { id: 2, name: 'Barra Italiana', category: '👖 Barras', price: 45.00 },
-    { id: 3, name: 'Ajuste de Vestido', category: '👗 Vestidos', price: 80.00 },
-    { id: 4, name: 'Barra de Vestido', category: '👗 Vestidos', price: 50.00 },
-    { id: 5, name: 'Troca de Zíper', category: '🧵 Consertos Gerais', price: 45.00 },
-    { id: 6, name: 'Troca de Botões', category: '🧵 Consertos Gerais', price: 25.00 },
-    { id: 7, name: 'Ajuste de Blazer', category: '👔 Roupas Sociais', price: 95.00 },
-    { id: 8, name: 'Ajuste de Calça Social', category: '👔 Roupas Sociais', price: 60.00 },
+    { id: 1, name: 'Barra simples de calça', category: 'barras', price: 35 },
+    { id: 2, name: 'Barra italiana', category: 'barras', price: 45 },
+    { id: 3, name: 'Barra original (jeans)', category: 'barras', price: 50 },
+    { id: 4, name: 'Barra de saia', category: 'barras', price: 30 },
+    { id: 5, name: 'Barra de vestido', category: 'barras', price: 40 },
+    { id: 6, name: 'Barra de cortina', category: 'barras', price: 25 },
+
+    { id: 7, name: 'Ajuste de cintura', category: 'ajustes', price: 45 },
+    { id: 8, name: 'Ajuste de quadril', category: 'ajustes', price: 50 },
+    { id: 9, name: 'Ajuste de lateral', category: 'ajustes', price: 55 },
+    { id: 10, name: 'Ajuste de comprimento', category: 'ajustes', price: 40 },
+    { id: 11, name: 'Ajuste de manga', category: 'ajustes', price: 35 },
+
+    { id: 14, name: 'Ajuste de camisa social', category: 'camisas', price: 50 },
+    { id: 15, name: 'Encurtar manga', category: 'camisas', price: 30 },
+
+    { id: 19, name: 'Ajuste de vestido', category: 'vestidos', price: 80 },
+    { id: 20, name: 'Ajuste de alça', category: 'vestidos', price: 30 },
+
+    { id: 25, name: 'Ajuste de saia', category: 'saia-short', price: 40 },
+
+    { id: 30, name: 'Ajuste de calça social', category: 'calcas', price: 50 },
+
+    { id: 36, name: 'Ajuste de jaqueta', category: 'casacos', price: 70 },
+
+    { id: 41, name: 'Troca de zíper', category: 'consertos', price: 45 },
+    { id: 42, name: 'Troca de botão', category: 'consertos', price: 15 },
+    { id: 43, name: 'Aplicação de botão', category: 'consertos', price: 20 },
+
+    { id: 49, name: 'Ajuste de terno', category: 'sociais', price: 120 },
+
+    { id: 54, name: 'Ajuste de roupa infantil', category: 'infantis', price: 30 },
+
+    { id: 57, name: 'Barra de cortina', category: 'domestica', price: 25 },
+
+    { id: 61, name: 'Reforma completa de roupa', category: 'especiais', price: 150 },
   ];
+
+  // tornar a lista de serviços editável dentro do modal (para permitir cadastro rápido)
+  const [servicosDisponiveisState, setServicosDisponiveisState] = useState(servicosDisponiveis);
+
 
   const handleEdit = (order: any) => {
     setSelectedOrder(order);
+    // initialize edit fields
+    setEditClient(order.client || '');
+    setEditCategory(serviceCategories.find(c => c.name === order.category)?.id || '');
+    setEditServiceName(order.service || '');
+    setEditValue((order.value || '').toString().replace(/^R\$\s?/, ''));
+    setEditStatus(order.status || 'Recebido');
+    try {
+      setEditDateIn(order.dateIn.split('/').reverse().join('-'));
+      setEditDateOut(order.dateOut.split('/').reverse().join('-'));
+    } catch (e) {
+      setEditDateIn('');
+      setEditDateOut('');
+    }
+    setEditObservation(order.observation || '');
     setShowEditModal(true);
   };
 
@@ -103,11 +196,8 @@ export default function OrdensPage() {
     const dateStr = now.toLocaleDateString('pt-BR');
     const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     
-    setOrders(orders.map(o => 
-      o.id === selectedOrder.id 
-        ? { ...o, status: 'Finalizado', deliveryDate: dateStr, deliveryTime: timeStr }
-        : o
-    ));
+    const updatedOrder = { ...selectedOrder, status: 'Pronto', deliveryDate: dateStr, deliveryTime: timeStr };
+    setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
     
     // Mensagem de fidelização - Peça pronta para retirada
     // Se já foi pago, não inclui dados do PIX
@@ -122,6 +212,13 @@ export default function OrdensPage() {
     setShowFidelizacaoModal(true);
     
     setShowDeliverModal(false);
+    // preparar mensagem para envio (não enviar automaticamente)
+    setSelectedOrder(updatedOrder);
+    const msg = formatMessageForStatus(updatedOrder, 'Pronto');
+    setStatusChangeMessage(msg);
+    setFidelizacaoMessage(msg);
+    setShowStatusMessageOptions(true);
+    setShowFidelizacaoModal(true);
   };
 
   const handleMaterialSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -182,7 +279,7 @@ export default function OrdensPage() {
     setSelectedServiceId(serviceId);
     
     if (serviceId) {
-      const service = servicosDisponiveis.find(s => s.id === parseInt(serviceId));
+      const service = servicosDisponiveisState.find(s => s.id === parseInt(serviceId));
       if (service) {
         setServiceValue(service.price.toFixed(2));
       }
@@ -197,14 +294,14 @@ export default function OrdensPage() {
       return;
     }
 
-    const service = servicosDisponiveis.find(s => s.id === parseInt(selectedServiceId));
+    const service = servicosDisponiveisState.find(s => s.id === parseInt(selectedServiceId));
     if (!service) return;
 
     const newService = {
       id: Date.now(),
       serviceId: service.id,
       name: service.name,
-      category: service.category,
+      category: serviceCategories.find(c => c.id === service.category)?.name || service.category,
       value: parseFloat(serviceValue),
       observation: serviceObservation
     };
@@ -226,14 +323,39 @@ export default function OrdensPage() {
   };
 
   const isOrderLate = (dateOut: string, status: string) => {
-    if (status === 'Finalizado' || status === 'Entregue') return false;
-    
+    if (!dateOut) return false;
+    if (status === 'Pronto' || status === 'Retirado' || status === 'Cancelado') return false;
+
     const [day, month, year] = dateOut.split('/');
+    if (!day || !month || !year) return false;
     const deliveryDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     return deliveryDate < today;
+  };
+
+  const deliveryIndicator = (dateOut: string) => {
+    if (!dateOut) return 'none';
+    const [day, month, year] = dateOut.split('/');
+    if (!day || !month || !year) return 'none';
+    const deliveryDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    if (deliveryDate < today) return 'late';
+    if (deliveryDate.getTime() === today.getTime()) return 'today';
+    return 'ok';
+  };
+
+  const daysUntil = (dateOut: string) => {
+    if (!dateOut) return null;
+    const parts = dateOut.split('/');
+    if (parts.length !== 3) return null;
+    const d = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const diffMs = d.getTime() - today.getTime();
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
   };
 
   const createNewOrder = () => {
@@ -242,9 +364,21 @@ export default function OrdensPage() {
       return;
     }
 
+    if (!newOrderDate) {
+      alert('Por favor informe a data prevista de entrega');
+      return;
+    }
+
     const totalValue = getTotalServices();
     const servicesText = orderServices.map(s => s.name).join(', ');
     
+    const formatDate = (iso: string) => {
+      try {
+        const parts = iso.split('-');
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      } catch (e) { return '' }
+    };
+
     const newOrder = {
       id: `OS-${1242 + orders.length}`,
       client: 'Novo Cliente',
@@ -252,16 +386,17 @@ export default function OrdensPage() {
       category: orderServices[0].category,
       service: servicesText,
       value: `R$ ${totalValue.toFixed(2)}`,
-      status: 'Em fila',
+      status: newOrderStatus || 'Recebido',
+      paymentStatus: newOrderPaymentStatus || null,
       dateIn: new Date().toLocaleDateString('pt-BR'),
-      dateOut: '25/12/2024',
+      dateOut: formatDate(newOrderDate),
       priority: 'normal'
     };
 
     setOrders([...orders, newOrder]);
     
     // Mensagem de fidelização - Serviço recebido
-    setFidelizacaoMessage(`Olá ${newOrder.client}! 😊\n\n*Cleusa Ateliê de Costura*\n\nSeu serviço foi recebido e está em andamento!\n\nServiço: ${servicesText}\nPrazo de entrega: ${newOrder.dateOut}\nValor: R$ ${totalValue.toFixed(2)}\n\nObrigada pela confiança! ✨`);
+    setFidelizacaoMessage(`Olá ${newOrder.client}! 😊\n\n*Cleusa Ateliê de Costura*\n\nSua ordem foi registrada com sucesso!\n\nServiço: ${servicesText}\nPrazo de entrega: ${newOrder.dateOut}\nValor: R$ ${totalValue.toFixed(2)}\n\nObrigada pela confiança! ✨`);
     setClientePhone(newOrder.phone);
     setShowFidelizacaoModal(true);
     
@@ -272,16 +407,18 @@ export default function OrdensPage() {
   const markAsDelivered = (order: any) => {
     // Se já foi pago antecipadamente, marca direto como entregue
     if (order.paymentStatus === 'Pago') {
-      setOrders(orders.map(o => 
-        o.id === order.id 
-          ? { ...o, status: 'Entregue' }
-          : o
-      ));
-
+      const updatedOrder = { ...order, status: 'Retirado' };
+      setOrders(orders.map(o => o.id === order.id ? updatedOrder : o));
       // Mensagem de agradecimento sem cobrança
       setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n✅ *Pagamento já realizado!*\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`);
       setClientePhone(order.phone);
       setShowFidelizacaoModal(true);
+      // enviar notificação automática de retirada
+      sendStatusWhatsApp(updatedOrder, 'Retirado');
+      // atualizar pontos/total do cliente se pago
+      if (updatedOrder.paymentStatus === 'Pago') {
+        try { addPointsForOrder(updatedOrder); window.dispatchEvent(new CustomEvent('clientsUpdated')); } catch (e) {}
+      }
     } else {
       // Se não foi pago, pergunta sobre o pagamento
       setSelectedOrder(order);
@@ -290,11 +427,8 @@ export default function OrdensPage() {
   };
 
   const confirmDeliveryWithPayment = (isPaid: boolean) => {
-    setOrders(orders.map(o => 
-      o.id === selectedOrder.id 
-        ? { ...o, status: 'Entregue', paymentStatus: isPaid ? 'Pago' : 'Pendente' }
-        : o
-    ));
+    const updatedOrder = { ...selectedOrder, status: 'Retirado', paymentStatus: isPaid ? 'Pago' : 'Pendente' };
+    setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
 
     // Mensagem de fidelização - Agradecimento pela retirada
     const paymentText = isPaid 
@@ -307,6 +441,17 @@ export default function OrdensPage() {
     
     setShowPaymentModal(false);
     setSelectedOrder(null);
+    // preparar mensagem de retirada para envio (não enviar automaticamente)
+    setSelectedOrder(updatedOrder);
+    const msg = formatMessageForStatus(updatedOrder, 'Retirado');
+    setStatusChangeMessage(msg);
+    setFidelizacaoMessage(msg);
+    setShowStatusMessageOptions(true);
+    setShowFidelizacaoModal(true);
+    // atualizar pontos/total do cliente se pago
+    if (updatedOrder.paymentStatus === 'Pago') {
+      try { addPointsForOrder(updatedOrder); window.dispatchEvent(new CustomEvent('clientsUpdated')); } catch (e) {}
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -319,22 +464,169 @@ export default function OrdensPage() {
     const message = encodeURIComponent(fidelizacaoMessage);
     const phone = clientePhone.replace(/\D/g, '');
     window.open(`https://wa.me/55${phone}?text=${message}`, '_blank');
+    try { if (selectedOrder) markMessageSent(selectedOrder.id, selectedOrder.status); } catch (e) {}
     setShowFidelizacaoModal(false);
   };
 
+  const composeStatusMessage = (order: any, newStatus: string) => {
+    if (!order) return '';
+    switch (newStatus) {
+      case 'Recebido':
+        return `Olá ${order.client}! 😊\n\nSua ordem ${order.id} foi *recebida* e está sendo processada.`;
+      case 'Em costura':
+        return `Olá ${order.client}! 👗\n\nIniciamos a costura da sua peça (OS ${order.id}). Em breve atualizamos o andamento.`;
+      case 'Aguardando prova':
+        return `Olá ${order.client}! 👀\n\nSua peça (OS ${order.id}) está pronta para prova. Aguardo sua visita.`;
+      case 'Ajuste final':
+        return `Olá ${order.client}! ✂️\n\nEstamos nos ajustes finais da sua peça (OS ${order.id}). Em breve avisamos quando estiver pronta.`;
+      case 'Pronto':
+        return `Olá ${order.client}! 🎉\n\nSua peça (OS ${order.id}) está *pronta para retirada*. Obrigada pela preferência!`;
+      case 'Retirado':
+        return `Olá ${order.client}! 💝\n\nObrigado por retirar sua peça (OS ${order.id}). Esperamos que tenha gostado!`;
+      case 'Cancelado':
+        return `Olá ${order.client}, informamos que a OS ${order.id} foi cancelada. Se houver dúvidas, entre em contato.`;
+      default:
+        return `Olá ${order.client}, sua ordem ${order.id} está com o status: ${newStatus}.`;
+    }
+  };
+
+  const sendStatusWhatsApp = (order: any, newStatus: string) => {
+    if (!order || !order.phone) return;
+    const msg = composeStatusMessage(order, newStatus);
+    const phone = (order.phone || '').replace(/\D/g, '');
+    try {
+      window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+    } catch (e) {}
+  };
+
+  const getFormattedMessage = (order: any, status: string) => {
+    try { return formatMessageForStatus(order, status); } catch (e) { return composeStatusMessage(order, status); }
+  };
+
+  const markMessageSent = (orderId: string, status: string) => {
+    const next = orders.map(o => {
+      if (o.id !== orderId) return o;
+      const sent = { ...(o.sentMessages || {}) };
+      sent[status] = 'sent';
+      return { ...o, sentMessages: sent };
+    });
+    setOrders(next);
+    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+  };
+
+  const sendMessageManual = (order: any, status: string) => {
+    if (!order || !order.phone) return alert('Cliente sem WhatsApp');
+    const message = getFormattedMessage(order, status);
+    const phone = (order.phone || '').replace(/\D/g, '');
+    window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(message)}`, '_blank');
+    markMessageSent(order.id, status);
+  };
+
+  const copyMessageManual = (order: any, status: string) => {
+    const message = getFormattedMessage(order, status);
+    try { navigator.clipboard.writeText(message); alert('Mensagem copiada!'); } catch (e) { alert('Não foi possível copiar'); }
+  };
+
+  const applyQuickStatus = (order: any, newStatus: string) => {
+    // If marking as Retirado, handle payment confirmation and marking
+    if (newStatus === 'Retirado') {
+      if (order.paymentStatus === 'Pago') {
+        const updatedOrder = { ...order, status: 'Retirado' };
+        setOrders(orders.map(o => o.id === order.id ? updatedOrder : o));
+        // mensagem de agradecimento e pontos
+        setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n✅ *Pagamento já realizado!*\n\nEsperamos que tenha ficado perfeita!`);
+        setClientePhone(order.phone);
+        setShowFidelizacaoModal(true);
+        try { addPointsForOrder(updatedOrder); window.dispatchEvent(new CustomEvent('clientsUpdated')); } catch (e) {}
+        setSelectedOrder(updatedOrder);
+        const msg = composeStatusMessage(updatedOrder, 'Retirado');
+        setStatusChangeMessage(msg);
+        setFidelizacaoMessage(msg);
+        setShowStatusMessageOptions(true);
+        setShowStatusOnlyModal(true);
+        return;
+      }
+
+      // open an explicit confirm modal; if user confirms we'll open the payment modal
+      setSelectedOrder(order);
+      setShowConfirmDeliverPrompt(true);
+      return;
+    }
+
+    const updatedOrder = { ...order, status: newStatus };
+    setOrders(orders.map(o => o.id === order.id ? updatedOrder : o));
+    setSelectedOrder(updatedOrder);
+    setStatusChangeMessage(composeStatusMessage(updatedOrder, newStatus));
+    setShowStatusMessageOptions(true);
+    setShowStatusOnlyModal(true);
+  };
+
+  const togglePaymentStatus = (order: any) => {
+    const next = orders.map(o => o.id === order.id ? { ...o, paymentStatus: o.paymentStatus === 'Pago' ? null : 'Pago' } : o);
+    setOrders(next);
+    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+  };
+
   const filteredOrders = orders.filter(order => {
-    const matchesSearch = order.client.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         order.service.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'Todos' || order.status === statusFilter;
+    const term = (searchTerm || '').toLowerCase();
+    const matchesSearch = !term || order.client.toLowerCase().includes(term) || order.service.toLowerCase().includes(term) || order.id.toLowerCase().includes(term);
+    // Por padrão (Todos) não exibimos ordens já retiradas — elas ficam na página de entregues
+    const matchesStatus = statusFilter === 'Todos' ? order.status !== 'Retirado' : order.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
+  // sort: open orders first, then finalized, then delivered. Within each group, urgent first, then overdue, then by entry date (older first)
+  const sortStatusRank = (status: string) => {
+    if (status === 'Recebido' || status === 'Em costura') return 0;
+    if (status === 'Pronto' || status === 'Aguardando prova' || status === 'Ajuste final') return 1;
+    return 2; // Retirado, Cancelado or others
+  };
+
+  const parseDate = (d: string) => {
+    const parts = d.split('/');
+    if (parts.length !== 3) return new Date(0);
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const year = parseInt(parts[2], 10);
+    return new Date(year, month, day);
+  };
+
+  const sortedOrders = filteredOrders.slice().sort((a, b) => {
+    const sa = sortStatusRank(a.status);
+    const sb = sortStatusRank(b.status);
+    if (sa !== sb) return sa - sb;
+
+    // urgent first
+    const pa = a.priority === 'urgente' ? 0 : 1;
+    const pb = b.priority === 'urgente' ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+
+    // overdue first
+    const lateA = isOrderLate(a.dateOut, a.status) ? 0 : 1;
+    const lateB = isOrderLate(b.dateOut, b.status) ? 0 : 1;
+    if (lateA !== lateB) return lateA - lateB;
+
+    // older entry first
+    return parseDate(a.dateIn).getTime() - parseDate(b.dateIn).getTime();
+  });
+
+  // persist orders to localStorage and notify dashboard
+  useEffect(() => {
+    try {
+      localStorage.setItem('orders', JSON.stringify(orders));
+      window.dispatchEvent(new CustomEvent('ordersUpdated'));
+    } catch (e) {}
+  }, [orders]);
+
   const statusCounts = {
     Todos: orders.length,
-    'Em fila': orders.filter(o => o.status === 'Em fila').length,
-    'Em andamento': orders.filter(o => o.status === 'Em andamento').length,
-    'Finalizado': orders.filter(o => o.status === 'Finalizado').length,
-    'Entregue': orders.filter(o => o.status === 'Entregue').length,
+    'Recebido': orders.filter(o => o.status === 'Recebido').length,
+    'Em costura': orders.filter(o => o.status === 'Em costura').length,
+    'Aguardando prova': orders.filter(o => o.status === 'Aguardando prova').length,
+    'Ajuste final': orders.filter(o => o.status === 'Ajuste final').length,
+    'Pronto': orders.filter(o => o.status === 'Pronto').length,
+    'Retirado': orders.filter(o => o.status === 'Retirado').length,
+    'Cancelado': orders.filter(o => o.status === 'Cancelado').length,
   };
 
   const serviceCategories = [
@@ -351,6 +643,27 @@ export default function OrdensPage() {
     { id: 'domestica', name: '🛋️ Costura Doméstica' },
     { id: 'especiais', name: '🎨 Serviços Especiais' },
   ];
+
+  const statusOptions = [
+    { id: 'Recebido', label: 'Recebido', color: 'bg-gray-400 text-white' },
+    { id: 'Em costura', label: 'Em costura', color: 'bg-blue-500 text-white' },
+    { id: 'Aguardando prova', label: 'Aguardando prova', color: 'bg-yellow-400 text-black' },
+    { id: 'Ajuste final', label: 'Ajuste final', color: 'bg-purple-600 text-white' },
+    { id: 'Pronto', label: 'Pronto', color: 'bg-green-500 text-white' },
+    { id: 'Retirado', label: 'Retirado', color: 'bg-green-800 text-white' },
+    { id: 'Cancelado', label: 'Cancelado', color: 'bg-red-600 text-white' },
+  ];
+
+  const statusIcons: Record<string, string> = {
+    'Todos': 'ri-list-check-line',
+    'Recebido': 'ri-inbox-line',
+    'Em costura': 'ri-scissors-line',
+    'Aguardando prova': 'ri-eye-line',
+    'Ajuste final': 'ri-tools-line',
+    'Pronto': 'ri-flag-line',
+    'Retirado': 'ri-hand-heart-line',
+    'Cancelado': 'ri-close-circle-line',
+  };
 
   // Lista de materiais disponíveis
   const availableMaterials = [
@@ -447,6 +760,11 @@ export default function OrdensPage() {
       
       <main className="flex-1 lg:ml-56 pt-14 lg:pt-0 min-w-0">
         <div className="p-4 lg:p-8 min-w-0">
+          <style>{`
+            /* Blink only the "ATRASADO" badge as a slow alert */
+            .late-blink { animation: lateBlink 2.0s ease-in-out infinite; }
+            @keyframes lateBlink { 0% { opacity: 1; transform: translateY(0); } 50% { opacity: 0.28; transform: translateY(-1px); } 100% { opacity: 1; transform: translateY(0); } }
+          `}</style>
           <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 lg:mb-8 gap-4">
             <div>
               <h1 className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">Ordens de Serviço</h1>
@@ -461,21 +779,30 @@ export default function OrdensPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-6">
-            {Object.entries(statusCounts).map(([status, count]) => (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                className={`p-3 lg:p-4 rounded-lg border-2 transition-all whitespace-nowrap cursor-pointer ${
-                  statusFilter === status
-                    ? 'border-rose-500 bg-rose-50'
-                    : 'border-gray-200 bg-white hover:border-gray-300'
-                }`}
-              >
-                <div className="text-xl lg:text-2xl font-bold text-gray-900 mb-1">{count}</div>
-                <div className="text-xs lg:text-sm text-gray-600">{status}</div>
-              </button>
-            ))}
+          <div className="flex gap-2 mb-6 items-center">
+            {Object.entries(statusCounts).map(([status, count]) => {
+              const icon = statusIcons[status] || 'ri-checkbox-blank-line';
+              const color = statusOptions.find(s => s.id === status)?.color || 'bg-gray-100 text-gray-800';
+              return (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-xs cursor-pointer ${
+                    statusFilter === status
+                      ? 'border-rose-500 bg-rose-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}
+                >
+                  <span className={`inline-flex items-center justify-center w-7 h-7 rounded ${color}`}>
+                    <i className={`${icon} text-sm`}></i>
+                  </span>
+                  <div className="flex flex-col leading-none text-left">
+                    <span className="font-bold text-sm text-gray-900">{count}</span>
+                    <span className="text-[11px] text-gray-600">{status}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           <div className="bg-white rounded-lg border border-gray-200 mb-6">
@@ -492,237 +819,152 @@ export default function OrdensPage() {
               </div>
             </div>
 
-            {/* Desktop Table View */}
-            <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">ID</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Cliente</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Categoria</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Serviço</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Valor</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Entrada</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Entrega</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Status</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredOrders.map((order) => {
-                    const isLate = isOrderLate(order.dateOut, order.status);
-                    return (
-                      <tr key={order.id} className={`hover:bg-gray-50 transition-colors ${isLate ? 'bg-red-50' : ''}`}>
-                        <td className="px-3 py-3 whitespace-normal max-w-[10rem] break-words">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-900">{order.id}</span>
-                            {order.priority === 'urgente' && (
-                              <i className="ri-alarm-warning-line text-red-500 text-lg w-4 h-4 flex items-center justify-center" title="Urgente"></i>
-                            )}
-                            {isLate && (
-                              <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold whitespace-nowrap">
-                                ATRASADO
-                              </span>
-                            )}
-                            {order.paymentStatus === 'Pago' && (
-                              <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold whitespace-nowrap">
-                                💰 PAGO
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 whitespace-normal text-sm text-gray-700 break-words">{order.client}</td>
-                        <td className="px-3 py-3 whitespace-normal text-sm text-gray-600 break-words">{order.category}</td>
-                        <td className="px-3 py-3 whitespace-normal text-sm text-gray-700 break-words">{order.service}</td>
-                        <td className="px-3 py-3 whitespace-normal text-sm font-medium text-gray-900">{order.value}</td>
-                        <td className="px-3 py-3 whitespace-normal text-sm text-gray-600">{order.dateIn}</td>
-                        <td className="px-3 py-3 whitespace-normal">
-                          <span className={`text-sm ${isLate ? 'text-red-600 font-bold' : ''}`}>
-                            {order.dateOut}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 whitespace-normal">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
-                            order.status === 'Entregue' ? 'bg-green-100 text-green-700' :
-                            order.status === 'Finalizado' ? 'bg-blue-100 text-blue-700' :
-                            order.status === 'Em andamento' ? 'bg-amber-100 text-amber-700' :
-                            'bg-gray-100 text-gray-700'
-                          }`}>
-                            {order.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="flex items-center gap-2">
-                            <button 
-                              onClick={() => handleEdit(order)}
-                              className="p-2 text-gray-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer" 
-                              title="Editar"
-                            >
-                              <i className="ri-edit-line text-lg w-5 h-5 flex items-center justify-center"></i>
-                            </button>
-                            {order.status !== 'Entregue' && order.paymentStatus !== 'Pago' && (
-                              <button 
-                                onClick={() => handleAdvancePayment(order)}
-                                className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all cursor-pointer" 
-                                title="Pagamento Antecipado"
-                              >
-                                <i className="ri-money-dollar-circle-line text-lg w-5 h-5 flex items-center justify-center"></i>
-                              </button>
-                            )}
-                            <button 
-                              onClick={() => {
-                                setSelectedOrder(order);
-                                setOrderMaterials([]);
-                                setShowMaterialsModal(true);
-                              }}
-                              className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer" 
-                              title="Materiais"
-                            >
-                              <i className="ri-tools-line text-lg w-5 h-5 flex items-center justify-center"></i>
-                            </button>
-                            {order.status === 'Finalizado' && (
-                              <button 
-                                onClick={() => markAsDelivered(order)}
-                                className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all cursor-pointer" 
-                                title="Marcar como Entregue"
-                              >
-                                <i className="ri-hand-coin-line text-lg w-5 h-5 flex items-center justify-center"></i>
-                              </button>
-                            )}
-                            {order.status !== 'Finalizado' && order.status !== 'Entregue' && (
-                              <button 
-                                onClick={() => handleDeliver(order)}
-                                className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all cursor-pointer" 
-                                title="Finalizar"
-                              >
-                                <i className="ri-check-double-line text-lg w-5 h-5 flex items-center justify-center"></i>
-                              </button>
-                            )}
-                            <button 
-                              onClick={() => handleDelete(order)}
-                              className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all cursor-pointer" 
-                              title="Excluir"
-                            >
-                              <i className="ri-delete-bin-line text-lg w-5 h-5 flex items-center justify-center"></i>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {/* Lista: tabela responsiva com filtros rápidos */}
+            <div className="p-4">
+              <div className="mb-2" />
 
-            {/* Mobile Card View */}
-            <div className="lg:hidden divide-y divide-gray-200">
-              {filteredOrders.map((order) => {
-                const isLate = isOrderLate(order.dateOut, order.status);
-                return (
-                  <div key={order.id} className={`p-4 hover:bg-gray-50 transition-colors ${isLate ? 'bg-red-50' : ''}`}>
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-bold text-gray-900">{order.id}</span>
-                          {order.priority === 'urgente' && (
-                            <i className="ri-alarm-warning-line text-red-500 text-base w-4 h-4 flex items-center justify-center"></i>
-                          )}
-                          {isLate && (
-                            <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[9px] font-bold whitespace-nowrap">
-                              ATRASADO
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-700 font-medium">{order.client}</p>
-                        {order.paymentStatus === 'Pago' && (
-                          <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[9px] font-bold whitespace-nowrap">
-                            💰 PAGO
-                          </span>
-                        )}
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
-                        order.status === 'Entregue' ? 'bg-green-100 text-green-700' :
-                        order.status === 'Finalizado' ? 'bg-blue-100 text-blue-700' :
-                        order.status === 'Em andamento' ? 'bg-amber-100 text-amber-700' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {order.status}
-                      </span>
-                    </div>
-                    <div className="mb-3">
-                      <p className="text-xs text-gray-600 mb-1">{order.category}</p>
-                      <p className="text-sm text-gray-900">{order.service}</p>
-                    </div>
-                    <div className="flex items-center justify-between mb-3 text-xs text-gray-600">
-                      <div>
-                        <span>Entrada: {order.dateIn}</span>
-                      </div>
-                      <div>
-                        <span className={isLate ? 'text-red-600 font-bold' : ''}>
-                          Entrega: {order.dateOut}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-base font-bold text-gray-900">{order.value}</span>
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => handleEdit(order)}
-                          className="p-2 text-rose-600 bg-rose-50 rounded-lg hover:bg-rose-100 transition-all cursor-pointer" 
-                          title="Editar"
-                        >
-                          <i className="ri-edit-line text-base w-4 h-4 flex items-center justify-center"></i>
-                        </button>
-                        {order.status !== 'Entregue' && order.paymentStatus !== 'Pago' && (
-                          <button 
-                            onClick={() => handleAdvancePayment(order)}
-                            className="p-2 text-green-600 bg-green-50 rounded-lg hover:bg-green-100 transition-all cursor-pointer" 
-                            title="Pagamento Antecipado"
-                          >
-                            <i className="ri-money-dollar-circle-line text-base w-4 h-4 flex items-center justify-center"></i>
-                          </button>
-                        )}
-                        <button 
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setOrderMaterials([]);
-                            setShowMaterialsModal(true);
-                          }}
-                          className="p-2 text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all cursor-pointer" 
-                          title="Materiais"
-                        >
-                          <i className="ri-tools-line text-base w-4 h-4 flex items-center justify-center"></i>
-                        </button>
-                        {order.status === 'Finalizado' && (
-                          <button 
-                            onClick={() => markAsDelivered(order)}
-                            className="p-2 text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 transition-all cursor-pointer" 
-                            title="Marcar como Entregue"
-                          >
-                            <i className="ri-hand-coin-line text-base w-4 h-4 flex items-center justify-center"></i>
-                          </button>
-                        )}
-                        {order.status !== 'Finalizado' && order.status !== 'Entregue' && (
-                          <button 
-                            onClick={() => handleDeliver(order)}
-                            className="p-2 text-green-600 bg-green-50 rounded-lg hover:bg-green-100 transition-all cursor-pointer" 
-                            title="Finalizar"
-                          >
-                            <i className="ri-check-double-line text-base w-4 h-4 flex items-center justify-center"></i>
-                          </button>
-                        )}
-                        <button 
-                          onClick={() => handleDelete(order)}
-                          className="p-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-all cursor-pointer" 
-                          title="Excluir"
-                        >
-                          <i className="ri-delete-bin-line text-base w-4 h-4 flex items-center justify-center"></i>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              <div className="overflow-auto w-full">
+                <table className="w-full table-auto border-collapse">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs text-gray-600">Cliente</th>
+                      <th className="px-3 py-2 text-left text-xs text-gray-600">Serviço</th>
+                      <th className="px-3 py-2 text-left text-xs text-gray-600">Status</th>
+                      <th className="px-3 py-2 text-left text-xs text-gray-600">Prazo</th>
+                      <th className="px-3 py-2 text-right text-xs text-gray-600">Valor</th>
+                      <th className="px-3 py-2 text-center text-xs text-gray-600">Ações <span className="text-[11px] text-gray-500">/ Envios</span></th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100">
+                    {sortedOrders.map(order => {
+                      const due = deliveryIndicator(order.dateOut);
+                      const isLate = due === 'late';
+                      return (
+                        <tr key={order.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-3 align-top text-sm text-gray-900 min-w-0">
+                            <div className="font-medium">{order.client}</div>
+                            <div className="text-xs text-gray-500">{order.id}</div>
+                          </td>
+                          <td className="px-3 py-3 align-top text-sm text-gray-700 break-words">{order.service}</td>
+                          <td className="px-3 py-3 align-top text-sm">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => { setSelectedOrder(order); setStatusSelection(order.status); setShowStatusOnlyModal(true); setShowStatusMessageOptions(false); }}
+                                  title="Clique para alterar o status"
+                                  className={`px-2 py-1 rounded-full text-xs font-medium ${statusOptions.find(s => s.id === order.status)?.color || 'bg-gray-100 text-gray-700'}`}
+                                >
+                                  {order.status}
+                                </button>
+                              </div>
+                          </td>
+                          <td className="px-3 py-3 align-top text-sm text-gray-700">
+                            {order.dateOut ? (
+                              (() => {
+                                const daysLeft = daysUntil(order.dateOut);
+                                if (daysLeft === null) return <span>{order.dateOut}</span>;
+                                if (daysLeft < 0) {
+                                  return (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-red-600 font-bold">{order.dateOut}</span>
+                                      <span className="text-red-600 text-xs font-bold">ATRASADO</span>
+                                    </div>
+                                  );
+                                }
+                                if (daysLeft === 0) {
+                                  return <span className="text-yellow-800 text-xs font-bold">ENTREGA HOJE</span>;
+                                }
+                                return <span className="text-green-600 font-medium">Faltam {daysLeft} dias</span>;
+                              })()
+                            ) : (
+                              <span>—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 align-top text-sm text-right">
+                            <div onClick={() => togglePaymentStatus(order)} className="font-bold text-green-600 cursor-pointer">{order.value}</div>
+                              <div className="text-xs mt-1 flex items-center justify-center gap-2">
+                                <button onClick={() => togglePaymentStatus(order)} className={"inline-flex items-center gap-1 text-sm px-2 py-1 rounded " + (order.paymentStatus === 'Pago' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600') }>
+                                  <i className="ri-money-dollar-circle-line"></i>
+                                  {order.paymentStatus === 'Pago' ? 'Pago' : 'Não Pago'}
+                                </button>
+                              </div>
+                          </td>
+                          <td className="px-3 py-3 align-top text-sm text-center">
+                            <div className="flex items-center justify-center gap-3">
+                              <div className="flex items-center gap-2">
+                                {order.status !== 'Em costura' && order.status !== 'Pronto' && order.status !== 'Retirado' && (
+                                  <button onClick={() => applyQuickStatus(order, 'Em costura')} title="Iniciar" className="w-8 h-8 flex items-center justify-center text-white bg-blue-600 rounded">
+                                    <i className="ri-play-line"></i>
+                                  </button>
+                                )}
+
+                                {order.status !== 'Pronto' && order.status !== 'Retirado' && (
+                                  <button onClick={() => applyQuickStatus(order, 'Pronto')} title="Finalizar" className="w-8 h-8 flex items-center justify-center text-white bg-green-600 rounded">
+                                    <i className="ri-check-line"></i>
+                                  </button>
+                                )}
+
+                                {order.status === 'Pronto' && order.status !== 'Retirado' && (
+                                  <button onClick={() => applyQuickStatus(order, 'Retirado')} title="Marcar Retirado" className="w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded">
+                                    <i className="ri-hand-heart-line"></i>
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => handleEdit(order)} title="Editar" className="w-8 h-8 flex items-center justify-center text-rose-600 bg-rose-50 rounded">
+                                  <i className="ri-edit-line"></i>
+                                </button>
+                                <button onClick={() => handleDelete(order)} title="Excluir" className="w-8 h-8 flex items-center justify-center text-red-600 bg-red-50 rounded">
+                                  <i className="ri-delete-bin-line"></i>
+                                </button>
+                              </div>
+
+                              {order.phone && (
+                                <div className="flex items-center gap-2">
+                                  {order.sentMessages?.[order.status] === 'sent' ? (
+                                    <span title="Mensagem enviada" className="text-green-600 text-sm">📲</span>
+                                  ) : order.sentMessages?.[order.status] === 'pending' ? (
+                                    <span title="Pendente" className="text-yellow-600 text-sm">⏳</span>
+                                  ) : null}
+
+                                  <button onClick={() => copyMessageManual(order, order.status)} title="Copiar mensagem" className="w-8 h-8 flex items-center justify-center text-gray-700 bg-gray-50 rounded hover:bg-gray-100">
+                                    <i className="ri-file-copy-line"></i>
+                                  </button>
+                                  <button onClick={() => sendMessageManual(order, order.status)} title="Enviar via WhatsApp" className="w-8 h-8 flex items-center justify-center text-rose-600 bg-rose-50 rounded hover:bg-rose-100">
+                                    <i className="ri-send-plane-line"></i>
+                                  </button>
+                                  <button onClick={() => { const m = getFormattedMessage(order, order.status); const phone = (order.phone||'').replace(/\D/g,''); window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(m)}`, '_blank'); }} title="Abrir WhatsApp" className="w-8 h-8 flex items-center justify-center text-amber-700 bg-amber-50 rounded hover:bg-amber-100">
+                                    <i className="ri-whatsapp-line"></i>
+                                  </button>
+                                </div>
+                              )}
+
+                                {/* Modal Confirmar Entrega (pergunta inicial quando não pago) */}
+                                {showConfirmDeliverPrompt && selectedOrder && (
+                                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                                    <div className="bg-white rounded-lg w-full max-w-md">
+                                      <div className="p-4 lg:p-6">
+                                        <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                          <i className="ri-alert-line text-2xl text-yellow-600 w-6 h-6 flex items-center justify-center"></i>
+                                        </div>
+                                        <h2 className="text-lg lg:text-xl font-bold text-gray-900 text-center mb-2">Confirmar Entrega</h2>
+                                        <p className="text-sm text-gray-600 text-center mb-4">Cliente ainda não pagou, deseja realmente entregar?</p>
+                                        <div className="flex gap-3 justify-center">
+                                          <button onClick={() => { setShowConfirmDeliverPrompt(false); setSelectedOrder(null); }} className="px-4 py-2 border rounded">Não</button>
+                                          <button onClick={() => { setShowConfirmDeliverPrompt(false); setShowPaymentModal(true); }} className="px-4 py-2 bg-green-600 text-white rounded">Sim</button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
@@ -818,6 +1060,21 @@ export default function OrdensPage() {
                     <option>Urgente</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                  <select value={newOrderStatus} onChange={(e) => setNewOrderStatus(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm">
+                    {statusOptions.map(s => (
+                      <option key={s.id} value={s.id}>{s.label}</option>
+                    ))}
+                  </select>
+                  <div className="mt-2 flex items-center gap-2">
+                    <i className="ri-money-dollar-circle-line text-lg text-gray-700"></i>
+                    <select value={newOrderPaymentStatus || ''} onChange={(e) => setNewOrderPaymentStatus(e.target.value || null)} className="px-2 py-1 border rounded text-sm">
+                      <option value="">Falta Pagar</option>
+                      <option value="Pago">Pago</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -833,6 +1090,8 @@ export default function OrdensPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Prazo de Entrega</label>
                   <input
                     type="date"
+                    value={newOrderDate}
+                    onChange={(e) => setNewOrderDate(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
                   />
                 </div>
@@ -874,19 +1133,64 @@ export default function OrdensPage() {
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Adicionar Serviço</h3>
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Serviço</label>
-                    <select 
-                      value={selectedServiceId}
-                      onChange={handleServiceSelect}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-500 cursor-pointer"
-                    >
-                      <option value="">Selecione um serviço...</option>
-                      {servicosDisponiveis.map((service) => (
-                        <option key={service.id} value={service.id}>
-                          {service.category} - {service.name} (R$ {service.price.toFixed(2)})
-                        </option>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Categoria do Serviço</label>
+                    <select value={newServiceCategoryFilter} onChange={(e) => setNewServiceCategoryFilter(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-500 cursor-pointer mb-2">
+                      <option value="">Todas as categorias</option>
+                      {serviceCategories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
                       ))}
                     </select>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Serviço</label>
+                    <div className="flex gap-2 items-center">
+                      <select 
+                        value={selectedServiceId}
+                        onChange={handleServiceSelect}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-500 cursor-pointer"
+                      >
+                        <option value="">Selecione um serviço...</option>
+                        {servicosDisponiveisState.filter(s => !newServiceCategoryFilter || s.category === newServiceCategoryFilter).map((service) => (
+                          <option key={service.id} value={service.id}>
+                            {serviceCategories.find(c => c.id === service.category)?.name || service.category} - {service.name} (R$ {service.price.toFixed(2)})
+                          </option>
+                        ))}
+                      </select>
+                      <button title="Adicionar serviço" onClick={() => { setShowInlineServiceForm(!showInlineServiceForm); setInlineServiceCategory(newServiceCategoryFilter || serviceCategories[0]?.id || ''); }} className="w-9 h-9 bg-rose-50 text-rose-600 rounded flex items-center justify-center hover:bg-rose-100">
+                        <i className="ri-add-line"></i>
+                      </button>
+                    </div>
+
+                    {showInlineServiceForm && (
+                      <div className="mt-3 p-3 border border-dashed rounded bg-gray-50">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Categoria</label>
+                            <select value={inlineServiceCategory} onChange={(e) => setInlineServiceCategory(e.target.value)} className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                              {serviceCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Nome do Serviço</label>
+                            <input value={inlineServiceName} onChange={(e) => setInlineServiceName(e.target.value)} className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Valor (R$)</label>
+                            <input value={inlineServicePrice} onChange={(e) => setInlineServicePrice(e.target.value)} type="number" step="0.01" className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm" />
+                          </div>
+                        </div>
+                        <div className="flex gap-2 justify-end mt-3">
+                          <button onClick={() => { setShowInlineServiceForm(false); setInlineServiceName(''); setInlineServicePrice(''); }} className="px-3 py-2 border rounded text-sm">Cancelar</button>
+                          <button onClick={() => {
+                            if (!inlineServiceName || !inlineServicePrice) return alert('Preencha nome e valor do serviço');
+                            const id = Date.now();
+                            const newSvc = { id, name: inlineServiceName, category: inlineServiceCategory, price: parseFloat(inlineServicePrice) };
+                            setServicosDisponiveisState([...servicosDisponiveisState, newSvc]);
+                            setSelectedServiceId(String(id));
+                            setServiceValue(parseFloat(inlineServicePrice).toFixed(2));
+                            setInlineServiceName(''); setInlineServicePrice(''); setShowInlineServiceForm(false);
+                          }} className="px-3 py-2 bg-green-600 text-white rounded text-sm">Salvar serviço</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -1019,55 +1323,62 @@ export default function OrdensPage() {
               </button>
             </div>
             <div className="p-4 lg:p-6 space-y-4">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1">Cliente</label>
-                  <input type="text" defaultValue={selectedOrder.client} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500" />
+                  <input type="text" value={editClient} onChange={(e) => setEditClient(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500" />
                 </div>
                 <div>
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1">Categoria</label>
-                  <select defaultValue={selectedOrder.category} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500 cursor-pointer">
+                  <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500 cursor-pointer">
                     {serviceCategories.map((cat) => (
-                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
                   </select>
                 </div>
               </div>
               <div>
                 <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1">Tipo de Serviço</label>
-                <input type="text" defaultValue={selectedOrder.service} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500" />
+                <select value={editServiceName} onChange={(e) => setEditServiceName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500 cursor-pointer">
+                  <option value="">Selecione um serviço...</option>
+                  {servicosDisponiveisState.filter(s => !editCategory || s.category === editCategory).map(s => (
+                    <option key={s.id} value={s.name}>{s.name} (R$ {s.price.toFixed(2)})</option>
+                  ))}
+                  {editServiceName && !servicosDisponiveisState.some(s => s.name === editServiceName) && (
+                    <option value={editServiceName}>{editServiceName}</option>
+                  )}
+                </select>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
-                  <input type="text" defaultValue={selectedOrder.value} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500" />
+                  <input type="text" value={editValue} onChange={(e) => setEditValue(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500" />
                 </div>
                 <div>
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select defaultValue={selectedOrder.status} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500 cursor-pointer">
-                    <option>Em fila</option>
-                    <option>Em andamento</option>
-                    <option>Finalizado</option>
-                    <option>Entregue</option>
+                  <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500 cursor-pointer">
+                    {statusOptions.map(s => (
+                      <option key={s.id} value={s.id}>{s.label}</option>
+                    ))}
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1">Data de Entrada</label>
-                  <input type="date" defaultValue={selectedOrder.dateIn.split('/').reverse().join('-')} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500" />
+                  <input type="date" value={editDateIn} onChange={(e) => setEditDateIn(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500" />
                 </div>
                 <div>
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1">Prazo de Entrega</label>
-                  <input type="date" defaultValue={selectedOrder.dateOut.split('/').reverse().join('-')} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500" />
+                  <input type="date" value={editDateOut} onChange={(e) => setEditDateOut(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500" />
                 </div>
               </div>
               <div>
                 <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1">Observações</label>
-                <textarea rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500"></textarea>
+                <textarea rows={3} value={editObservation} onChange={(e) => setEditObservation(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs lg:text-sm focus:ring-2 focus:ring-rose-500"></textarea>
               </div>
             </div>
-            <div className="p-4 lg:p-6 border-t border-gray-200 flex gap-3">
+              <div className="p-4 lg:p-6 border-t border-gray-200 flex gap-3">
               <button 
                 onClick={() => setShowEditModal(false)}
                 className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all text-sm font-medium whitespace-nowrap cursor-pointer"
@@ -1075,7 +1386,29 @@ export default function OrdensPage() {
                 Cancelar
               </button>
               <button 
-                onClick={() => setShowEditModal(false)}
+                onClick={() => {
+                  // save edits to orders and notify client via WhatsApp
+                  const dateInStr = editDateIn ? editDateIn.split('-').reverse().join('/') : selectedOrder.dateIn;
+                  const dateOutStr = editDateOut ? editDateOut.split('-').reverse().join('/') : selectedOrder.dateOut;
+                  const updatedOrder = {
+                    ...selectedOrder,
+                    client: editClient,
+                    category: serviceCategories.find(c => c.id === editCategory)?.name || editCategory,
+                    service: editServiceName,
+                    value: editValue.startsWith('R$') ? editValue : `R$ ${editValue}`,
+                    status: editStatus,
+                    dateIn: dateInStr,
+                    dateOut: dateOutStr,
+                    observation: editObservation,
+                  };
+                  setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
+                  // preparar mensagem e abrir opções de envio (copiar/enviar/não enviar)
+                  setSelectedOrder(updatedOrder);
+                  setStatusChangeMessage(composeStatusMessage(updatedOrder, editStatus));
+                  setShowStatusMessageOptions(true);
+                  setShowStatusOnlyModal(true);
+                  setShowEditModal(false);
+                }}
                 className="flex-1 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-all text-sm font-medium whitespace-nowrap cursor-pointer"
               >
                 Salvar Alterações
@@ -1084,6 +1417,68 @@ export default function OrdensPage() {
           </div>
         </div>
       )}
+
+        {/* Modal Alterar Status (apenas status + opções de WhatsApp) */}
+        {showStatusOnlyModal && selectedOrder && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+            <div className="bg-white rounded-lg w-full max-w-md">
+              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                <h3 className="text-lg font-bold">Alterar Status - {selectedOrder.id}</h3>
+                <button onClick={() => setShowStatusOnlyModal(false)} className="text-gray-500"><i className="ri-close-line text-2xl"></i></button>
+              </div>
+              <div className="p-4 space-y-4">
+                {!showStatusMessageOptions ? (
+                  <>
+                    <label className="block text-sm text-gray-700">Novo Status</label>
+                    <select value={statusSelection} onChange={(e) => setStatusSelection(e.target.value)} className="w-full px-3 py-2 border rounded">
+                      {statusOptions.map(s => (<option key={s.id} value={s.id}>{s.label}</option>))}
+                    </select>
+                    <div className="flex gap-3 justify-end">
+                      <button onClick={() => setShowStatusOnlyModal(false)} className="px-4 py-2 border rounded">Cancelar</button>
+                      <button onClick={() => {
+                        // If changing to Retirado, handle payment confirmation
+                        if (statusSelection === 'Retirado') {
+                          if (selectedOrder.paymentStatus === 'Pago') {
+                            const updatedOrder = { ...selectedOrder, status: 'Retirado' };
+                            setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
+                            const msg = composeStatusMessage(updatedOrder, 'Retirado');
+                            setStatusChangeMessage(msg);
+                            setShowStatusMessageOptions(true);
+                            setShowStatusOnlyModal(true);
+                            try { addPointsForOrder(updatedOrder); window.dispatchEvent(new CustomEvent('clientsUpdated')); } catch (e) {}
+                            return;
+                          }
+                          // open a confirm prompt modal; if user confirms we'll open the payment modal
+                          setSelectedOrder(selectedOrder);
+                          setShowStatusOnlyModal(false);
+                          setShowConfirmDeliverPrompt(true);
+                          return;
+                        }
+
+                        // apply status change and prepare message
+                        const updatedOrder = { ...selectedOrder, status: statusSelection };
+                        setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
+                        const msg = composeStatusMessage(updatedOrder, statusSelection);
+                        setStatusChangeMessage(msg);
+                        setShowStatusMessageOptions(true);
+                      }} className="px-4 py-2 bg-rose-600 text-white rounded">Salvar</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <label className="block text-sm text-gray-700">Mensagem para o cliente</label>
+                    <div className="bg-gray-50 p-3 rounded max-h-40 overflow-y-auto whitespace-pre-line text-sm text-gray-900">{statusChangeMessage}</div>
+                    <div className="flex gap-3">
+                      <button onClick={() => { navigator.clipboard.writeText(statusChangeMessage); setShowStatusOnlyModal(false); }} className="flex-1 px-3 py-2 border rounded flex items-center justify-center gap-2">Copiar</button>
+                      <button onClick={() => { const phone = (selectedOrder.phone || '').replace(/\D/g, ''); const st = statusSelection || selectedOrder.status; window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(statusChangeMessage)}`, '_blank'); try { markMessageSent(selectedOrder.id, st); } catch(e){} setShowStatusOnlyModal(false); }} className="flex-1 px-3 py-2 bg-green-600 text-white rounded flex items-center justify-center gap-2">Enviar</button>
+                      <button onClick={() => setShowStatusOnlyModal(false)} className="flex-1 px-3 py-2 border rounded">Não enviar</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* Modal Excluir */}
       {showDeleteModal && selectedOrder && (
@@ -1399,19 +1794,25 @@ export default function OrdensPage() {
                 <p className="text-xs lg:text-sm text-gray-900 whitespace-pre-line">{fidelizacaoMessage}</p>
               </div>
               <div className="flex gap-3">
-                <button 
+                <button
                   onClick={() => copyToClipboard(fidelizacaoMessage)}
                   className="flex-1 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all text-xs lg:text-sm font-medium whitespace-nowrap cursor-pointer flex items-center justify-center gap-2"
                 >
                   <i className="ri-file-copy-line text-base lg:text-lg w-4 h-4 flex items-center justify-center"></i>
                   Copiar
                 </button>
-                <button 
+                <button
                   onClick={openWhatsApp}
                   className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all text-xs lg:text-sm font-medium whitespace-nowrap cursor-pointer flex items-center justify-center gap-2"
                 >
                   <i className="ri-whatsapp-line text-base lg:text-lg w-4 h-4 flex items-center justify-center"></i>
                   WhatsApp
+                </button>
+                <button
+                  onClick={() => setShowFidelizacaoModal(false)}
+                  className="flex-0 px-3 py-2 border border-transparent text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all text-xs lg:text-sm font-medium whitespace-nowrap cursor-pointer flex items-center justify-center gap-2"
+                >
+                  Fechar
                 </button>
               </div>
             </div>

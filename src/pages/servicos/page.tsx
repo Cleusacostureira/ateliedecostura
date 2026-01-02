@@ -403,12 +403,12 @@ export default function ServicosPage() {
                     />
                   </div>
                   
-                  <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 lg:mx-0 lg:px-0">
+                  <div className="flex flex-wrap gap-2 pb-2">
                     {serviceCategories.map((cat) => (
                       <button
                         key={cat.id}
                         onClick={() => setSelectedCategory(cat.id)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all cursor-pointer flex-shrink-0 ${
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                           selectedCategory === cat.id
                             ? 'bg-rose-500 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -420,29 +420,29 @@ export default function ServicosPage() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[640px]">
+                <div className="w-full">
+                  <table className="w-full table-auto">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Serviço</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Categoria</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Valor</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Tempo</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Realizados</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Ações</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider whitespace-normal break-words">Serviço</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider whitespace-normal break-words">Categoria</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider whitespace-normal break-words">Valor</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider whitespace-normal break-words">Tempo</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider whitespace-normal break-words">Realizados</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider whitespace-normal break-words">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {filteredServices.map((service) => (
                         <tr key={service.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{service.name}</td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm font-medium text-gray-900">{service.name}</td>
+                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm text-gray-600">
                             {serviceCategories.find(c => c.id === service.category)?.name}
                           </td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">R$ {service.price.toFixed(2)}</td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-600">{service.time}</td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">{service.count}x</td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm">
+                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm font-bold text-gray-900">R$ {service.price.toFixed(2)}</td>
+                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm text-gray-600">{service.time}</td>
+                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm text-gray-900">{service.count}x</td>
+                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm">
                             <div className="flex items-center gap-2">
                               <button 
                                 onClick={() => handleEdit(service)}
@@ -501,8 +501,8 @@ export default function ServicosPage() {
                   <h3 className="text-base lg:text-lg font-semibold text-gray-900">Materiais Cadastrados</h3>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[640px]">
+                <div className="w-full">
+                  <table className="w-full table-auto">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Material</th>
