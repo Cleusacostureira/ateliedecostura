@@ -18,6 +18,8 @@ export default function DashboardPage() {
   const [inProgress, setInProgress] = useState(0);
   const [lateCount, setLateCount] = useState(0);
   const [readyCount, setReadyCount] = useState(0);
+  const [todayCount, setTodayCount] = useState(0);
+  const [urgentCount, setUrgentCount] = useState(0);
   const [topClients, setTopClients] = useState<any[]>([]);
 
   const computeCounts = () => {
@@ -38,9 +40,22 @@ export default function DashboardPage() {
     setLateCount(late);
     setReadyCount(ready);
     try {
+      const today = new Date(); today.setHours(0,0,0,0);
+      const todayCountCalc = orders.filter((o: any) => {
+        if (!o.dateOut) return false;
+        if (['Retirado','Cancelado'].includes(o.status)) return false;
+        const parts = o.dateOut.split('/');
+        if (parts.length !== 3) return false;
+        const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+        d.setHours(0,0,0,0);
+        return d.getTime() === today.getTime();
+      }).length;
+      const urgentCountCalc = orders.filter((o: any) => o.priority === 'urgente' && !['Retirado','Cancelado'].includes(o.status)).length;
+      setTodayCount(todayCountCalc);
+      setUrgentCount(urgentCountCalc);
       const top = clientsSummaryForMonth(now.getMonth(), now.getFullYear()).slice(0,5);
       setTopClients(top);
-    } catch (e) { setTopClients([]); }
+    } catch (e) { setTopClients([]); setTodayCount(0); setUrgentCount(0); }
   };
 
   useEffect(() => {
