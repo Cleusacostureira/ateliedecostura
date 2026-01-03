@@ -755,7 +755,7 @@ export default function OrdensPage() {
   ];
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50 overflow-x-hidden">
       <Sidebar />
       
       <main className="flex-1 lg:ml-56 pt-14 lg:pt-0 min-w-0">
@@ -822,6 +822,32 @@ export default function OrdensPage() {
             {/* Lista: tabela responsiva com filtros rápidos */}
             <div className="p-4">
               <div className="mb-2" />
+
+              {/* Mobile stacked list */}
+              <div className="sm:hidden space-y-3">
+                {sortedOrders.map(order => (
+                  <div key={order.id} className="bg-white p-3 rounded-lg border w-full">
+                    <div className="flex items-start justify-between">
+                      <div className="min-w-0 w-full">
+                        <div className="font-medium text-sm text-gray-900 truncate">{order.client}</div>
+                        <div className="text-xs text-gray-500 break-words">{order.id} · {order.service}</div>
+                        <div className="text-xs text-gray-600 mt-1">Prazo: {order.dateOut || '—'}</div>
+                      </div>
+                      <div className="text-right ml-3">
+                        <div className="font-bold text-sm text-green-600 truncate">{order.value}</div>
+                        <div className="text-xs mt-1">{order.paymentStatus === 'Pago' ? 'Pago' : 'Não Pago'}</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button onClick={() => handleEdit(order)} className="px-2 py-1 text-rose-600 bg-rose-50 rounded text-xs">Editar</button>
+                      <button onClick={() => handleDelete(order)} className="px-2 py-1 text-red-600 bg-red-50 rounded text-xs">Excluir</button>
+                      {order.phone && (
+                        <button onClick={() => sendMessageManual(order, order.status)} className="px-2 py-1 text-rose-600 bg-rose-50 rounded text-xs">WhatsApp</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
 
               <div className="w-full">
                 <table className="w-full table-auto border-collapse">
