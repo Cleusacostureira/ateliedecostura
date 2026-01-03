@@ -154,6 +154,54 @@ export async function adjustClientPoints(id: string | number, pointsDelta: numbe
   return clients[idx];
 }
 
+export function addPointsForOrder(order: any) {
+  try {
+    if (!order) return;
+    // only count if paid and retirado
+    if ((order.status || '').toString() !== 'Retirado') return;
+    if (!((order.paymentStatus || order.pagamento || '').toString().toLowerCase().includes('pago'))) return;
+    // run async update but don't block callers
+    (async () => {
+      try {
+        const phoneNormalized = (order.phone || order.client_phone || order.cliente_telefone || '').toString().replace(/\D/g, '');
+        const clientName = (order.client || order.cliente || '').toString();
+        // try to find client in DB by telefone or nome
+        if (supabase && typeof supabase.from === 'function') {
+          let clientRes: any = null;
+          if (phoneNormalized) {
+            const r = await supabase.from('clientes').select('*').ilike('telefone', `%${phoneNormalized}%`).limit(1).maybeSingle();
+            if (!(r as any).error && (r as any).data) clientRes = (r as any).data;
+          }
+          if (!clientRes && clientName) {
+            const r2 = await supabase.from('clientes').select('*').ilike('nome', clientName).limit(1).maybeSingle();
+            if (!(r2 as any).error && (r2 as any).data) clientRes = (r2 as any).data;
+          }
+          if (clientRes) {
+            const amount = Number(order.value || order.total || 0) || 0;
+            // attempt to update numeric columns if present
+            await supabase.from('clientes').update({ totalGasto: (clientRes.totalGasto || clientRes.total_gasto || 0) + amount, servicosRealizados: (clientRes.servicosRealizados || clientRes.servicos_realizados || 0) + 1 }).eq('id', clientRes.id);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('addPointsForOrder supabase path failed', e);
+      }
+      // fallback to local storage approach
+      try {
+        const clients = localLoadClients();
+        const match = clients.find(c => (c.telefone && order.phone && c.telefone.replace(/\D/g,'') === String(order.phone).replace(/\D/g,'')) || (c.nome && order.client && c.nome === order.client));
+        if (!match) return;
+        const amount = parseFloat(String(order.value || order.total || '0').replace(/[^0-9,\.]/g, '').replace(/\./g, '').replace(/,/g, '.')) || 0;
+        match.totalGasto = (match.totalGasto || 0) + amount;
+        match.servicosRealizados = (match.servicosRealizados || 0) + 1;
+        const earned = Math.floor(amount / 100);
+        match.pontos = (match.pontos || 0) + earned;
+        localSaveClients(clients);
+      } catch (e) { console.warn('addPointsForOrder local fallback failed', e); }
+    })();
+  } catch (e) { /* ignore */ }
+}
+
 export function clientsSummaryForMonth(month: number, year: number) {
   // This util still reads from localStorage orders; keep as-is for compatibility
   try {
