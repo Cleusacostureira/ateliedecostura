@@ -15,9 +15,7 @@ export default function ConfiguracoesPage() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  // Diagnostics output (temporary)
-  const [diagOutput, setDiagOutput] = useState<string | null>(null);
-  const [diagRunning, setDiagRunning] = useState(false);
+  
 
   useEffect(() => {
     // load saved logo from configuracoes if available
@@ -125,34 +123,7 @@ export default function ConfiguracoesPage() {
     }
   };
 
-  // Temporary diagnostics runner (no DevTools required)
-  const runDiagnostics = async () => {
-    setDiagRunning(true);
-    setDiagOutput(null);
-    const out: any = { session: null, user: null, list: null, uploadTest: null };
-    try {
-      const s = await supabase.auth.getSession();
-      out.session = s;
-    } catch (e) { out.session = { error: String(e) }; }
-    try {
-      const u = await supabase.auth.getUser();
-      out.user = u;
-    } catch (e) { out.user = { error: String(e) }; }
-    try {
-      const l = await supabase.storage.from('logos').list();
-      out.list = l;
-    } catch (e) { out.list = { error: String(e) }; }
-    try {
-      // small test upload (text blob) to show detailed error without touching actual logo file
-      const upload = await supabase.storage.from('logos').upload(`diag-test-${Date.now()}.txt`, new Blob(['x']), { upsert: true });
-      out.uploadTest = upload;
-      // attempt to remove the test file if created
-      try { if (upload?.data?.path) await supabase.storage.from('logos').remove([upload.data.path]); } catch(_) {}
-    } catch (e) { out.uploadTest = { error: String(e) }; }
-
-    setDiagOutput(JSON.stringify(out, null, 2));
-    setDiagRunning(false);
-  };
+  
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -165,29 +136,7 @@ export default function ConfiguracoesPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-            {/* Diagnostics (temporary) */}
-            <div className="col-span-1 lg:col-span-2 bg-yellow-50 rounded-lg border border-yellow-200 p-4 lg:p-6">
-              <h3 className="text-sm font-semibold text-yellow-800 mb-2">Diagnostics (temporário)</h3>
-              <p className="text-xs text-yellow-700 mb-2">Clique para executar checagens de sessão, listar bucket `logos` e fazer um upload de teste. Use apenas para depuração.</p>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={runDiagnostics}
-                  disabled={diagRunning}
-                  className="px-3 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-all text-xs font-medium"
-                >
-                  {diagRunning ? 'Executando...' : 'Run Diagnostics'}
-                </button>
-                <button
-                  onClick={() => { try { navigator.clipboard.writeText(diagOutput || ''); } catch {} }}
-                  className="px-3 py-2 bg-white text-yellow-800 border border-yellow-200 rounded-lg text-xs"
-                >
-                  Copy Output
-                </button>
-              </div>
-              {diagOutput && (
-                <pre className="mt-3 p-3 bg-white rounded text-xs overflow-auto max-h-64 border">{diagOutput}</pre>
-              )}
-            </div>
+            
             {/* Informações do Ateliê */}
             <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
               <h2 className="text-base lg:text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">

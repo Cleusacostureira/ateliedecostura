@@ -115,9 +115,31 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Ensure triggers exist: drop if present then create (avoids dollar-quoting issues)
+DROP TRIGGER IF EXISTS set_timestamp_users ON users;
 CREATE TRIGGER set_timestamp_users BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
+
+DROP TRIGGER IF EXISTS set_timestamp_clientes ON clientes;
 CREATE TRIGGER set_timestamp_clientes BEFORE UPDATE ON clientes FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
+
+DROP TRIGGER IF EXISTS set_timestamp_servicos ON servicos;
 CREATE TRIGGER set_timestamp_servicos BEFORE UPDATE ON servicos FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
+
+DROP TRIGGER IF EXISTS set_timestamp_ordens ON ordens;
 CREATE TRIGGER set_timestamp_ordens BEFORE UPDATE ON ordens FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
+
+-- Materiais (inventário/consumíveis)
+CREATE TABLE IF NOT EXISTS materiais (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  nome text NOT NULL,
+  unidade text,
+  preco numeric(12,2) NOT NULL DEFAULT 0,
+  estoque numeric DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+DROP TRIGGER IF EXISTS set_timestamp_materiais ON materiais;
+CREATE TRIGGER set_timestamp_materiais BEFORE UPDATE ON materiais FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
 
 -- End of migration

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function FinanceiroPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
@@ -8,51 +9,53 @@ export default function FinanceiroPage() {
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [showConfirmPaymentModal, setShowConfirmPaymentModal] = useState(false);
 
-  // Dados de clientes com pagamentos pendentes
-  const [pendingPayments, setPendingPayments] = useState([
-    { 
-      id: 1, 
-      client: 'Ana Costa', 
-      phone: '11965432109',
-      service: 'Troca de Zíper', 
-      value: 45.00, 
-      date: '14/12/2024',
-      daysLate: 3
-    },
-    { 
-      id: 2, 
-      client: 'Lucas Ferreira', 
-      phone: '11932109876',
-      service: 'Ajuste de Blazer', 
-      value: 95.00, 
-      date: '12/12/2024',
-      daysLate: 5
-    },
-    { 
-      id: 3, 
-      client: 'Juliana Rocha', 
-      phone: '11921098765',
-      service: 'Barra de Vestido', 
-      value: 50.00, 
-      date: '10/12/2024',
-      daysLate: 7
-    },
-  ]);
+  // Dados de clientes com pagamentos pendentes (inicialmente vazio — carregado do Supabase)
+  const [pendingPayments, setPendingPayments] = useState<any[]>([]);
 
   // Fluxo de caixa detalhado por cliente e serviço
-  const [cashFlowDetails, setCashFlowDetails] = useState([
-    { id: 1, client: 'Maria Silva', service: 'Barra de Calça', value: 35.00, date: '15/12/2024', type: 'receita', status: 'Pago' },
-    { id: 2, client: 'João Santos', service: 'Ajuste de Vestido', value: 80.00, date: '16/12/2024', type: 'receita', status: 'Pago' },
-    { id: 3, client: 'Ana Costa', service: 'Troca de Zíper', value: 45.00, date: '14/12/2024', type: 'receita', status: 'Pendente' },
-    { id: 4, client: 'Pedro Oliveira', service: 'Conserto Geral', value: 120.00, date: '15/12/2024', type: 'receita', status: 'Pago' },
-    { id: 5, client: 'Carla Mendes', service: 'Barra de Calça', value: 35.00, date: '13/12/2024', type: 'receita', status: 'Pago' },
-    { id: 6, client: 'Lucas Ferreira', service: 'Ajuste de Blazer', value: 95.00, date: '12/12/2024', type: 'receita', status: 'Pendente' },
-    { id: 7, client: 'Juliana Rocha', service: 'Barra de Vestido', value: 50.00, date: '10/12/2024', type: 'receita', status: 'Pendente' },
-    { id: 8, client: 'Roberto Lima', service: 'Troca de Botões', value: 25.00, date: '12/12/2024', type: 'receita', status: 'Pago' },
-  ]);
+  const [cashFlowDetails, setCashFlowDetails] = useState<any[]>([]);
+
+  // fetch financeiro data from Supabase on mount; fallback to localStorage
+  useEffect(() => {
+    let mounted = true;
+    async function fetchFinanceiro() {
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          const res = await supabase.from('fluxo_caixa').select('*');
+          if (!(res as any).error && Array.isArray((res as any).data) && mounted) {
+            const data = (res as any).data;
+            setCashFlowDetails(data);
+            setPendingPayments(data.filter((d: any) => d.status === 'Pendente'));
+            return;
+          } else {
+            console.warn('Supabase fetch fluxo_caixa error', (res as any).error);
+          }
+        }
+      } catch (e) {
+        console.warn('fetchFinanceiro error', e);
+      }
+
+      // fallback to localStorage
+      try {
+        const raw = localStorage.getItem('cashFlowDetails');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && mounted) {
+            setCashFlowDetails(parsed);
+            setPendingPayments(parsed.filter((d: any) => d.status === 'Pendente'));
+            return;
+          }
+        }
+      } catch (e) { console.warn('localStorage parse failed', e); }
+
+      if (mounted) { setCashFlowDetails([]); setPendingPayments([]); }
+    }
+    fetchFinanceiro();
+    return () => { mounted = false; };
+  }, []);
 
   const handleCobranca = (client: any) => {
-    const message = `Olá ${client.client}! 😊\n\n*Cleusa Ateliê de Costura*\n\nEsperamos que sua peça tenha ficado perfeita!\n\nGostaríamos de lembrá-lo(a) sobre o pagamento pendente do serviço realizado:\n\n*Serviço:* ${client.service}\n*Valor:* R$ ${client.value.toFixed(2)}\n*Data:* ${client.date}\n\n*DADOS PARA PAGAMENTO PIX:*\n\n*Nome:* Cleusa Belani David\n*Telefone:* 45999126130\n*CPF:* 64166724053\n\nContamos com sua compreensão e aguardamos seu pagamento.\n\nQualquer dúvida, estamos à disposição! ✨`;
+    const message = `Olá ${client.client}! 😊\n\n*Cleusa Ateliê de Costura*\n\nEsperamos que sua peça tenha ficado perfeita!\n\nGostaríamos de lembrá-lo(a) sobre o pagamento pendente do serviço realizado:\n\n*Serviço:* ${client.service}\n*Valor:* R$ ${Number(client.value ?? client.valor ?? 0).toFixed(2)}\n*Data:* ${client.date}\n\n*DADOS PARA PAGAMENTO PIX:*\n\n*Nome:* Cleusa Belani David\n*Telefone:* 45999126130\n*CPF:* 64166724053\n\nContamos com sua compreensão e aguardamos seu pagamento.\n\nQualquer dúvida, estamos à disposição! ✨`;
     
     setSelectedClient({ ...client, message });
     setShowCobrancaModal(true);
@@ -64,16 +67,25 @@ export default function FinanceiroPage() {
   };
 
   const confirmPayment = () => {
-    // Remove da lista de pendentes
+    // Remove da lista de pendentes (UI)
     setPendingPayments(pendingPayments.filter(p => p.id !== selectedClient.id));
-    
-    // Atualiza no fluxo de caixa detalhado
-    setCashFlowDetails(cashFlowDetails.map(item => 
-      item.client === selectedClient.client && item.service === selectedClient.service && item.status === 'Pendente'
-        ? { ...item, status: 'Pago' }
-        : item
-    ));
-    
+
+    // Atualiza no fluxo de caixa detalhado (UI)
+    const updated = cashFlowDetails.map(item => 
+      item.id === selectedClient.id ? { ...item, status: 'Pago' } : item
+    );
+    setCashFlowDetails(updated);
+
+    // try to persist to Supabase
+    (async () => {
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          const res = await supabase.from('fluxo_caixa').update({ status: 'Pago' }).eq('id', selectedClient.id);
+          if ((res as any).error) console.warn('Supabase confirmPayment error', (res as any).error);
+        }
+      } catch (e) { console.warn('confirmPayment persistence failed', e); }
+    })();
+
     setShowConfirmPaymentModal(false);
     setSelectedClient(null);
   };
@@ -99,6 +111,21 @@ export default function FinanceiroPage() {
   };
 
   const totalPending = pendingPayments.reduce((sum, p) => sum + p.value, 0);
+
+  // compute totals from cashFlowDetails
+  const receitas = cashFlowDetails.reduce((sum, it) => {
+    const v = Number(it.value ?? it.valor ?? 0) || 0;
+    const tipo = (it.tipo || it.type || '').toString().toLowerCase();
+    if (tipo === 'despesa' || v < 0) return sum;
+    return sum + v;
+  }, 0);
+  const despesas = cashFlowDetails.reduce((sum, it) => {
+    const v = Number(it.value ?? it.valor ?? 0) || 0;
+    const tipo = (it.tipo || it.type || '').toString().toLowerCase();
+    if (tipo === 'despesa' || v < 0) return sum + Math.abs(v);
+    return sum;
+  }, 0);
+  const lucro = receitas - despesas;
 
   return (
     <div className="flex min-h-screen bg-gray-50 overflow-x-hidden">
@@ -153,7 +180,7 @@ export default function FinanceiroPage() {
                 </div>
                 <div>
                   <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">Receitas</p>
-                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ 8.450</p>
+                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ {receitas.toLocaleString('pt-BR')}</p>
                 </div>
               </div>
             </div>
@@ -165,7 +192,7 @@ export default function FinanceiroPage() {
                 </div>
                 <div>
                   <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">Despesas</p>
-                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ 2.340</p>
+                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ {despesas.toLocaleString('pt-BR')}</p>
                 </div>
               </div>
             </div>
@@ -177,7 +204,7 @@ export default function FinanceiroPage() {
                 </div>
                 <div>
                   <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">Lucro</p>
-                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ 6.110</p>
+                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ {lucro.toLocaleString('pt-BR')}</p>
                 </div>
               </div>
             </div>
@@ -234,7 +261,7 @@ export default function FinanceiroPage() {
                       <p className="text-[9px] lg:text-xs text-gray-500">Vencimento: {payment.date}</p>
                     </div>
                     <div className="text-right ml-3 flex-shrink-0">
-                      <p className="text-xs lg:text-base font-bold text-amber-700 mb-2">R$ {payment.value.toFixed(2)}</p>
+                      <p className="text-xs lg:text-base font-bold text-amber-700 mb-2">R$ {(Number(payment.value) || 0).toFixed(2)}</p>
                       <div className="flex gap-1.5 lg:gap-2">
                         <button
                           onClick={() => handleCobranca(payment)}
@@ -264,24 +291,22 @@ export default function FinanceiroPage() {
                 <h2 className="text-sm lg:text-lg font-bold text-gray-900">Receitas Recentes</h2>
               </div>
               <div className="p-2.5 lg:p-6 space-y-2 lg:space-y-4">
-                {[
-                  { client: 'Maria Silva', service: 'Barra de Calça', value: 'R$ 35,00', date: '15/12/2024', status: 'Pago' },
-                  { client: 'João Santos', service: 'Ajuste de Vestido', value: 'R$ 80,00', date: '16/12/2024', status: 'Pago' },
-                  { client: 'Ana Costa', service: 'Troca de Zíper', value: 'R$ 45,00', date: '14/12/2024', status: 'Pendente' },
-                  { client: 'Pedro Oliveira', service: 'Conserto Geral', value: 'R$ 120,00', date: '15/12/2024', status: 'Pago' },
-                ].map((item, index) => (
+                {(cashFlowDetails && cashFlowDetails.length > 0 ? cashFlowDetails.filter(i => {
+                  const v = Number(i.value ?? i.valor ?? 0) || 0;
+                  return v > 0;
+                }).slice(0,4) : []).map((item, index) => (
                   <div key={index} className="flex items-center justify-between p-2 lg:p-3 bg-gray-50 rounded-lg">
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] lg:text-sm font-medium text-gray-900 truncate">{item.client}</p>
-                      <p className="text-[9px] lg:text-xs text-gray-600 truncate">{item.service}</p>
-                      <p className="text-[8px] lg:text-xs text-gray-500">{item.date}</p>
+                      <p className="text-[10px] lg:text-sm font-medium text-gray-900 truncate">{item.client || item.cliente || 'Cliente'}</p>
+                      <p className="text-[9px] lg:text-xs text-gray-600 truncate">{item.service || item.servico || ''}</p>
+                      <p className="text-[8px] lg:text-xs text-gray-500">{item.date || item.data || ''}</p>
                     </div>
                     <div className="text-right ml-2 flex-shrink-0">
-                      <p className="text-[10px] lg:text-sm font-bold text-gray-900">{item.value}</p>
+                      <p className="text-[10px] lg:text-sm font-bold text-gray-900">R$ {(Number(item.value ?? item.valor ?? 0) || 0).toFixed(2)}</p>
                       <span className={`text-[8px] lg:text-xs px-1.5 lg:px-2 py-0.5 lg:py-1 rounded-full whitespace-nowrap ${
-                        item.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                        (item.status === 'Pago' || (item.status||'').toString().toLowerCase() === 'pago') ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                       }`}>
-                        {item.status}
+                        {item.status || ''}
                       </span>
                     </div>
                   </div>
@@ -294,20 +319,18 @@ export default function FinanceiroPage() {
                 <h2 className="text-sm lg:text-lg font-bold text-gray-900">Despesas Recentes</h2>
               </div>
               <div className="p-2.5 lg:p-6 space-y-2 lg:space-y-4">
-                {[
-                  { description: 'Linha de costura', category: 'Material', value: 'R$ 45,00', date: '14/12/2024' },
-                  { description: 'Zíperes diversos', category: 'Material', value: 'R$ 120,00', date: '13/12/2024' },
-                  { description: 'Energia elétrica', category: 'Conta', value: 'R$ 180,00', date: '10/12/2024' },
-                  { description: 'Botões e aviamentos', category: 'Material', value: 'R$ 85,00', date: '12/12/2024' },
-                ].map((item, index) => (
+                {(cashFlowDetails && cashFlowDetails.length > 0 ? cashFlowDetails.filter(i => {
+                  const v = Number(i.value ?? i.valor ?? 0) || 0;
+                  return v < 0 || (i.tipo||'').toString().toLowerCase() === 'despesa';
+                }).slice(0,4) : []).map((item, index) => (
                   <div key={index} className="flex items-center justify-between p-2 lg:p-3 bg-gray-50 rounded-lg">
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] lg:text-sm font-medium text-gray-900 truncate">{item.description}</p>
-                      <p className="text-[9px] lg:text-xs text-gray-600">{item.category}</p>
-                      <p className="text-[8px] lg:text-xs text-gray-500">{item.date}</p>
+                      <p className="text-[10px] lg:text-sm font-medium text-gray-900 truncate">{item.description || item.descricao || ''}</p>
+                      <p className="text-[9px] lg:text-xs text-gray-600">{item.category || item.categoria || ''}</p>
+                      <p className="text-[8px] lg:text-xs text-gray-500">{item.date || item.data || ''}</p>
                     </div>
                     <div className="text-right ml-2 flex-shrink-0">
-                      <p className="text-[10px] lg:text-sm font-bold text-red-600">{item.value}</p>
+                      <p className="text-[10px] lg:text-sm font-bold text-red-600">R$ {(Math.abs(Number(item.value ?? item.valor ?? 0)) || 0).toFixed(2)}</p>
                     </div>
                   </div>
                 ))}
@@ -333,7 +356,7 @@ export default function FinanceiroPage() {
                         <p className="text-[8px] text-gray-500">{item.date}</p>
                       </div>
                       <div className="text-right ml-3 flex-shrink-0">
-                        <p className="text-[10px] font-bold text-green-600">R$ {item.value.toFixed(2)}</p>
+                        <p className="text-[10px] font-bold text-green-600">R$ {(Number(item.value) || 0).toFixed(2)}</p>
                         <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${item.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{item.status}</span>
                       </div>
                     </div>
@@ -369,7 +392,7 @@ export default function FinanceiroPage() {
                       <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap text-[10px] lg:text-sm font-medium text-gray-900">{item.client}</td>
                       <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap text-[9px] lg:text-sm text-gray-700">{item.service}</td>
                       <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap text-[10px] lg:text-sm font-bold text-green-600">
-                        R$ {item.value.toFixed(2)}
+                        R$ {(Number(item.value) || 0).toFixed(2)}
                       </td>
                       <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap">
                         <span className={`px-1.5 lg:px-2 py-0.5 lg:py-1 rounded-full text-[8px] lg:text-xs font-medium whitespace-nowrap ${
@@ -452,7 +475,7 @@ export default function FinanceiroPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-600">Valor:</span>
-                  <span className="text-sm font-bold text-green-600">R$ {selectedClient.value.toFixed(2)}</span>
+                  <span className="text-sm font-bold text-green-600">R$ {Number(selectedClient.value ?? selectedClient.valor ?? 0).toFixed(2)}</span>
                 </div>
               </div>
               <div className="flex gap-3">

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import { addPointsForOrder } from '../../lib/clients';
 import { formatMessageForStatus } from '../../lib/messages';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function OrdensPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
@@ -59,31 +60,48 @@ export default function OrdensPage() {
   const [inlineServicePrice, setInlineServicePrice] = useState('');
   const [inlineServiceCategory, setInlineServiceCategory] = useState('');
 
-  const defaultSampleOrders = [
-    { id: 'OS-1234', client: 'Maria Silva', phone: '11987654321', category: '👖 Barras', service: 'Barra de Calça', value: 'R$ 35,00', status: 'Recebido', dateIn: '15/12/2024', dateOut: '20/12/2024', priority: 'normal', paymentStatus: null },
-    { id: 'OS-1235', client: 'João Santos', phone: '11976543210', category: '👗 Vestidos', service: 'Ajuste de Vestido', value: 'R$ 80,00', status: 'Recebido', dateIn: '16/12/2024', dateOut: '22/12/2024', priority: 'normal', paymentStatus: null },
-    { id: 'OS-1236', client: 'Ana Costa', phone: '11965432109', category: '🧵 Consertos Gerais', service: 'Troca de Zíper', value: 'R$ 45,00', status: 'Pronto', dateIn: '14/12/2024', dateOut: '18/12/2024', priority: 'urgente', paymentStatus: null },
-    { id: 'OS-1237', client: 'Pedro Oliveira', phone: '11954321098', category: '🧵 Consertos Gerais', service: 'Conserto Geral', value: 'R$ 120,00', status: 'Em costura', dateIn: '15/12/2024', dateOut: '25/12/2024', priority: 'normal', paymentStatus: null },
-    { id: 'OS-1238', client: 'Carla Mendes', phone: '11943210987', category: '👖 Barras', service: 'Barra de Calça', value: 'R$ 35,00', status: 'Retirado', dateIn: '13/12/2024', dateOut: '17/12/2024', priority: 'normal', paymentStatus: 'Pago' },
-    { id: 'OS-1239', client: 'Lucas Ferreira', phone: '11932109876', category: '👔 Roupas Sociais', service: 'Ajuste de Blazer', value: 'R$ 95,00', status: 'Recebido', dateIn: '17/12/2024', dateOut: '23/12/2024', priority: 'urgente', paymentStatus: null },
-    { id: 'OS-1240', client: 'Juliana Rocha', phone: '11921098765', category: '👗 Vestidos', service: 'Barra de Vestido', value: 'R$ 50,00', status: 'Em costura', dateIn: '16/12/2024', dateOut: '21/12/2024', priority: 'normal', paymentStatus: null },
-    { id: 'OS-1241', client: 'Roberto Lima', phone: '11910987654', category: '🧵 Consertos Gerais', service: 'Troca de Botões', value: 'R$ 25,00', status: 'Pronto', dateIn: '12/12/2024', dateOut: '16/12/2024', priority: 'normal', paymentStatus: null },
-  ];
+  const defaultSampleOrders: any[] = [];
 
-  const loadOrders = () => {
-    try {
-      const raw = localStorage.getItem('orders');
-      if (!raw) return defaultSampleOrders;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return defaultSampleOrders;
-      // ensure old orders have a status
-      return parsed.map((o: any) => ({ ...o, status: o.status || 'Recebido' }));
-    } catch (e) {
-      return defaultSampleOrders;
+  const [orders, setOrders] = useState<any[]>([]);
+
+  // Load orders from Supabase on mount; fallback to localStorage or empty list
+  useEffect(() => {
+    let mounted = true;
+    async function fetchOrders() {
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          const res = await supabase.from('ordens').select('*');
+          if (!(res as any).error && Array.isArray((res as any).data)) {
+            const data = (res as any).data.map((o: any) => ({ ...o, status: o.status || 'Recebido' }));
+            if (mounted) setOrders(data);
+            return;
+          } else {
+            console.warn('Supabase fetch ordens error', (res as any).error);
+          }
+        }
+      } catch (e) {
+        console.warn('fetchOrders error', e);
+      }
+
+      // fallback to localStorage
+      try {
+        const raw = localStorage.getItem('orders');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && mounted) {
+            setOrders(parsed.map((o: any) => ({ ...o, status: o.status || 'Recebido' })));
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('localStorage parse orders failed', e);
+      }
+
+      if (mounted) setOrders(defaultSampleOrders);
     }
-  };
-
-  const [orders, setOrders] = useState<any[]>(loadOrders);
+    fetchOrders();
+    return () => { mounted = false; };
+  }, []);
 
   const [clientes] = useState([
     { id: 1, nome: 'Maria Silva', telefone: '(11) 98765-4321', phone: '11987654321' },
@@ -561,10 +579,26 @@ export default function OrdensPage() {
     setShowStatusOnlyModal(true);
   };
 
-  const togglePaymentStatus = (order: any) => {
-    const next = orders.map(o => o.id === order.id ? { ...o, paymentStatus: o.paymentStatus === 'Pago' ? null : 'Pago' } : o);
+  const togglePaymentStatus = async (order: any) => {
+    const newStatus = order.paymentStatus === 'Pago' ? null : 'Pago';
+    // optimistic UI
+    const next = orders.map(o => o.id === order.id ? { ...o, paymentStatus: newStatus } : o);
     setOrders(next);
     try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+
+    // try to persist in Supabase if configured
+    try {
+      if (supabase && typeof supabase.from === 'function') {
+        const tableName = 'ordens';
+        const payload: any = { paymentStatus: newStatus };
+        const res = await supabase.from(tableName).update(payload).eq('id', order.id);
+        if ((res as any).error) {
+          console.warn('Supabase update paymentStatus error', (res as any).error);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to persist payment status to Supabase', e);
+    }
   };
 
   const filteredOrders = orders.filter(order => {
@@ -839,8 +873,12 @@ export default function OrdensPage() {
                         <div className="text-xs text-gray-600 mt-1">Prazo: {order.dateOut || '—'}</div>
                       </div>
                       <div className="text-right ml-3">
-                        <div className="font-bold text-sm text-green-600 truncate">{order.value}</div>
-                        <div className="text-xs mt-1">{order.paymentStatus === 'Pago' ? 'Pago' : 'Não Pago'}</div>
+                                <div onClick={() => togglePaymentStatus(order)} className="font-bold text-sm text-green-600 truncate cursor-pointer">{order.value}</div>
+                                <div className="text-xs mt-1">
+                                  <button onClick={() => togglePaymentStatus(order)} className="text-[12px] px-2 py-1 rounded inline-flex items-center justify-center " title="Marcar pagamento">
+                                    {order.paymentStatus === 'Pago' ? 'Pago' : 'Não Pago'}
+                                  </button>
+                                </div>
                       </div>
                     </div>
                     <div className="mt-3 flex items-center gap-2">

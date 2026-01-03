@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@stripe/react-stripe-js": "4.0.2",
-    "@supabase/supabase-js": "^2.57.4",
+    "@supabase/supabase-js": "^2.89.0",
+    "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "firebase": "12.0.0",
     "i18next": "^25.3.2",

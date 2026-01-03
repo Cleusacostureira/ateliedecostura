@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function ServicosPage() {
   const [showNewServiceModal, setShowNewServiceModal] = useState(false);
@@ -30,16 +31,15 @@ export default function ServicosPage() {
     { id: 'especiais', name: '🎨 Especiais', icon: 'ri-star-line' },
   ];
 
-  const services = [
-    // Barras
+  const [services, setServices] = useState<any[]>([]);
+
+  const defaultServices = [
     { id: 1, category: 'barras', name: 'Barra simples de calça', price: 35, time: '30 min', count: 45 },
     { id: 2, category: 'barras', name: 'Barra italiana', price: 45, time: '45 min', count: 28 },
     { id: 3, category: 'barras', name: 'Barra original (jeans)', price: 50, time: '60 min', count: 32 },
     { id: 4, category: 'barras', name: 'Barra de saia', price: 30, time: '30 min', count: 18 },
     { id: 5, category: 'barras', name: 'Barra de vestido', price: 40, time: '45 min', count: 22 },
     { id: 6, category: 'barras', name: 'Barra de cortina', price: 25, time: '30 min', count: 12 },
-    
-    // Ajustes e Modelagem
     { id: 7, category: 'ajustes', name: 'Ajuste de cintura', price: 45, time: '45 min', count: 38 },
     { id: 8, category: 'ajustes', name: 'Ajuste de quadril', price: 50, time: '60 min', count: 25 },
     { id: 9, category: 'ajustes', name: 'Ajuste de lateral', price: 55, time: '60 min', count: 20 },
@@ -47,45 +47,33 @@ export default function ServicosPage() {
     { id: 11, category: 'ajustes', name: 'Ajuste de manga', price: 35, time: '30 min', count: 22 },
     { id: 12, category: 'ajustes', name: 'Ajuste de ombro', price: 45, time: '45 min', count: 15 },
     { id: 13, category: 'ajustes', name: 'Ajuste geral', price: 80, time: '90 min', count: 18 },
-    
-    // Camisas / Blusas
     { id: 14, category: 'camisas', name: 'Ajuste de camisa social', price: 50, time: '60 min', count: 24 },
     { id: 15, category: 'camisas', name: 'Encurtar manga', price: 30, time: '30 min', count: 20 },
     { id: 16, category: 'camisas', name: 'Apertar manga', price: 35, time: '45 min', count: 16 },
     { id: 17, category: 'camisas', name: 'Troca de colarinho', price: 40, time: '45 min', count: 8 },
     { id: 18, category: 'camisas', name: 'Troca de punho', price: 35, time: '30 min', count: 10 },
-    
-    // Vestidos
     { id: 19, category: 'vestidos', name: 'Ajuste de vestido', price: 80, time: '90 min', count: 35 },
     { id: 20, category: 'vestidos', name: 'Ajuste de alça', price: 30, time: '30 min', count: 18 },
     { id: 21, category: 'vestidos', name: 'Ajuste de busto', price: 50, time: '60 min', count: 22 },
     { id: 22, category: 'vestidos', name: 'Ajuste de cintura', price: 45, time: '45 min', count: 28 },
     { id: 23, category: 'vestidos', name: 'Ajuste de comprimento', price: 40, time: '45 min', count: 20 },
     { id: 24, category: 'vestidos', name: 'Reforma completa', price: 150, time: '180 min', count: 8 },
-    
-    // Saia / Short / Bermuda
     { id: 25, category: 'saia-short', name: 'Ajuste de saia', price: 40, time: '45 min', count: 15 },
     { id: 26, category: 'saia-short', name: 'Ajuste de short', price: 35, time: '30 min', count: 12 },
     { id: 27, category: 'saia-short', name: 'Ajuste de bermuda', price: 35, time: '30 min', count: 10 },
     { id: 28, category: 'saia-short', name: 'Troca de zíper', price: 45, time: '45 min', count: 18 },
     { id: 29, category: 'saia-short', name: 'Ajuste de cós', price: 40, time: '45 min', count: 14 },
-    
-    // Calça / Jeans
     { id: 30, category: 'calcas', name: 'Ajuste de calça social', price: 50, time: '60 min', count: 25 },
     { id: 31, category: 'calcas', name: 'Ajuste de jeans', price: 55, time: '60 min', count: 30 },
     { id: 32, category: 'calcas', name: 'Troca de zíper de calça', price: 45, time: '45 min', count: 22 },
     { id: 33, category: 'calcas', name: 'Troca de botão', price: 15, time: '15 min', count: 35 },
     { id: 34, category: 'calcas', name: 'Reforço de costura', price: 30, time: '30 min', count: 18 },
     { id: 35, category: 'calcas', name: 'Reparo em rasgo', price: 40, time: '45 min', count: 20 },
-    
-    // Casacos / Jaquetas
     { id: 36, category: 'casacos', name: 'Ajuste de jaqueta', price: 70, time: '90 min', count: 12 },
     { id: 37, category: 'casacos', name: 'Ajuste de casaco', price: 80, time: '90 min', count: 10 },
     { id: 38, category: 'casacos', name: 'Troca de forro', price: 90, time: '120 min', count: 8 },
     { id: 39, category: 'casacos', name: 'Ajuste de manga', price: 50, time: '60 min', count: 15 },
     { id: 40, category: 'casacos', name: 'Troca de zíper de jaqueta', price: 60, time: '60 min', count: 12 },
-    
-    // Consertos Gerais
     { id: 41, category: 'consertos', name: 'Troca de zíper', price: 45, time: '45 min', count: 40 },
     { id: 42, category: 'consertos', name: 'Troca de botão', price: 15, time: '15 min', count: 50 },
     { id: 43, category: 'consertos', name: 'Aplicação de botão', price: 20, time: '20 min', count: 30 },
@@ -94,30 +82,91 @@ export default function ServicosPage() {
     { id: 46, category: 'consertos', name: 'Conserto de rasgo', price: 40, time: '45 min', count: 28 },
     { id: 47, category: 'consertos', name: 'Pregar colchete', price: 15, time: '15 min', count: 20 },
     { id: 48, category: 'consertos', name: 'Ajuste de elástico', price: 30, time: '30 min', count: 18 },
-    
-    // Roupas Sociais
     { id: 49, category: 'sociais', name: 'Ajuste de terno', price: 120, time: '120 min', count: 8 },
     { id: 50, category: 'sociais', name: 'Ajuste de paletó', price: 90, time: '90 min', count: 12 },
     { id: 51, category: 'sociais', name: 'Ajuste de blazer', price: 85, time: '90 min', count: 15 },
     { id: 52, category: 'sociais', name: 'Ajuste de colete', price: 60, time: '60 min', count: 6 },
     { id: 53, category: 'sociais', name: 'Ajuste de calça social', price: 50, time: '60 min', count: 20 },
-    
-    // Roupas Infantis
     { id: 54, category: 'infantis', name: 'Ajuste de roupa infantil', price: 30, time: '30 min', count: 25 },
     { id: 55, category: 'infantis', name: 'Barra infantil', price: 20, time: '20 min', count: 30 },
     { id: 56, category: 'infantis', name: 'Conserto geral infantil', price: 35, time: '45 min', count: 18 },
-    
-    // Costura Doméstica
     { id: 57, category: 'domestica', name: 'Barra de cortina', price: 25, time: '30 min', count: 15 },
     { id: 58, category: 'domestica', name: 'Ajuste de toalha', price: 20, time: '20 min', count: 10 },
     { id: 59, category: 'domestica', name: 'Ajuste de capa de almofada', price: 30, time: '30 min', count: 12 },
     { id: 60, category: 'domestica', name: 'Conserto de roupa de cama', price: 35, time: '45 min', count: 8 },
-    
-    // Serviços Especiais
     { id: 61, category: 'especiais', name: 'Reforma completa de roupa', price: 150, time: '180 min', count: 10 },
     { id: 62, category: 'especiais', name: 'Customização', price: 100, time: '120 min', count: 12 },
     { id: 63, category: 'especiais', name: 'Ajustes sob medida', price: 120, time: '120 min', count: 8 },
     { id: 64, category: 'especiais', name: 'Costura sob encomenda', price: 200, time: '240 min', count: 5 },
+  ];
+
+  const defaultMaterials = [
+    { id: 1, name: 'Linha de costura poliéster', unit: 'metro', price: 0.50 },
+    { id: 2, name: 'Linha de algodão', unit: 'metro', price: 0.60 },
+    { id: 3, name: 'Linha para jeans', unit: 'metro', price: 0.80 },
+    { id: 4, name: 'Linha para overlock', unit: 'metro', price: 0.70 },
+    { id: 5, name: 'Linha invisível (nylon)', unit: 'metro', price: 1.00 },
+    { id: 6, name: 'Linha encerada', unit: 'metro', price: 0.90 },
+    { id: 7, name: 'Linha para bordado', unit: 'metro', price: 1.20 },
+    { id: 8, name: 'Agulha de máquina doméstica', unit: 'unidade', price: 2.00 },
+    { id: 9, name: 'Agulha de máquina industrial', unit: 'unidade', price: 3.00 },
+    { id: 10, name: 'Agulha para jeans', unit: 'unidade', price: 2.50 },
+    { id: 11, name: 'Agulha para malha', unit: 'unidade', price: 2.50 },
+    { id: 12, name: 'Agulha para tecidos finos', unit: 'unidade', price: 2.00 },
+    { id: 13, name: 'Agulha de mão', unit: 'unidade', price: 1.00 },
+    { id: 14, name: 'Agulha curva', unit: 'unidade', price: 3.50 },
+    { id: 15, name: 'Botão comum', unit: 'unidade', price: 0.50 },
+    { id: 16, name: 'Botão de pressão', unit: 'unidade', price: 1.00 },
+    { id: 17, name: 'Botão de jeans', unit: 'unidade', price: 1.50 },
+    { id: 18, name: 'Botão forrado', unit: 'unidade', price: 2.00 },
+    { id: 19, name: 'Colchete', unit: 'unidade', price: 0.80 },
+    { id: 20, name: 'Gancho', unit: 'unidade', price: 0.80 },
+    { id: 21, name: 'Ilhós', unit: 'unidade', price: 0.60 },
+    { id: 22, name: 'Fecho de metal', unit: 'unidade', price: 1.50 },
+    { id: 23, name: 'Fecho plástico', unit: 'unidade', price: 1.00 },
+    { id: 24, name: 'Zíper comum', unit: 'unidade', price: 5.00 },
+    { id: 25, name: 'Zíper invisível', unit: 'unidade', price: 7.00 },
+    { id: 26, name: 'Zíper de metal', unit: 'unidade', price: 8.00 },
+    { id: 27, name: 'Zíper de nylon', unit: 'unidade', price: 6.00 },
+    { id: 28, name: 'Zíper destacável (jaquetas)', unit: 'unidade', price: 10.00 },
+    { id: 29, name: 'Cursor de zíper (puxador)', unit: 'unidade', price: 2.00 },
+    { id: 30, name: 'Elástico comum', unit: 'metro', price: 1.50 },
+    { id: 31, name: 'Elástico roliço', unit: 'metro', price: 2.00 },
+    { id: 32, name: 'Elástico largo', unit: 'metro', price: 3.00 },
+    { id: 33, name: 'Elástico para cintura', unit: 'metro', price: 2.50 },
+    { id: 34, name: 'Elástico para punho', unit: 'metro', price: 1.80 },
+    { id: 35, name: 'Tecido para remendo', unit: 'metro', price: 10.00 },
+    { id: 36, name: 'Forro', unit: 'metro', price: 8.00 },
+    { id: 37, name: 'Entretela', unit: 'metro', price: 6.00 },
+    { id: 38, name: 'Viés', unit: 'metro', price: 2.00 },
+    { id: 39, name: 'Renda', unit: 'metro', price: 5.00 },
+    { id: 40, name: 'Fita de cetim', unit: 'metro', price: 1.50 },
+    { id: 41, name: 'Fita de gorgurão', unit: 'metro', price: 2.00 },
+    { id: 42, name: 'Passamanaria', unit: 'metro', price: 3.00 },
+    { id: 43, name: 'Tesoura de tecido', unit: 'unidade', price: 25.00 },
+    { id: 44, name: 'Tesoura de arremate', unit: 'unidade', price: 15.00 },
+    { id: 45, name: 'Abridor de casas', unit: 'unidade', price: 8.00 },
+    { id: 46, name: 'Alfinetes', unit: 'pacote', price: 5.00 },
+    { id: 47, name: 'Alfinete de segurança', unit: 'pacote', price: 4.00 },
+    { id: 48, name: 'Dedal', unit: 'unidade', price: 3.00 },
+    { id: 49, name: 'Fita métrica', unit: 'unidade', price: 5.00 },
+    { id: 50, name: 'Giz de alfaiate', unit: 'unidade', price: 3.00 },
+    { id: 51, name: 'Marcador de tecido', unit: 'unidade', price: 6.00 },
+    { id: 52, name: 'Descosedor', unit: 'unidade', price: 4.00 },
+    { id: 53, name: 'Cola para tecido', unit: 'unidade', price: 8.00 },
+    { id: 54, name: 'Spray fixador', unit: 'unidade', price: 12.00 },
+    { id: 55, name: 'Amaciante de costura', unit: 'litro', price: 10.00 },
+    { id: 56, name: 'Ferro de passar', unit: 'unidade', price: 80.00 },
+    { id: 57, name: 'Papel para molde', unit: 'metro', price: 2.00 },
+    { id: 58, name: 'Papel carbono para costura', unit: 'folha', price: 1.50 },
+    { id: 59, name: 'Bainha termocolante', unit: 'metro', price: 3.00 },
+    { id: 60, name: 'Fita termocolante', unit: 'metro', price: 2.50 },
+    { id: 61, name: 'Linha para acabamento fino', unit: 'metro', price: 1.00 },
+    { id: 62, name: 'Entretela termocolante', unit: 'metro', price: 7.00 },
+    { id: 63, name: 'Saco plástico para roupa', unit: 'unidade', price: 0.50 },
+    { id: 64, name: 'Capa protetora', unit: 'unidade', price: 2.00 },
+    { id: 65, name: 'Etiqueta de identificação', unit: 'unidade', price: 0.30 },
+    { id: 66, name: 'Tag de cliente', unit: 'unidade', price: 0.40 },
   ];
 
   const handleEdit = (service: any) => {
@@ -142,104 +191,93 @@ export default function ServicosPage() {
   };
 
   const filteredServices = services.filter(service => {
-    const matchesSearch = service.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'todos' || service.category === selectedCategory;
+    const name = (service && service.name) ? String(service.name) : '';
+    const matchesSearch = name.toLowerCase().includes((searchTerm || '').toLowerCase());
+    const matchesCategory = selectedCategory === 'todos' || (service && service.category ? service.category : '') === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
   const totalServices = services.length;
-  const totalRevenue = services.reduce((sum, s) => sum + (s.price * s.count), 0);
-  const avgPrice = Math.round(services.reduce((sum, s) => sum + s.price, 0) / services.length);
-  const mostPopular = services.sort((a, b) => b.count - a.count)[0];
+  const totalRevenue = services.reduce((sum, s) => sum + (s.price * (s.count || 0)), 0);
+  const avgPrice = services.length ? Math.round(services.reduce((sum, s) => sum + s.price, 0) / services.length) : 0;
+  const mostPopular = services.length ? services.slice().sort((a, b) => (b.count || 0) - (a.count || 0))[0] : { name: '-' };
 
   // Lista de materiais disponíveis
-  const [availableMaterials, setAvailableMaterials] = useState([
-    // Linhas
-    { id: 1, name: 'Linha de costura poliéster', unit: 'metro', price: 0.50 },
-    { id: 2, name: 'Linha de algodão', unit: 'metro', price: 0.60 },
-    { id: 3, name: 'Linha para jeans', unit: 'metro', price: 0.80 },
-    { id: 4, name: 'Linha para overlock', unit: 'metro', price: 0.70 },
-    { id: 5, name: 'Linha invisível (nylon)', unit: 'metro', price: 1.00 },
-    { id: 6, name: 'Linha encerada', unit: 'metro', price: 0.90 },
-    { id: 7, name: 'Linha para bordado', unit: 'metro', price: 1.20 },
-    
-    // Agulhas
-    { id: 8, name: 'Agulha de máquina doméstica', unit: 'unidade', price: 2.00 },
-    { id: 9, name: 'Agulha de máquina industrial', unit: 'unidade', price: 3.00 },
-    { id: 10, name: 'Agulha para jeans', unit: 'unidade', price: 2.50 },
-    { id: 11, name: 'Agulha para malha', unit: 'unidade', price: 2.50 },
-    { id: 12, name: 'Agulha para tecidos finos', unit: 'unidade', price: 2.00 },
-    { id: 13, name: 'Agulha de mão', unit: 'unidade', price: 1.00 },
-    { id: 14, name: 'Agulha curva', unit: 'unidade', price: 3.50 },
-    
-    // Botões e Fechamentos
-    { id: 15, name: 'Botão comum', unit: 'unidade', price: 0.50 },
-    { id: 16, name: 'Botão de pressão', unit: 'unidade', price: 1.00 },
-    { id: 17, name: 'Botão de jeans', unit: 'unidade', price: 1.50 },
-    { id: 18, name: 'Botão forrado', unit: 'unidade', price: 2.00 },
-    { id: 19, name: 'Colchete', unit: 'unidade', price: 0.80 },
-    { id: 20, name: 'Gancho', unit: 'unidade', price: 0.80 },
-    { id: 21, name: 'Ilhós', unit: 'unidade', price: 0.60 },
-    { id: 22, name: 'Fecho de metal', unit: 'unidade', price: 1.50 },
-    { id: 23, name: 'Fecho plástico', unit: 'unidade', price: 1.00 },
-    
-    // Zíperes
-    { id: 24, name: 'Zíper comum', unit: 'unidade', price: 5.00 },
-    { id: 25, name: 'Zíper invisível', unit: 'unidade', price: 7.00 },
-    { id: 26, name: 'Zíper de metal', unit: 'unidade', price: 8.00 },
-    { id: 27, name: 'Zíper de nylon', unit: 'unidade', price: 6.00 },
-    { id: 28, name: 'Zíper destacável (jaquetas)', unit: 'unidade', price: 10.00 },
-    { id: 29, name: 'Cursor de zíper (puxador)', unit: 'unidade', price: 2.00 },
-    
-    // Elásticos
-    { id: 30, name: 'Elástico comum', unit: 'metro', price: 1.50 },
-    { id: 31, name: 'Elástico roliço', unit: 'metro', price: 2.00 },
-    { id: 32, name: 'Elástico largo', unit: 'metro', price: 3.00 },
-    { id: 33, name: 'Elástico para cintura', unit: 'metro', price: 2.50 },
-    { id: 34, name: 'Elástico para punho', unit: 'metro', price: 1.80 },
-    
-    // Tecidos e Aviamentos
-    { id: 35, name: 'Tecido para remendo', unit: 'metro', price: 10.00 },
-    { id: 36, name: 'Forro', unit: 'metro', price: 8.00 },
-    { id: 37, name: 'Entretela', unit: 'metro', price: 6.00 },
-    { id: 38, name: 'Viés', unit: 'metro', price: 2.00 },
-    { id: 39, name: 'Renda', unit: 'metro', price: 5.00 },
-    { id: 40, name: 'Fita de cetim', unit: 'metro', price: 1.50 },
-    { id: 41, name: 'Fita de gorgurão', unit: 'metro', price: 2.00 },
-    { id: 42, name: 'Passamanaria', unit: 'metro', price: 3.00 },
-    
-    // Ferramentas Básicas
-    { id: 43, name: 'Tesoura de tecido', unit: 'unidade', price: 25.00 },
-    { id: 44, name: 'Tesoura de arremate', unit: 'unidade', price: 15.00 },
-    { id: 45, name: 'Abridor de casas', unit: 'unidade', price: 8.00 },
-    { id: 46, name: 'Alfinetes', unit: 'pacote', price: 5.00 },
-    { id: 47, name: 'Alfinete de segurança', unit: 'pacote', price: 4.00 },
-    { id: 48, name: 'Dedal', unit: 'unidade', price: 3.00 },
-    { id: 49, name: 'Fita métrica', unit: 'unidade', price: 5.00 },
-    { id: 50, name: 'Giz de alfaiate', unit: 'unidade', price: 3.00 },
-    { id: 51, name: 'Marcador de tecido', unit: 'unidade', price: 6.00 },
-    { id: 52, name: 'Descosedor', unit: 'unidade', price: 4.00 },
-    
-    // Produtos Auxiliares
-    { id: 53, name: 'Cola para tecido', unit: 'unidade', price: 8.00 },
-    { id: 54, name: 'Spray fixador', unit: 'unidade', price: 12.00 },
-    { id: 55, name: 'Amaciante de costura', unit: 'litro', price: 10.00 },
-    { id: 56, name: 'Ferro de passar', unit: 'unidade', price: 80.00 },
-    { id: 57, name: 'Papel para molde', unit: 'metro', price: 2.00 },
-    { id: 58, name: 'Papel carbono para costura', unit: 'folha', price: 1.50 },
-    
-    // Acabamento
-    { id: 59, name: 'Bainha termocolante', unit: 'metro', price: 3.00 },
-    { id: 60, name: 'Fita termocolante', unit: 'metro', price: 2.50 },
-    { id: 61, name: 'Linha para acabamento fino', unit: 'metro', price: 1.00 },
-    { id: 62, name: 'Entretela termocolante', unit: 'metro', price: 7.00 },
-    
-    // Embalagem e Entrega
-    { id: 63, name: 'Saco plástico para roupa', unit: 'unidade', price: 0.50 },
-    { id: 64, name: 'Capa protetora', unit: 'unidade', price: 2.00 },
-    { id: 65, name: 'Etiqueta de identificação', unit: 'unidade', price: 0.30 },
-    { id: 66, name: 'Tag de cliente', unit: 'unidade', price: 0.40 },
-  ]);
+  const [availableMaterials, setAvailableMaterials] = useState<any[]>([]);
+
+  // fetch services and materials from Supabase on mount, fallback to localStorage
+  useEffect(() => {
+    let mounted = true;
+    async function fetchData() {
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          const svcRes = await supabase.from('servicos').select('*');
+          if (!(svcRes as any).error && Array.isArray((svcRes as any).data) && mounted) {
+            const svcData = (svcRes as any).data;
+            if (svcData.length === 0) {
+              try {
+                await supabase.from('servicos').insert(defaultServices);
+                // defaultServices already in correct shape
+                setServices(defaultServices);
+              } catch (e) { console.warn('failed to seed servicos', e); setServices(defaultServices); }
+            } else {
+              // map DB fields to UI shape
+              const mapped = svcData.map((s: any) => ({
+                id: s.id,
+                category: s.categoria || s.category || (s.descricao && s.descricao.categoria) || 'outros',
+                name: s.titulo || s.nome || s.title || '',
+                price: Number(s.preco ?? s.price ?? 0) || 0,
+                time: s.duracao_minutos ? `${s.duracao_minutos} min` : (s.time || ''),
+                count: Number(s.popularidade || s.count || 0) || 0,
+                // keep raw
+                __raw: s,
+              }));
+              setServices(mapped);
+            }
+          }
+          const matRes = await supabase.from('materiais').select('*');
+          if (!(matRes as any).error && Array.isArray((matRes as any).data) && mounted) {
+            const matData = (matRes as any).data;
+            if (matData.length === 0) {
+              try {
+                await supabase.from('materiais').insert(defaultMaterials);
+                setAvailableMaterials(defaultMaterials);
+              } catch (e) { console.warn('failed to seed materiais', e); setAvailableMaterials(defaultMaterials); }
+            } else {
+              const mappedM = matData.map((m: any) => ({
+                id: m.id,
+                name: m.nome || m.name || '',
+                unit: m.unidade || m.unit || '',
+                price: Number(m.preco ?? m.price ?? 0) || 0,
+                estoque: Number(m.estoque ?? m.stock ?? 0) || 0,
+                __raw: m,
+              }));
+              setAvailableMaterials(mappedM);
+            }
+          }
+          return;
+        }
+      } catch (e) {
+        console.warn('servicos fetch error', e);
+      }
+
+      // fallback localStorage
+      try {
+        const rawServices = localStorage.getItem('services');
+        if (rawServices) {
+          const parsed = JSON.parse(rawServices);
+          if (Array.isArray(parsed) && mounted) setServices(parsed);
+        }
+        const rawMats = localStorage.getItem('materials');
+        if (rawMats) {
+          const parsedM = JSON.parse(rawMats);
+          if (Array.isArray(parsedM) && mounted) setAvailableMaterials(parsedM);
+        }
+      } catch (e) { console.warn('localStorage parse failed', e); }
+    }
+    fetchData();
+    return () => { mounted = false; };
+  }, []);
 
   const handleEditMaterial = (material: any) => {
     setSelectedMaterial(material);
@@ -431,7 +469,7 @@ export default function ServicosPage() {
                           <div className="text-xs text-gray-600 mt-1">{service.time} · {service.count}x</div>
                         </div>
                         <div className="text-right ml-3">
-                          <div className="font-bold text-sm text-gray-900">R$ {service.price.toFixed(2)}</div>
+                          <div className="font-bold text-sm text-gray-900">R$ {(Number(service.price) || 0).toFixed(2)}</div>
                         </div>
                       </div>
                       <div className="mt-3 flex items-center gap-2">
@@ -457,13 +495,13 @@ export default function ServicosPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {filteredServices.map((service) => (
                         <tr key={service.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm font-medium text-gray-900">{service.name}</td>
+                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm font-medium text-gray-900">{service.name || '-'}</td>
                           <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm text-gray-600">
                             {serviceCategories.find(c => c.id === service.category)?.name}
                           </td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm font-bold text-gray-900">R$ {service.price.toFixed(2)}</td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm text-gray-600">{service.time}</td>
-                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm text-gray-900">{service.count}x</td>
+                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm font-bold text-gray-900">R$ {(Number(service.price) || 0).toFixed(2)}</td>
+                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm text-gray-600">{service.time || ''}</td>
+                          <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm text-gray-900">{(service.count || 0)}x</td>
                           <td className="px-4 lg:px-6 py-4 whitespace-normal break-words text-sm">
                             <div className="flex items-center gap-2">
                               <button 
@@ -538,7 +576,7 @@ export default function ServicosPage() {
                         <tr key={material.id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-4 lg:px-6 py-4 text-sm text-gray-900">{material.name}</td>
                           <td className="px-4 lg:px-6 py-4 text-sm text-gray-600 capitalize">{material.unit}</td>
-                          <td className="px-4 lg:px-6 py-4 text-sm font-semibold text-gray-900">R$ {material.price.toFixed(2)}</td>
+                          <td className="px-4 lg:px-6 py-4 text-sm font-semibold text-gray-900">R$ {(Number(material.price) || 0).toFixed(2)}</td>
                           <td className="px-4 lg:px-6 py-4 text-sm">
                             <div className="flex items-center gap-2">
                               <button
@@ -689,7 +727,7 @@ export default function ServicosPage() {
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1.5 lg:mb-2">Valor Padrão</label>
                   <input
                     type="text"
-                    defaultValue={`R$ ${selectedService.price.toFixed(2)}`}
+                    defaultValue={`R$ ${(Number(selectedService.price) || 0).toFixed(2)}`}
                     className="w-full px-3 lg:px-4 py-1.5 lg:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs lg:text-sm"
                   />
                 </div>
