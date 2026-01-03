@@ -823,14 +823,14 @@ export default function OrdensPage() {
             <div className="p-4">
               <div className="mb-2" />
 
-              <div className="overflow-auto w-full">
+              <div className="w-full">
                 <table className="w-full table-auto border-collapse">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-2 text-left text-xs text-gray-600">Cliente</th>
-                      <th className="px-3 py-2 text-left text-xs text-gray-600">Serviço</th>
-                      <th className="px-3 py-2 text-left text-xs text-gray-600">Status</th>
-                      <th className="px-3 py-2 text-left text-xs text-gray-600">Prazo</th>
+                      <th className="hidden sm:table-cell px-3 py-2 text-left text-xs text-gray-600">Serviço</th>
+                      <th className="hidden sm:table-cell px-3 py-2 text-left text-xs text-gray-600">Status</th>
+                      <th className="hidden sm:table-cell px-3 py-2 text-left text-xs text-gray-600">Prazo</th>
                       <th className="px-3 py-2 text-right text-xs text-gray-600">Valor</th>
                       <th className="px-3 py-2 text-center text-xs text-gray-600">Ações <span className="text-[11px] text-gray-500">/ Envios</span></th>
                     </tr>
@@ -844,8 +844,9 @@ export default function OrdensPage() {
                           <td className="px-3 py-3 align-top text-sm text-gray-900 min-w-0">
                             <div className="font-medium">{order.client}</div>
                             <div className="text-xs text-gray-500">{order.id}</div>
+                            <div className="sm:hidden mt-1 text-xs text-gray-600">{order.service} · {order.dateOut || '—'}</div>
                           </td>
-                          <td className="px-3 py-3 align-top text-sm text-gray-700 break-words">{order.service}</td>
+                          <td className="hidden sm:table-cell px-3 py-3 align-top text-sm text-gray-700 break-words">{order.service}</td>
                           <td className="px-3 py-3 align-top text-sm">
                               <div className="flex items-center gap-2">
                                 <button
