@@ -89,12 +89,12 @@ export async function upsertClient(c: Cliente) {
       if (c.id) {
         const res = await supabase.from('clientes').update(payload).eq('id', c.id).select().limit(1).single();
         if (!(res as any).error && (res as any).data) {
-          return { id: (res as any).data.id, ...payload };
+          return { id: (res as any).data.id, ...payload, totalGasto: 0, servicosRealizados: 0, pontos: 0 };
         }
       } else {
         const res = await supabase.from('clientes').insert(payload).select().limit(1).single();
         if (!(res as any).error && (res as any).data) {
-          return { id: (res as any).data.id, ...payload };
+          return { id: (res as any).data.id, ...payload, totalGasto: 0, servicosRealizados: 0, pontos: 0 };
         }
       }
     }

@@ -138,11 +138,11 @@ export default function ClientesPage() {
                 <div className="grid grid-cols-2 gap-2 mb-3 p-2 bg-gray-50 rounded-lg">
                   <div>
                     <p className="text-[10px] text-gray-500">Total Gasto</p>
-                    <p className="text-sm font-semibold text-rose-600">R$ {cliente.totalGasto.toFixed(2)}</p>
+                    <p className="text-sm font-semibold text-rose-600">R$ {(Number(cliente.totalGasto) || 0).toFixed(2)}</p>
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-500">Serviços</p>
-                    <p className="text-sm font-semibold text-gray-900">{cliente.servicosRealizados}x</p>
+                    <p className="text-sm font-semibold text-gray-900">{cliente.servicosRealizados || 0}x</p>
                   </div>
                 </div>
 
