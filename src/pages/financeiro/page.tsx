@@ -101,7 +101,7 @@ export default function FinanceiroPage() {
   const totalPending = pendingPayments.reduce((sum, p) => sum + p.value, 0);
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50 overflow-x-hidden">
       <Sidebar />
       
       <main className="flex-1 lg:ml-56 pt-14 lg:pt-0">
@@ -321,7 +321,29 @@ export default function FinanceiroPage() {
               <h2 className="text-sm lg:text-lg font-bold text-gray-900">Fluxo de Caixa Detalhado</h2>
               <p className="text-xs lg:text-sm text-gray-600 mt-0.5">Movimentações por cliente e serviço - Clique nos pendentes para marcar como pago</p>
             </div>
-            <div className="overflow-x-auto">
+            {/* Mobile: stacked list for cash flow */}
+            <div className="sm:hidden p-2.5 space-y-2">
+              {cashFlowDetails.map((item) => (
+                <div key={item.id} className="bg-white p-3 rounded-lg border">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-medium text-gray-900 truncate">{item.client}</p>
+                        <p className="text-[9px] text-gray-600 truncate">{item.service}</p>
+                        <p className="text-[8px] text-gray-500">{item.date}</p>
+                      </div>
+                      <div className="text-right ml-3 flex-shrink-0">
+                        <p className="text-[10px] font-bold text-green-600">R$ {item.value.toFixed(2)}</p>
+                        <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${item.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{item.status}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop/table */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>

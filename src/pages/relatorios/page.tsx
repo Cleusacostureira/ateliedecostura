@@ -5,7 +5,7 @@ export default function RelatoriosPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50 overflow-x-hidden">
       <Sidebar />
       
       <main className="flex-1 lg:ml-56 pt-14 lg:pt-0">
@@ -184,9 +184,10 @@ export default function RelatoriosPage() {
             <div className="p-4 lg:p-6 border-b border-gray-200">
               <h2 className="text-base lg:text-lg font-bold text-gray-900">Evolução Mensal</h2>
             </div>
-            <div className="p-4 lg:p-6 overflow-x-auto">
-              <div className="min-w-[500px]">
-                <div className="h-48 lg:h-64 flex items-end justify-between gap-2">
+            <div className="p-4 lg:p-6">
+              {/* Mobile-friendly chart (no horizontal scroll) */}
+              <div className="sm:hidden">
+                <div className="h-40 flex items-end gap-1">
                   {[
                     { month: 'Jan', value: 45 },
                     { month: 'Fev', value: 52 },
@@ -203,13 +204,44 @@ export default function RelatoriosPage() {
                   ].map((data, index) => (
                     <div key={index} className="flex-1 flex flex-col items-center gap-1">
                       <div
-                        className="w-full bg-rose-500 rounded-t hover:bg-rose-600 transition-colors cursor-pointer"
+                        className="w-full bg-rose-500 rounded-t transition-colors"
                         style={{ height: `${data.value}%` }}
                         title={`${data.month}: ${data.value} ordens`}
                       ></div>
                       <span className="text-xs text-gray-600 mt-2">{data.month}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Desktop wide chart */}
+              <div className="hidden sm:block overflow-x-auto">
+                <div className="min-w-[500px]">
+                  <div className="h-48 lg:h-64 flex items-end justify-between gap-2">
+                    {[
+                      { month: 'Jan', value: 45 },
+                      { month: 'Fev', value: 52 },
+                      { month: 'Mar', value: 48 },
+                      { month: 'Abr', value: 61 },
+                      { month: 'Mai', value: 55 },
+                      { month: 'Jun', value: 68 },
+                      { month: 'Jul', value: 72 },
+                      { month: 'Ago', value: 65 },
+                      { month: 'Set', value: 78 },
+                      { month: 'Out', value: 82 },
+                      { month: 'Nov', value: 88 },
+                      { month: 'Dez', value: 95 },
+                    ].map((data, index) => (
+                      <div key={index} className="flex-1 flex flex-col items-center gap-1">
+                        <div
+                          className="w-full bg-rose-500 rounded-t hover:bg-rose-600 transition-colors cursor-pointer"
+                          style={{ height: `${data.value}%` }}
+                          title={`${data.month}: ${data.value} ordens`}
+                        ></div>
+                        <span className="text-xs text-gray-600 mt-2">{data.month}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
