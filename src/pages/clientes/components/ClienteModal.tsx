@@ -31,13 +31,14 @@ export default function ClienteModal({ isOpen, onClose, cliente, onSave }: Clien
     e.preventDefault();
     const formData = new FormData(e.target as HTMLFormElement);
     const clienteData = {
-      id: cliente?.id || Date.now(),
-      nome: formData.get('nome'),
-      telefone: formData.get('telefone'),
-      cpf: formData.get('cpf'),
-      endereco: formData.get('endereco'),
+      // do NOT generate a local id for new clients — let Supabase assign id
+      id: cliente?.id ? cliente.id : undefined,
+      nome: String(formData.get('nome') || '').trim(),
+      telefone: String(formData.get('telefone') || '').trim(),
+      cpf: String(formData.get('cpf') || '').trim(),
+      endereco: String(formData.get('endereco') || '').trim(),
       foto: previewImage,
-      observacoes: formData.get('observacoes'),
+      observacoes: String(formData.get('observacoes') || '').trim(),
       totalGasto: cliente?.totalGasto || 0,
       servicosRealizados: cliente?.servicosRealizados || 0,
       pontos: pontos,

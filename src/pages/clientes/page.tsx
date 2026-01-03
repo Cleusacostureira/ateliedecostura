@@ -55,6 +55,7 @@ export default function ClientesPage() {
     (async () => {
       try {
         await upsertClient(clienteData as any);
+        alert('Cliente Cadastrado com Sucesso');
       } catch (e) { console.warn('upsert client failed', e); }
       const list = await loadClients();
       setClientes(list || []);
