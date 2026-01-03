@@ -860,7 +860,7 @@ export default function OrdensPage() {
                 ))}
               </div>
 
-              <div className="w-full">
+              <div className="hidden sm:block w-full">
                 <table className="w-full table-auto border-collapse">
                   <thead className="bg-gray-50">
                     <tr>

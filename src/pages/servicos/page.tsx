@@ -420,7 +420,29 @@ export default function ServicosPage() {
                   </div>
                 </div>
 
-                <div className="w-full">
+                {/* Mobile: stacked cards */}
+                <div className="sm:hidden space-y-3">
+                  {filteredServices.map((service) => (
+                    <div key={service.id} className="bg-white p-3 rounded-lg border">
+                      <div className="flex items-start justify-between">
+                        <div className="min-w-0">
+                          <div className="font-medium text-sm text-gray-900 truncate">{service.name}</div>
+                          <div className="text-xs text-gray-600">{serviceCategories.find(c=>c.id===service.category)?.name}</div>
+                          <div className="text-xs text-gray-600 mt-1">{service.time} · {service.count}x</div>
+                        </div>
+                        <div className="text-right ml-3">
+                          <div className="font-bold text-sm text-gray-900">R$ {service.price.toFixed(2)}</div>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center gap-2">
+                        <button onClick={() => handleEdit(service)} title="Editar" className="w-8 h-8 flex items-center justify-center text-gray-600 bg-gray-50 rounded"><i className="ri-edit-line"></i></button>
+                        <button onClick={() => handleDelete(service)} title="Excluir" className="w-8 h-8 flex items-center justify-center text-red-600 bg-red-50 rounded"><i className="ri-delete-bin-line"></i></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden sm:block w-full">
                   <table className="w-full table-auto">
                     <thead className="bg-gray-50">
                       <tr>
