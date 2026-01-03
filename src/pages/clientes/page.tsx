@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { loadClients, upsertClient } from '../../lib/clients';
+import { loadClients, upsertClient, deleteClient } from '../../lib/clients';
 import ClienteModal from './components/ClienteModal';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../../components/layout/Sidebar';
@@ -13,17 +13,16 @@ export default function ClientesPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const list = loadClients();
-    if (list.length === 0) {
-      // initialize with a few sample clients if none
-      // keep existing inline sample for first run
-      setClientes([]);
-    } else {
-      setClientes(list);
+    let mounted = true;
+    async function fetch() {
+      const list = await loadClients();
+      if (!mounted) return;
+      setClientes(list || []);
     }
-    const h = () => setClientes(loadClients());
-    window.addEventListener('clientsUpdated', h);
-    return () => window.removeEventListener('clientsUpdated', h);
+    fetch();
+    const h = async () => setClientes(await loadClients());
+    window.addEventListener('clientsUpdated', h as any);
+    return () => { mounted = false; window.removeEventListener('clientsUpdated', h as any); };
   }, []);
 
   const handleEdit = (cliente: any) => {
@@ -41,22 +40,34 @@ export default function ClientesPage() {
   };
 
   const confirmDelete = () => {
-    setClientes(clientes.filter(c => c.id !== selectedCliente.id));
-    setShowDeleteModal(false);
-    setSelectedCliente(null);
+    (async () => {
+      try {
+        if (selectedCliente?.id) await deleteClient(String(selectedCliente.id));
+      } catch (e) { console.warn('delete client failed', e); }
+      const list = await loadClients();
+      setClientes(list || []);
+      setShowDeleteModal(false);
+      setSelectedCliente(null);
+    })();
   };
 
   const handleSave = (clienteData: any) => {
-    const saved = upsertClient(clienteData as any);
-    const list = loadClients();
-    setClientes(list);
-    setSelectedCliente(null);
+    (async () => {
+      try {
+        await upsertClient(clienteData as any);
+      } catch (e) { console.warn('upsert client failed', e); }
+      const list = await loadClients();
+      setClientes(list || []);
+      setSelectedCliente(null);
+      setShowModal(false);
+    })();
   };
 
-  const filteredClientes = clientes.filter(cliente =>
-    cliente.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    cliente.telefone.includes(searchTerm)
-  );
+  const filteredClientes = clientes.filter(cliente => {
+    const nome = (cliente.nome || '').toString().toLowerCase();
+    const tel = (cliente.telefone || '').toString();
+    return nome.includes(searchTerm.toLowerCase()) || tel.includes(searchTerm);
+  });
 
   return (
     <div className="flex min-h-screen bg-gray-50">

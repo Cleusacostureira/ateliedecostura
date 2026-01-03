@@ -1,22 +1,24 @@
+import { supabase } from './supabaseClient';
+
 export type Cliente = {
-  id: number | string;
+  id?: string;
   nome: string;
   telefone?: string;
   cpf?: string;
   endereco?: string;
   foto?: string;
   observacoes?: string;
+  // optional analytics fields — may not exist in DB
   totalGasto?: number;
   servicosRealizados?: number;
   pontos?: number;
-  pontosMeta?: number;
   status?: 'ativo' | 'inativo';
   createdAt?: string;
 };
 
 const CLIENTS_KEY = 'clientes';
 
-export function loadClients(): Cliente[] {
+function localLoadClients(): Cliente[] {
   try {
     const raw = localStorage.getItem(CLIENTS_KEY);
     if (!raw) return [];
@@ -26,69 +28,134 @@ export function loadClients(): Cliente[] {
   } catch (e) { return []; }
 }
 
-export function saveClients(list: Cliente[]) {
+function localSaveClients(list: Cliente[]) {
   try { localStorage.setItem(CLIENTS_KEY, JSON.stringify(list)); } catch (e) {}
 }
 
-export function getClientById(id: string | number) {
-  const clients = loadClients();
-  return clients.find(c => String(c.id) === String(id));
+export async function loadClients(): Promise<Cliente[]> {
+  try {
+    if (supabase && typeof supabase.from === 'function') {
+      const res = await supabase.from('clientes').select('*');
+      if (!(res as any).error && Array.isArray((res as any).data)) {
+        // map DB fields to UI shape
+        return (res as any).data.map((r: any) => ({
+          id: r.id,
+          nome: r.nome,
+          telefone: r.telefone,
+          cpf: r.cpf_cnpj || r.cpf,
+          endereco: r.endereco,
+          observacoes: r.notas || r.observacoes || '',
+        }));
+      }
+    }
+  } catch (e) {
+    console.warn('supabase loadClients failed', e);
+  }
+  // fallback to local
+  return localLoadClients();
 }
 
-export function upsertClient(c: Cliente) {
-  const clients = loadClients();
+export async function getClientById(id: string) {
+  try {
+    if (supabase && typeof supabase.from === 'function') {
+      const res = await supabase.from('clientes').select('*').eq('id', id).limit(1).single();
+      if (!(res as any).error && (res as any).data) {
+        const r = (res as any).data;
+        return {
+          id: r.id,
+          nome: r.nome,
+          telefone: r.telefone,
+          cpf: r.cpf_cnpj || r.cpf,
+          endereco: r.endereco,
+          observacoes: r.notas || r.observacoes || '',
+        };
+      }
+    }
+  } catch (e) { console.warn('getClientById supabase failed', e); }
+  // fallback
+  return localLoadClients().find(c => String(c.id) === String(id));
+}
+
+export async function upsertClient(c: Cliente) {
+  try {
+    if (supabase && typeof supabase.from === 'function') {
+      const payload = {
+        nome: c.nome,
+        telefone: c.telefone || null,
+        cpf_cnpj: c.cpf || null,
+        endereco: c.endereco || null,
+        notas: c.observacoes || null,
+      } as any;
+      if (c.id) {
+        const res = await supabase.from('clientes').update(payload).eq('id', c.id).select().limit(1).single();
+        if (!(res as any).error && (res as any).data) {
+          return { id: (res as any).data.id, ...payload };
+        }
+      } else {
+        const res = await supabase.from('clientes').insert(payload).select().limit(1).single();
+        if (!(res as any).error && (res as any).data) {
+          return { id: (res as any).data.id, ...payload };
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('supabase upsertClient failed', e);
+  }
+  // fallback to local
+  const clients = localLoadClients();
   const exists = clients.findIndex(x => String(x.id) === String(c.id));
   const now = new Date().toLocaleDateString('pt-BR');
-  const toSave = { pontos: 0, pontosMeta: 10, totalGasto: 0, servicosRealizados: 0, status: 'ativo', createdAt: now, ...c } as Cliente;
+  const toSave = { pontos: 0, totalGasto: 0, servicosRealizados: 0, status: 'ativo', createdAt: now, ...c } as Cliente;
   if (exists >= 0) {
     clients[exists] = { ...clients[exists], ...toSave };
   } else {
+    // assign an id
+    toSave.id = toSave.id || `local-${Date.now()}`;
     clients.push(toSave);
   }
-  saveClients(clients);
+  localSaveClients(clients);
   return toSave;
 }
 
-function parseValue(value: string) {
-  if (!value) return 0;
-  // expect formats like 'R$ 35,00' or '35.00' etc
-  const cleaned = String(value).replace(/[^0-9,\.]/g, '').replace(/\./g, '').replace(/,/g, '.');
-  const n = parseFloat(cleaned);
-  return isNaN(n) ? 0 : n;
-}
-
-export function addPointsForOrder(order: any) {
+export async function deleteClient(id: string) {
   try {
-    if (!order) return;
-    // only count if paid and retirado
-    if (order.status !== 'Retirado') return;
-    if (order.paymentStatus !== 'Pago') return;
-    const clients = loadClients();
-    // match by phone or name
-    const match = clients.find(c => (c.telefone && order.phone && c.telefone.replace(/\D/g,'') === String(order.phone).replace(/\D/g,'')) || (c.nome && order.client && c.nome === order.client));
-    if (!match) return;
-    const amount = parseValue(order.value || order.total || '0');
-    match.totalGasto = (match.totalGasto || 0) + amount;
-    match.servicosRealizados = (match.servicosRealizados || 0) + 1;
-    const earned = Math.floor(amount / 100);
-    match.pontos = (match.pontos || 0) + earned;
-    saveClients(clients);
-    return match;
-  } catch (e) { return; }
+    if (supabase && typeof supabase.from === 'function') {
+      const res = await supabase.from('clientes').delete().eq('id', id);
+      if (!(res as any).error) return true;
+    }
+  } catch (e) { console.warn('supabase deleteClient failed', e); }
+  // fallback local
+  const clients = localLoadClients().filter(c => String(c.id) !== String(id));
+  localSaveClients(clients);
+  return true;
 }
 
-export function adjustClientPoints(id: string | number, pointsDelta: number) {
-  const clients = loadClients();
+// keep some helper functions using server when possible, else fallback to local
+export async function adjustClientPoints(id: string | number, pointsDelta: number) {
+  try {
+    // try to update a numeric 'pontos' column if exists
+    if (supabase && typeof supabase.from === 'function') {
+      // read current (if field exists)
+      const cur = await supabase.from('clientes').select('pontos').eq('id', String(id)).limit(1).single();
+      if (!(cur as any).error && (cur as any).data) {
+        const newVal = (Number((cur as any).data.pontos) || 0) + pointsDelta;
+        await supabase.from('clientes').update({ pontos: newVal }).eq('id', String(id));
+        return { id, pontos: newVal };
+      }
+    }
+  } catch (e) { console.warn('adjustClientPoints supabase failed', e); }
+  // fallback local
+  const clients = localLoadClients();
   const idx = clients.findIndex(c => String(c.id) === String(id));
   if (idx === -1) return null;
   clients[idx].pontos = (clients[idx].pontos || 0) + pointsDelta;
   if (clients[idx].pontos! < 0) clients[idx].pontos = 0;
-  saveClients(clients);
+  localSaveClients(clients);
   return clients[idx];
 }
 
 export function clientsSummaryForMonth(month: number, year: number) {
-  // compute totals per client for orders in localStorage for the given month/year
+  // This util still reads from localStorage orders; keep as-is for compatibility
   try {
     const raw = localStorage.getItem('orders');
     if (!raw) return [];
