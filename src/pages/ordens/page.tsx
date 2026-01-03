@@ -824,56 +824,7 @@ export default function OrdensPage() {
               <div className="mb-2" />
 
               <div className="w-full">
-                {/* Mobile: stacked cards */}
-                <div className="sm:hidden space-y-3">
-                  {sortedOrders.map(order => {
-                    const due = deliveryIndicator(order.dateOut);
-                    const isLate = due === 'late';
-                    return (
-                      <div key={order.id} className="bg-white p-3 rounded-lg border shadow-sm">
-                        <div className="flex items-start justify-between">
-                          <div className="min-w-0">
-                            <div className="font-medium text-sm text-gray-900">{order.client}</div>
-                            <div className="text-xs text-gray-500">{order.id} · {order.service}</div>
-                            <div className="text-xs text-gray-600 mt-1">Prazo: {order.dateOut || '—'}</div>
-                          </div>
-                          <div className="text-right ml-3">
-                            <div className="font-bold text-sm text-green-600">{order.value}</div>
-                            <div className="text-xs mt-1">
-                              <span className={order.paymentStatus === 'Pago' ? 'text-green-600' : 'text-red-600'}>{order.paymentStatus === 'Pago' ? 'Pago' : 'Não Pago'}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            {order.status !== 'Em costura' && order.status !== 'Pronto' && order.status !== 'Retirado' && (
-                              <button onClick={() => applyQuickStatus(order, 'Em costura')} title="Iniciar" className="px-2 py-1 text-white bg-blue-600 rounded text-xs">Iniciar</button>
-                            )}
-                            {order.status !== 'Pronto' && order.status !== 'Retirado' && (
-                              <button onClick={() => applyQuickStatus(order, 'Pronto')} title="Finalizar" className="px-2 py-1 text-white bg-green-600 rounded text-xs">Finalizar</button>
-                            )}
-                            {order.status === 'Pronto' && order.status !== 'Retirado' && (
-                              <button onClick={() => applyQuickStatus(order, 'Retirado')} title="Marcar Retirado" className="px-2 py-1 text-white bg-purple-600 rounded text-xs">Retirado</button>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => handleEdit(order)} className="px-2 py-1 text-rose-600 bg-rose-50 rounded text-xs">Editar</button>
-                            <button onClick={() => handleDelete(order)} className="px-2 py-1 text-red-600 bg-red-50 rounded text-xs">Excluir</button>
-                            {order.phone && (
-                              <button onClick={() => sendMessageManual(order, order.status)} className="px-2 py-1 text-rose-600 bg-rose-50 rounded text-xs">WhatsApp</button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Desktop/table view */}
-                <div className="hidden sm:block w-full">
-                    <table className="w-full table-auto border-collapse">
+                <table className="w-full table-auto border-collapse">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-2 text-left text-xs text-gray-600">Cliente</th>
