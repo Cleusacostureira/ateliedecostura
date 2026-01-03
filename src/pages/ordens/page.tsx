@@ -779,7 +779,7 @@ export default function OrdensPage() {
             </button>
           </div>
 
-          <div className="flex gap-2 mb-6 items-center">
+          <div className="flex flex-wrap gap-2 mb-6 items-center">
             {Object.entries(statusCounts).map(([status, count]) => {
               const icon = statusIcons[status] || 'ri-checkbox-blank-line';
               const color = statusOptions.find(s => s.id === status)?.color || 'bg-gray-100 text-gray-800';
@@ -829,7 +829,12 @@ export default function OrdensPage() {
                   <div key={order.id} className="bg-white p-3 rounded-lg border w-full">
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 w-full">
-                        <div className="font-medium text-sm text-gray-900 truncate">{order.client}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium text-sm text-gray-900 truncate">{order.client}</div>
+                          <div className="mt-0">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${statusOptions.find(s=>s.id===order.status)?.color || 'bg-gray-100 text-gray-800'}`}>{order.status}</span>
+                          </div>
+                        </div>
                         <div className="text-xs text-gray-500 break-words">{order.id} · {order.service}</div>
                         <div className="text-xs text-gray-600 mt-1">Prazo: {order.dateOut || '—'}</div>
                       </div>
@@ -839,10 +844,16 @@ export default function OrdensPage() {
                       </div>
                     </div>
                     <div className="mt-3 flex items-center gap-2">
-                      <button onClick={() => handleEdit(order)} className="px-2 py-1 text-rose-600 bg-rose-50 rounded text-xs">Editar</button>
-                      <button onClick={() => handleDelete(order)} className="px-2 py-1 text-red-600 bg-red-50 rounded text-xs">Excluir</button>
+                      <button onClick={() => applyQuickStatus(order, 'Em costura')} title="Iniciar" className="w-8 h-8 flex items-center justify-center text-white bg-blue-600 rounded"><i className="ri-play-line"></i></button>
+                      <button onClick={() => applyQuickStatus(order, 'Pronto')} title="Finalizar" className="w-8 h-8 flex items-center justify-center text-white bg-green-600 rounded"><i className="ri-check-line"></i></button>
+                      <button onClick={() => applyQuickStatus(order, 'Retirado')} title="Retirado" className="w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded"><i className="ri-hand-heart-line"></i></button>
+
+                      <div className="flex-1" />
+
+                      <button onClick={() => handleEdit(order)} title="Editar" className="w-8 h-8 flex items-center justify-center text-rose-600 bg-rose-50 rounded"><i className="ri-edit-line"></i></button>
+                      <button onClick={() => handleDelete(order)} title="Excluir" className="w-8 h-8 flex items-center justify-center text-red-600 bg-red-50 rounded"><i className="ri-delete-bin-line"></i></button>
                       {order.phone && (
-                        <button onClick={() => sendMessageManual(order, order.status)} className="px-2 py-1 text-rose-600 bg-rose-50 rounded text-xs">WhatsApp</button>
+                        <button onClick={() => sendMessageManual(order, order.status)} title="WhatsApp" className="w-8 h-8 flex items-center justify-center text-amber-700 bg-amber-50 rounded"><i className="ri-whatsapp-line"></i></button>
                       )}
                     </div>
                   </div>
