@@ -45,6 +45,10 @@ export async function loadClients(): Promise<Cliente[]> {
           cpf: r.cpf_cnpj || r.cpf,
           endereco: r.endereco,
           observacoes: r.notas || r.observacoes || '',
+          // optional analytics fields if present in DB
+          totalGasto: (r.totalGasto !== undefined ? Number(r.totalGasto) : (r.total_gasto !== undefined ? Number(r.total_gasto) : undefined)),
+          servicosRealizados: (r.servicosRealizados !== undefined ? Number(r.servicosRealizados) : (r.servicos_realizados !== undefined ? Number(r.servicos_realizados) : undefined)),
+          pontos: (r.pontos !== undefined ? Number(r.pontos) : undefined),
         }));
       }
     }

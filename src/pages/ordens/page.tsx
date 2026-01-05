@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
-import { addPointsForOrder } from '../../lib/clients';
+import { addPointsForOrder, loadClients, upsertClient } from '../../lib/clients';
 import { formatMessageForStatus } from '../../lib/messages';
 import { supabase } from '../../lib/supabaseClient';
 
 export default function OrdensPage() {
+  // runtime flag to avoid repeated failing requests when the `fluxo_caixa` table is missing
+  const isFluxoAvailable = () => !((window as any).__fluxoCaixaMissing === true);
+  const markFluxoMissing = () => { (window as any).__fluxoCaixaMissing = true; console.info('fluxo_caixa table missing — falling back to localStorage'); };
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -31,7 +34,158 @@ export default function OrdensPage() {
   const [fidelizacaoMessage, setFidelizacaoMessage] = useState('');
   const [clientePhone, setClientePhone] = useState('');
   const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [quickClientName, setQuickClientName] = useState('');
+  const [quickClientPhone, setQuickClientPhone] = useState('');
   const [orderServices, setOrderServices] = useState<any[]>([]);
+  const [clientes, setClientes] = useState<any[]>([]);
+  const [newOrderClientId, setNewOrderClientId] = useState<string | null>(null);
+  const [newOrderObservacoes, setNewOrderObservacoes] = useState<string>('');
+  // Pieces and per-piece services
+  const [pieces, setPieces] = useState<any[]>([]);
+  const [pieceTipo, setPieceTipo] = useState('');
+  const [pieceCor, setPieceCor] = useState('');
+  const [pieceModelo, setPieceModelo] = useState('');
+  const [selectedPieceForService, setSelectedPieceForService] = useState<string | null>(null);
+  const [showPrintOptions, setShowPrintOptions] = useState(false);
+  const [showSavedSummary, setShowSavedSummary] = useState(false);
+  const [availablePieces, setAvailablePieces] = useState<any[]>([]);
+  const [showPecasModal, setShowPecasModal] = useState(false);
+  const [showCorModal, setShowCorModal] = useState(false);
+  const [showAddPecaModal, setShowAddPecaModal] = useState(false);
+    const [pecasSearch, setPecasSearch] = useState('');
+  const [newPecaCategory, setNewPecaCategory] = useState('');
+  const [newPecaIcon, setNewPecaIcon] = useState('');
+
+  // helper to parse currency-like inputs into a number (supports "R$ 1.234,56", "1234.56", integers)
+  function parseCurrency(raw: any) {
+    try {
+      if (raw === null || raw === undefined) return 0;
+      if (typeof raw === 'number') return raw;
+      let s = String(raw).trim();
+      s = s.replace(/R\$/g, '').replace(/\s/g, '');
+      if (s.indexOf('.') !== -1 && s.indexOf(',') !== -1) {
+        s = s.replace(/\./g, '').replace(/,/g, '.');
+      } else if (s.indexOf(',') !== -1 && s.indexOf('.') === -1) {
+        s = s.replace(/,/g, '.');
+      }
+      let n = parseFloat(s);
+      if (isNaN(n)) {
+        const digits = String(raw).replace(/\D/g, '');
+        if (!digits) return 0;
+        if (digits.length <= 2) return parseFloat(digits) / 100;
+        const reais = digits.slice(0, -2);
+        const cents = digits.slice(-2);
+        n = parseFloat(reais + '.' + cents);
+      }
+      return isNaN(n) ? 0 : n;
+    } catch (e) { return 0; }
+  }
+
+  const DEFAULT_PECAS = [
+    { nome: 'Camiseta', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
+    { nome: 'Camisa social', categoria: 'ROUPAS SUPERIORES', icone: '👔' },
+    { nome: 'Camisa polo', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
+    { nome: 'Blusa', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
+    { nome: 'Cropped', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
+    { nome: 'Regata', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
+    { nome: 'Bata', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
+    { nome: 'Top', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
+    { nome: 'Moletom', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
+    { nome: 'Casaco', categoria: 'ROUPAS SUPERIORES', icone: '🧥' },
+    { nome: 'Jaqueta', categoria: 'ROUPAS SUPERIORES', icone: '🧥' },
+    { nome: 'Blazer', categoria: 'ROUPAS SUPERIORES', icone: '🧥' },
+    { nome: 'Colete', categoria: 'ROUPAS SUPERIORES', icone: '🧥' },
+    { nome: 'Calça jeans', categoria: 'ROUPAS INFERIORES', icone: '👖' },
+    { nome: 'Calça social', categoria: 'ROUPAS INFERIORES', icone: '👖' },
+    { nome: 'Calça de alfaiataria', categoria: 'ROUPAS INFERIORES', icone: '👖' },
+    { nome: 'Calça legging', categoria: 'ROUPAS INFERIORES', icone: '👖' },
+    { nome: 'Calça moletom', categoria: 'ROUPAS INFERIORES', icone: '👖' },
+    { nome: 'Bermuda', categoria: 'ROUPAS INFERIORES', icone: '🩳' },
+    { nome: 'Short', categoria: 'ROUPAS INFERIORES', icone: '🩳' },
+    { nome: 'Saia curta', categoria: 'ROUPAS INFERIORES', icone: '👗' },
+    { nome: 'Saia média', categoria: 'ROUPAS INFERIORES', icone: '👗' },
+    { nome: 'Saia longa', categoria: 'ROUPAS INFERIORES', icone: '👗' },
+    { nome: 'Vestido curto', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
+    { nome: 'Vestido médio', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
+    { nome: 'Vestido longo', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
+    { nome: 'Vestido de festa', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
+    { nome: 'Vestido social', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
+    { nome: 'Macacão', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
+    { nome: 'Macaquinho', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
+    { nome: 'Jardineira', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
+    { nome: 'Casaco pesado', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
+    { nome: 'Sobretudo', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
+    { nome: 'Jaqueta jeans', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
+    { nome: 'Jaqueta de couro', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
+    { nome: 'Parka', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
+    { nome: 'Capa', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
+    { nome: 'Lingerie', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🩲' },
+    { nome: 'Sutiã', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🩲' },
+    { nome: 'Calcinha', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🩲' },
+    { nome: 'Cueca', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🩲' },
+    { nome: 'Pijama', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🛌' },
+    { nome: 'Camisola', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🛌' },
+    { nome: 'Baby doll', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🛌' },
+    { nome: 'Body infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
+    { nome: 'Conjunto infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
+    { nome: 'Camiseta infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
+    { nome: 'Calça infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
+    { nome: 'Vestido infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
+    { nome: 'Short infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
+    { nome: 'Uniforme escolar', categoria: 'ROUPAS ESPECIAIS', icone: '🎓' },
+    { nome: 'Uniforme profissional', categoria: 'ROUPAS ESPECIAIS', icone: '🎓' },
+    { nome: 'Roupa hospitalar', categoria: 'ROUPAS ESPECIAIS', icone: '🎓' },
+    { nome: 'Jaleco', categoria: 'ROUPAS ESPECIAIS', icone: '🎓' },
+    { nome: 'Avental', categoria: 'ROUPAS ESPECIAIS', icone: '🎓' },
+    { nome: 'Roupa esportiva', categoria: 'ROUPAS ESPECIAIS', icone: '🏃' },
+    { nome: 'Roupa de academia', categoria: 'ROUPAS ESPECIAIS', icone: '🏃' },
+    { nome: 'Barra de cortina', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🧵' },
+    { nome: 'Cortina', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🧵' },
+    { nome: 'Capa de almofada', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🧵' },
+    { nome: 'Fronha', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🧵' },
+    { nome: 'Lençol', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🛏️' },
+    { nome: 'Colcha', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🛏️' },
+    { nome: 'Toalha', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🧺' },
+    { nome: 'Guardanapo de tecido', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🍽️' }
+  ];
+
+  const COLORS = [
+    'Preto', 'Branco', 'Cinza', 'Azul', 'Vermelho', 'Verde', 'Amarelo', 'Rosa', 'Bege', 'Marrom', 'Vinho', 'Roxo', 'Laranja'
+  ];
+
+
+  const formatTicketText = (order: any) => {
+    const header = `================================\n  Cleusa Ateliê de Costura\n   AJUSTES E CONSERTOS EM GERAL\n================================\n`;
+    const date = order.dateIn || new Date().toLocaleDateString('pt-BR');
+    const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    let body = `OS Nº: ${order.numero || order.id}\nData: ${date}\nHora: ${time}\n\nCliente:\n${(order.client || '').toUpperCase()}\n--------------------------------\nITENS RECEBIDOS\n--------------------------------\n`;
+    (order.pieces || []).forEach((p:any, idx:number) => {
+      const icon = (() => {
+        try {
+          const found = availablePieces.find((x:any) => String(x.nome).toLowerCase() === String(p.tipo).toLowerCase());
+          return found?.icone || '🧵';
+        } catch (e) { return '🧵'; }
+      })();
+      const servicesList = (p.services||[]).map((s:any)=>s.name).join('; ');
+      const cor = p.cor || p.color || '—';
+      const modelo = p.modelo || p.model || '—';
+      body += `${idx+1}) ${icon} ${String(p.tipo)} (${cor} / ${modelo}) — ${servicesList || '—'}\n`;
+    });
+    body += `\n--------------------------------\nQtd. Total de Peças: ${(order.pieces||[]).length}\n\n--------------------------------\nVALOR TOTAL: ${order.value || 'R$ 0,00'}\n--------------------------------\n\nDeclaro que conferi as peças\ndescritas acima e autorizo\na execução dos serviços.\n\n--------------------------------\nAssinatura do Cliente:\n\n\n\n${(order.client||'').toUpperCase()}\n\n--------------------------------\nRetirada prevista:\n${order.dateOut || '__/__/____'}\n\nObrigado pela preferência!\n================================`;
+    return header + body;
+  };
+
+  const printTicket = (order: any) => {
+    try {
+      const txt = formatTicketText(order);
+      const w = window.open('', '_blank', 'width=600,height=800');
+      if (!w) return alert('Bloqueador de janelas impediu a impressão.');
+      w.document.write(`<pre style="font-family: monospace; white-space: pre-wrap;">${txt}</pre>`);
+      w.document.close();
+      w.focus();
+      setTimeout(() => { w.print(); }, 500);
+    } catch (e) { console.warn('print failed', e); }
+  };
   const [selectedServiceId, setSelectedServiceId] = useState('');
   const [serviceValue, setServiceValue] = useState('');
   const [serviceObservation, setServiceObservation] = useState('');
@@ -64,6 +218,28 @@ export default function OrdensPage() {
 
   const [orders, setOrders] = useState<any[]>([]);
 
+  // ref to hold latest orders for cross-window/event handlers and to avoid update loops
+  const ordersRef = useRef<any[]>([]);
+  useEffect(() => { ordersRef.current = orders; }, [orders]);
+
+  // helper: read cashFlowDetails from localStorage and return map by orderId/numero
+  const getCashMap = () => {
+    try {
+      const raw = localStorage.getItem('cashFlowDetails');
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) return {};
+      const map: Record<string, any> = {};
+      parsed.forEach((c: any) => {
+        try {
+          if (c.orderId) map[String(c.orderId)] = c;
+          if (c.orderid) map[String(c.orderid)] = c;
+          if (c.numero) map[String(c.numero)] = c;
+        } catch (e) {}
+      });
+      return map;
+    } catch (e) { return {}; }
+  };
+
   // Load orders from Supabase on mount; fallback to localStorage or empty list
   useEffect(() => {
     let mounted = true;
@@ -72,9 +248,103 @@ export default function OrdensPage() {
         if (supabase && typeof supabase.from === 'function') {
           const res = await supabase.from('ordens').select('*');
           if (!(res as any).error && Array.isArray((res as any).data)) {
-            const data = (res as any).data.map((o: any) => ({ ...o, status: o.status || 'Recebido' }));
-            if (mounted) setOrders(data);
-            return;
+            let raw = (res as any).data as any[];
+            // remover ordens que foram excluídas localmente (tombstones)
+            try {
+              const deletedRaw = localStorage.getItem('deletedOrders');
+              const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
+              if (Array.isArray(deletedList) && deletedList.length > 0) {
+                const deletedSet = new Set(deletedList.map((x:any) => String(x)));
+                raw = raw.filter((o:any) => !deletedSet.has(String(o.id)));
+              }
+            } catch (e) { /* ignore */ }
+            // attempt to enrich with client info if available
+            try {
+              const clientsList = await loadClients();
+              const clientsMap: Record<string, any> = {};
+              (clientsList || []).forEach(c => { if (c && c.id) clientsMap[String(c.id)] = c; });
+              const formatIso = (iso?: string|null) => {
+                try {
+                  if (!iso) return '';
+                  const d = new Date(iso);
+                  if (isNaN(d.getTime())) return '';
+                  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+                } catch (e) { return ''; }
+              };
+
+              let data = raw.map((o: any) => {
+                const client = o.cliente_id ? clientsMap[String(o.cliente_id)] : null;
+                // parse notas JSON if present (contains pieces/services)
+                let parsedNotas: any = {};
+                try { parsedNotas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : {}; } catch (e) { parsedNotas = {}; }
+                const pieces = parsedNotas.pieces || parsedNotas.pecas || [];
+                const services = parsedNotas.services || parsedNotas.servicos || [];
+                const valueFromNotas = (() => {
+                  if (parsedNotas && parsedNotas.services) {
+                    try { return parsedNotas.services.reduce((s:any, it:any) => s + (Number(it.value || it.price || 0) || 0), 0); } catch(e){return 0}
+                  }
+                  return Number(o.total || o.total_valor || 0) || 0;
+                })();
+                const paymentStatus = o.paymentStatus || o.pagamento || o.payment_status || null;
+                return {
+                  ...o,
+                  status: o.status || 'Recebido',
+                  client: client?.nome || o.client || '',
+                  phone: client?.telefone || o.phone || '',
+                  client_foto: client?.foto || o.client_foto || null,
+                  pieces,
+                  services,
+                  value: `R$ ${(valueFromNotas || 0).toFixed(2)}`,
+                  paymentStatus: paymentStatus || null,
+                  dateOut: o.data_entrega ? formatIso(o.data_entrega) : (o.dateOut || o.dataEntrega || ''),
+                };
+              });
+              // tentar mesclar status locais (ex: paymentStatus) salvos no localStorage
+              try {
+                const rawLocal = localStorage.getItem('orders');
+                if (rawLocal) {
+                  const parsedLocal = JSON.parse(rawLocal);
+                  if (Array.isArray(parsedLocal)) {
+                    const localMap: Record<string, any> = {};
+                    parsedLocal.forEach((lo: any) => { if (lo && lo.id) localMap[String(lo.id)] = lo; });
+                    data = data.map((o: any) => {
+                      const local = localMap[String(o.id)] || {};
+                      return {
+                        ...o,
+                        // prefer locally changed paymentStatus/status/sentMessages when present
+                        paymentStatus: (local.paymentStatus !== undefined ? local.paymentStatus : o.paymentStatus),
+                        status: (local.status !== undefined ? local.status : o.status),
+                        sentMessages: (local.sentMessages !== undefined ? local.sentMessages : o.sentMessages),
+                      };
+                    });
+                    // also merge financial entries (cashFlowDetails) so paymentStatus/value reflect financeiro
+                    try {
+                      const cashMap = getCashMap();
+                      data = data.map((o:any) => {
+                        const byId = cashMap[String(o.id)];
+                        const byNum = cashMap[String(o.numero)];
+                        const cash = byId || byNum;
+                        if (cash) {
+                          return {
+                            ...o,
+                            paymentStatus: (cash.status && String(cash.status).toLowerCase() === 'pago') ? 'Pago' : o.paymentStatus,
+                            value: o.value && String(o.value).startsWith('R$') ? o.value : `R$ ${Number(cash.value || cash.valor || 0).toFixed(2)}`
+                          };
+                        }
+                        return o;
+                      });
+                    } catch (ee) {}
+                  }
+                }
+              } catch (e) { }
+              if (mounted) setOrders(data);
+              return;
+            } catch (e) {
+              // fallback: set raw
+              const data = raw.map((o: any) => ({ ...o, status: o.status || 'Recebido' }));
+              if (mounted) setOrders(data);
+              return;
+            }
           } else {
             console.warn('Supabase fetch ordens error', (res as any).error);
           }
@@ -89,7 +359,16 @@ export default function OrdensPage() {
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && mounted) {
-            setOrders(parsed.map((o: any) => ({ ...o, status: o.status || 'Recebido' })));
+            // merge with cashFlowDetails so paymentStatus/value reflect financeiro
+              try {
+              const cashMap = getCashMap();
+              setOrders(parsed.map((o: any) => {
+                const cash = (cashMap[String(o.id)] || cashMap[String(o.numero)]) || {};
+                const amount = (cash && (cash.value || cash.valor)) ? Number(cash.value || cash.valor) : 0;
+                const displayValue = o.value && String(o.value).trim() !== '' ? String(o.value) : `R$ ${amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                return { ...o, status: o.status || 'Recebido', paymentStatus: (cash && cash.status && String(cash.status).toLowerCase() === 'pago') ? 'Pago' : (o.paymentStatus || null), value: displayValue };
+              }));
+            } catch (ee) { setOrders(parsed.map((o: any) => ({ ...o, status: o.status || 'Recebido' }))); }
             return;
           }
         }
@@ -103,13 +382,30 @@ export default function OrdensPage() {
     return () => { mounted = false; };
   }, []);
 
-  const [clientes] = useState([
-    { id: 1, nome: 'Maria Silva', telefone: '(11) 98765-4321', phone: '11987654321' },
-    { id: 2, nome: 'João Santos', telefone: '(11) 97654-3210', phone: '11976543210' },
-    { id: 3, nome: 'Ana Costa', telefone: '(11) 96543-2109', phone: '11965432109' },
-    { id: 4, nome: 'Pedro Oliveira', telefone: '(11) 95432-1098', phone: '11954321098' },
-    { id: 5, nome: 'Carla Mendes', telefone: '(11) 94321-0987', phone: '11943210987' },
-  ]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const c = await loadClients();
+        if (mounted) setClientes(c || []);
+        // carregar peças pré-cadastradas do banco
+        try {
+          if (supabase && typeof supabase.from === 'function') {
+            const r = await supabase.from('pecas').select('*').order('nome', { ascending: true });
+            if (!(r as any).error && Array.isArray((r as any).data) && (r as any).data.length > 0) {
+              if (mounted) setAvailablePieces((r as any).data || []);
+            } else {
+              // fallback para lista local quando tabela não existe ou está vazia
+              if (mounted) setAvailablePieces(DEFAULT_PECAS);
+            }
+          } else {
+            if (mounted) setAvailablePieces(DEFAULT_PECAS);
+          }
+        } catch (e) { console.warn('failed to load pecas', e); if (mounted) setAvailablePieces(DEFAULT_PECAS); }
+      } catch (e) { console.warn('load clients failed', e); }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const servicosDisponiveis = [
     { id: 1, name: 'Barra simples de calça', category: 'barras', price: 35 },
@@ -160,7 +456,13 @@ export default function OrdensPage() {
     setEditClient(order.client || '');
     setEditCategory(serviceCategories.find(c => c.name === order.category)?.id || '');
     setEditServiceName(order.service || '');
-    setEditValue((order.value || '').toString().replace(/^R\$\s?/, ''));
+    // normalize edit value to a plain number with 2 decimals (no thousands separators)
+    try {
+      const normalized = parseCurrency(order.value).toFixed(2);
+      setEditValue(normalized);
+    } catch (e) {
+      setEditValue((order.value || '').toString().replace(/^R\$\s?/, ''));
+    }
     setEditStatus(order.status || 'Recebido');
     try {
       setEditDateIn(order.dateIn.split('/').reverse().join('-'));
@@ -179,9 +481,59 @@ export default function OrdensPage() {
   };
 
   const confirmDelete = () => {
-    setOrders(orders.filter(o => o.id !== selectedOrder.id));
+    const idToDelete = selectedOrder?.id;
+    const numeroToDelete = selectedOrder?.numero || orderRef(selectedOrder) || null;
+    const next = orders.filter(o => o.id !== idToDelete);
+    setOrders(next);
+    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
     setShowDeleteModal(false);
     setSelectedOrder(null);
+    (async () => {
+      try {
+        if (supabase && typeof supabase.from === 'function' && idToDelete) {
+          const res = await supabase.from('ordens').delete().eq('id', idToDelete);
+          if ((res as any).error) throw (res as any).error;
+          // if deleted on server, also remove any tombstone locally
+          try {
+            const raw = localStorage.getItem('deletedOrders');
+            const list = raw ? JSON.parse(raw) : [];
+            const filtered = (list || []).filter((x:any) => String(x) !== String(idToDelete));
+            localStorage.setItem('deletedOrders', JSON.stringify(filtered));
+          } catch (e) {}
+          // tentar remover lançamentos financeiros relacionados (por orderId e por numero)
+          try {
+            // primeiro por orderid (PostgREST uses lowercased column names)
+            if (isFluxoAvailable() && supabase && typeof supabase.from === 'function') {
+              const del1 = await supabase.from('fluxo_caixa').delete().eq('orderid', idToDelete);
+              if (del1 && (del1 as any).error && (del1 as any).error.code === 'PGRST205') { markFluxoMissing(); }
+              // depois por numero (se tivermos um numero legível)
+              if (numeroToDelete) {
+                const del2 = await supabase.from('fluxo_caixa').delete().eq('numero', numeroToDelete);
+                if (del2 && (del2 as any).error && (del2 as any).error.code === 'PGRST205') { markFluxoMissing(); }
+              }
+            }
+          } catch (ee) { console.warn('failed to delete fluxo_caixa for order on server', ee); }
+          try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(e){}
+        }
+      } catch (e) {
+        // persist tombstone locally so it doesn't reappear when fetching from Supabase
+        try {
+          const raw = localStorage.getItem('deletedOrders');
+          const list = raw ? JSON.parse(raw) : [];
+          const set = new Set(Array.isArray(list) ? list.map((x:any)=>String(x)) : []);
+          set.add(String(idToDelete));
+          localStorage.setItem('deletedOrders', JSON.stringify(Array.from(set)));
+        } catch (ee) { }
+        // also remove local cash entries related to this OS
+        try {
+          const rawC = localStorage.getItem('cashFlowDetails');
+          const parsed = rawC ? JSON.parse(rawC) : [];
+          const filtered = (parsed || []).filter((c:any) => String(c.orderId || c.orderid) !== String(idToDelete) && String(c.numero || '') !== String(numeroToDelete || ''));
+          localStorage.setItem('cashFlowDetails', JSON.stringify(filtered));
+          window.dispatchEvent(new CustomEvent('financeUpdated'));
+        } catch (eee) {}
+      }
+    })();
   };
 
   const handleAddMaterials = (order: any) => {
@@ -200,11 +552,138 @@ export default function OrdensPage() {
   };
 
   const confirmAdvancePayment = () => {
-    setOrders(orders.map(o => 
-      o.id === selectedOrder.id 
-        ? { ...o, paymentStatus: 'Pago' }
-        : o
-    ));
+    const next = orders.map(o => o.id === selectedOrder.id ? { ...o, paymentStatus: 'Pago' } : o);
+    setOrders(next);
+    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+    (async () => {
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          await supabase.from('ordens').update({ paymentStatus: 'Pago' }).eq('id', selectedOrder.id);
+        }
+      } catch (e) { console.warn('Failed to persist advance payment to Supabase', e); }
+
+      // atualizar cartão do cliente (local + supabase) ao marcar como pago
+      try {
+        const amount = parseCurrency(selectedOrder.value ?? selectedOrder.valor ?? 0);
+        const phoneNormalized = (selectedOrder.phone || '').toString().replace(/\D/g,'');
+        const clientName = selectedOrder.client || '';
+        // try supabase update
+        if (supabase && typeof supabase.from === 'function') {
+          let clientRes: any = null;
+          if (phoneNormalized) {
+            const r = await supabase.from('clientes').select('*').ilike('telefone', `%${phoneNormalized}%`).limit(1).maybeSingle();
+            if (!(r as any).error && (r as any).data) clientRes = (r as any).data;
+          }
+          if (!clientRes && clientName) {
+            const r2 = await supabase.from('clientes').select('*').ilike('nome', clientName).limit(1).maybeSingle();
+            if (!(r2 as any).error && (r2 as any).data) clientRes = (r2 as any).data;
+          }
+          // update client analytics locally only (avoid remote update to prevent 400 when DB schema lacks these columns)
+          if (clientRes) {
+            try {
+              const rawClients = localStorage.getItem('clientes');
+              const clients = rawClients ? JSON.parse(rawClients) : [];
+              const idx = clients.findIndex((c:any) => String(c.id) === String(clientRes.id));
+              const amt = amount || 0;
+              if (idx >= 0) {
+                clients[idx].totalGasto = (clients[idx].totalGasto || 0) + amt;
+                clients[idx].servicosRealizados = (clients[idx].servicosRealizados || 0) + 1;
+                localStorage.setItem('clientes', JSON.stringify(clients));
+                window.dispatchEvent(new CustomEvent('clientsUpdated'));
+              }
+            } catch (ee) { /* ignore local update errors */ }
+          }
+        }
+      } catch (e) {
+        try {
+          const raw = localStorage.getItem('clientes');
+          const clients = raw ? JSON.parse(raw) : [];
+          const match = clients.find((c:any) => (c.telefone && selectedOrder.phone && c.telefone.replace(/\D/g,'') === String(selectedOrder.phone).replace(/\D/g,'')) || (c.nome && selectedOrder.client && c.nome === selectedOrder.client));
+          const amount = parseCurrency(selectedOrder.value ?? selectedOrder.valor ?? 0);
+          if (match) {
+            match.totalGasto = (match.totalGasto || 0) + amount;
+            match.servicosRealizados = (match.servicosRealizados || 0) + 1;
+            const earned = Math.floor(amount / 100);
+            match.pontos = (match.pontos || 0) + earned;
+            localStorage.setItem('clientes', JSON.stringify(clients));
+            window.dispatchEvent(new CustomEvent('clientsUpdated'));
+          }
+        } catch (ee) { console.warn('failed to update local client card', ee); }
+      }
+
+    })();
+
+    // garantir que o fluxo de caixa reflita o pagamento (server/local)
+    (async () => {
+      try {
+        const order = selectedOrder;
+        const pieces = order.pieces || order.pecas || [];
+        const numero = order.numero || order.id || '';
+        const orderIdVal = order.id || null;
+        const cashEntry: any = {
+          date: new Date().toLocaleDateString('pt-BR'),
+          client: order.client || '',
+          service: order.service || '',
+          value: parseCurrency(order.value ?? order.valor ?? 0),
+          status: 'Pago',
+          orderId: orderIdVal,
+          numero,
+          pecas: pieces,
+        };
+
+        if (isFluxoAvailable() && supabase && typeof supabase.from === 'function') {
+          try {
+            // tentar localizar por orderid (lowercase) primeiro
+            const q = await supabase.from('fluxo_caixa').select('*').eq('orderid', orderIdVal).limit(1).maybeSingle();
+            if ((q as any).data) {
+              const serverUpdate = { ...cashEntry } as any;
+              if (serverUpdate.orderId) serverUpdate.orderid = serverUpdate.orderId;
+              delete serverUpdate.orderId; delete serverUpdate.id;
+              await supabase.from('fluxo_caixa').update(serverUpdate).eq('id', (q as any).data.id);
+              window.dispatchEvent(new CustomEvent('financeUpdated'));
+            } else if (numero) {
+              const q2 = await supabase.from('fluxo_caixa').select('*').eq('numero', numero).limit(1).maybeSingle();
+              if ((q2 as any).data) {
+                const serverUpdate2 = { ...cashEntry } as any;
+                if (serverUpdate2.orderId) serverUpdate2.orderid = serverUpdate2.orderId;
+                delete serverUpdate2.orderId; delete serverUpdate2.id;
+                await supabase.from('fluxo_caixa').update(serverUpdate2).eq('id', (q2 as any).data.id);
+                window.dispatchEvent(new CustomEvent('financeUpdated'));
+              } else {
+                const serverEntry = { ...cashEntry } as any;
+                if (orderIdVal) serverEntry.orderid = orderIdVal;
+                delete serverEntry.orderId;
+                const rInsert = await supabase.from('fluxo_caixa').insert(serverEntry);
+                if (!(rInsert as any).error) {
+                  try {
+                    const respRow = (rInsert as any).data && (rInsert as any).data[0] ? (rInsert as any).data[0] : serverEntry;
+                    const raw2 = localStorage.getItem('cashFlowDetails');
+                    const parsed2 = raw2 ? JSON.parse(raw2) : [];
+                    parsed2.unshift(respRow);
+                    localStorage.setItem('cashFlowDetails', JSON.stringify(parsed2));
+                  } catch (ee) { /* ignore local save errors */ }
+                }
+                window.dispatchEvent(new CustomEvent('financeUpdated'));
+              }
+            }
+          } catch (e) { console.warn('failed to sync fluxo_caixa on advance payment', e); }
+        } else {
+          try {
+            const raw = localStorage.getItem('cashFlowDetails');
+            const parsed = raw ? JSON.parse(raw) : [];
+            const idx = (parsed || []).findIndex((c:any) => String(c.orderId || c.orderid) === String(orderIdVal) || (numero && String(c.numero) === String(numero)));
+            if (idx >= 0) {
+              parsed[idx] = { ...parsed[idx], ...cashEntry, id: parsed[idx].id || (`cash-${Date.now()}`) };
+            } else {
+              parsed.unshift({ ...cashEntry, id: `cash-${Date.now()}` });
+            }
+            localStorage.setItem('cashFlowDetails', JSON.stringify(parsed));
+            window.dispatchEvent(new CustomEvent('financeUpdated'));
+          } catch (ee) { console.warn('failed to save cash entry locally on advance payment', ee); }
+        }
+      } catch (e) { console.warn('ensure fluxo_caixa payment sync failed', e); }
+    })();
+
     setShowAdvancePaymentModal(false);
     setSelectedOrder(null);
   };
@@ -215,7 +694,16 @@ export default function OrdensPage() {
     const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     
     const updatedOrder = { ...selectedOrder, status: 'Pronto', deliveryDate: dateStr, deliveryTime: timeStr };
-    setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
+    const next = orders.map(o => o.id === selectedOrder.id ? updatedOrder : o);
+    setOrders(next);
+    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+    (async () => {
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          await supabase.from('ordens').update({ status: updatedOrder.status, deliveryDate: updatedOrder.deliveryDate, deliveryTime: updatedOrder.deliveryTime }).eq('id', updatedOrder.id);
+        }
+      } catch (e) { console.warn('Failed to persist delivery to Supabase', e); }
+    })();
     
     // Mensagem de fidelização - Peça pronta para retirada
     // Se já foi pago, não inclui dados do PIX
@@ -315,16 +803,24 @@ export default function OrdensPage() {
     const service = servicosDisponiveisState.find(s => s.id === parseInt(selectedServiceId));
     if (!service) return;
 
+    if (!selectedPieceForService) {
+      alert('Selecione a peça à qual este serviço será vinculado');
+      return;
+    }
+
     const newService = {
       id: Date.now(),
       serviceId: service.id,
       name: service.name,
+      pieceId: selectedPieceForService,
       category: serviceCategories.find(c => c.id === service.category)?.name || service.category,
       value: parseFloat(serviceValue),
       observation: serviceObservation
     };
 
     setOrderServices([...orderServices, newService]);
+    // attach to pieces list for summary convenience
+    setPieces(pieces.map(p => p.id === selectedPieceForService ? { ...p, services: [...(p.services||[]), newService] } : p));
     
     // Limpar campos
     setSelectedServiceId('');
@@ -376,9 +872,15 @@ export default function OrdensPage() {
     return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
   };
 
-  const createNewOrder = () => {
-    if (orderServices.length === 0) {
-      alert('Adicione pelo menos um serviço à ordem');
+  const createNewOrder = async () => {
+    // Validations: must have pieces and at least one service linked
+    if (pieces.length === 0) {
+      alert('Adicione pelo menos uma peça antes de salvar a OS');
+      return;
+    }
+    const piecesWithoutServices = pieces.filter(p => !(p.services && p.services.length > 0));
+    if (piecesWithoutServices.length > 0) {
+      alert('Cada peça deve ter pelo menos um serviço vinculado. Verifique as peças sem serviços.');
       return;
     }
 
@@ -397,12 +899,62 @@ export default function OrdensPage() {
       } catch (e) { return '' }
     };
 
+    const clientObj = clientes.find((c: any) => String(c.id) === String(newOrderClientId));
+    const clientName = clientObj?.nome || 'Novo Cliente';
+    const clientPhone = clientObj?.telefone || clientObj?.phone || '11999999999';
+    const clientFoto = clientObj?.foto || null;
+
+    // helper: format 6-digit number
+    const formatOrderNumber = (n: number|string) => String(n).toString().padStart(6, '0');
+    // try to get next number from server later; fallback to local counter
+    const getLocalNextNumber = () => {
+      try {
+        const raw = localStorage.getItem('os_counter');
+        const cur = raw ? Number(raw) : 0;
+        const next = cur + 1;
+        localStorage.setItem('os_counter', String(next));
+        return next;
+      } catch (e) { return Date.now() % 1000000; }
+    };
+
+    // try persist to Supabase (store pieces/services denormalized in notas as JSON)
+    let savedId: string | undefined = undefined;
+    let savedNumero: number | undefined = undefined;
+    try {
+      if (supabase && typeof supabase.from === 'function') {
+        const payload: any = {
+          cliente_id: clientObj?.id || null,
+          status: newOrderStatus || 'Recebido',
+          total: totalValue,
+          data_entrega: newOrderDate ? new Date(newOrderDate).toISOString() : null,
+          notas: JSON.stringify({ obs: newOrderObservacoes || null, pieces, services: orderServices })
+        };
+        const res = await supabase.from('ordens').insert(payload).select().limit(1).single();
+        if (!(res as any).error && (res as any).data) {
+          savedId = (res as any).data.id;
+          // if backend exposes a numeric sequence 'numero', capture it
+          if ((res as any).data.numero) savedNumero = Number((res as any).data.numero);
+        } else {
+          console.warn('Supabase insert ordens error', (res as any).error);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to persist new order to Supabase', e);
+    }
+
+    // determine display number
+    const localNum = getLocalNextNumber();
+    const displayNumber = savedNumero ? formatOrderNumber(savedNumero) : formatOrderNumber(localNum);
+
     const newOrder = {
-      id: `OS-${1242 + orders.length}`,
-      client: 'Novo Cliente',
-      phone: '11999999999',
+      id: savedId || `OS-${1242 + orders.length}`,
+      numero: displayNumber,
+      client: clientName,
+      phone: clientPhone,
+      client_foto: clientFoto,
       category: orderServices[0].category,
       service: servicesText,
+      pieces,
       value: `R$ ${totalValue.toFixed(2)}`,
       status: newOrderStatus || 'Recebido',
       paymentStatus: newOrderPaymentStatus || null,
@@ -411,22 +963,130 @@ export default function OrdensPage() {
       priority: 'normal'
     };
 
-    setOrders([...orders, newOrder]);
-    
+    const newOrdersList = [...orders, newOrder];
+    setOrders(newOrdersList);
+    try { localStorage.setItem('orders', JSON.stringify(newOrdersList)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+
+    // --- Adicionar entrada no histórico financeiro (fluxo_caixa) ---
+    const cashEntry: any = {
+      id: savedId || `cash-${Date.now()}`,
+      date: new Date().toLocaleDateString('pt-BR'),
+      client: clientName,
+      service: servicesText,
+      value: totalValue,
+      status: newOrderPaymentStatus === 'Pago' ? 'Pago' : 'Pendente',
+      orderId: savedId || (newOrder && newOrder.id),
+      numero: displayNumber,
+      pecas: pieces,
+    };
+
+    const isUuid = (s: any) => {
+      try { return typeof s === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s); } catch (e) { return false; }
+    };
+
+    try {
+      if (isFluxoAvailable() && supabase && typeof supabase.from === 'function') {
+        // don't send invalid UUIDs to the server — let DB generate defaults
+        const serverCashEntry = { ...cashEntry } as any;
+        if (!isUuid(serverCashEntry.id)) delete serverCashEntry.id;
+        if (isUuid(serverCashEntry.orderId)) { serverCashEntry.orderid = serverCashEntry.orderId; }
+        // always remove camelCase key to avoid PostgREST schema mismatch
+        delete serverCashEntry.orderId;
+        try {
+          console.info('fluxo_caixa: inserting to server', serverCashEntry);
+        } catch (e) {}
+        const r = await supabase.from('fluxo_caixa').insert(serverCashEntry);
+        try { console.info('fluxo_caixa: server response', r); } catch (e) {}
+        if ((r as any).error) {
+          // if table missing, mark and fallback locally
+          try { console.error('fluxo_caixa server error detail', (r as any).error); } catch(e) {}
+          try { alert('Erro ao salvar no servidor: ' + JSON.stringify((r as any).error)); } catch (ee) {}
+          if ((r as any).error && (r as any).error.code === 'PGRST205') { markFluxoMissing(); }
+          throw (r as any).error;
+        }
+        // persist locally for immediate UI reflection, then notify financeiro
+        try {
+          if (!(r as any).error) {
+            try {
+              const resp = (r as any).data && (r as any).data[0] ? (r as any).data[0] : serverCashEntry;
+              const rawLocal = localStorage.getItem('cashFlowDetails');
+              const parsedLocal = rawLocal ? JSON.parse(rawLocal) : [];
+              parsedLocal.unshift(resp);
+              localStorage.setItem('cashFlowDetails', JSON.stringify(parsedLocal));
+            } catch (ee) {}
+          }
+        } catch (eee) {}
+        try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch (e) {}
+      } else {
+        throw new Error('no-supabase-or-fluxo-missing');
+      }
+    } catch (e) {
+      try {
+        const raw = localStorage.getItem('cashFlowDetails');
+        const parsed = raw ? JSON.parse(raw) : [];
+        const existsIdx = (parsed || []).findIndex((c:any) => String(c.orderId || c.orderid) === String(cashEntry.orderId || cashEntry.orderid) || String(c.numero || '') === String(displayNumber));
+        if (existsIdx >= 0) {
+          parsed[existsIdx] = { ...parsed[existsIdx], ...cashEntry, id: parsed[existsIdx].id || (`cash-${Date.now()}`) };
+        } else {
+          parsed.unshift(cashEntry);
+        }
+        localStorage.setItem('cashFlowDetails', JSON.stringify(parsed));
+        try { console.info('fluxo_caixa: saved locally, total entries', (parsed || []).length); } catch (ee) {}
+        window.dispatchEvent(new CustomEvent('financeUpdated'));
+      } catch (ee) { console.warn('failed to save cash entry locally', ee); }
+    }
+
+    // --- Atualizar cartão do cliente (localStorage) ---
+    try {
+      const clientsRaw = localStorage.getItem('clientes');
+      const clients = clientsRaw ? JSON.parse(clientsRaw) : [];
+      const idx = clients.findIndex((c:any) => String(c.id) === String(clientObj?.id));
+      const amount = Number(totalValue) || 0;
+      const earned = Math.floor(amount / 100);
+      if (idx >= 0) {
+        clients[idx].totalGasto = (clients[idx].totalGasto || 0) + amount;
+        clients[idx].servicosRealizados = (clients[idx].servicosRealizados || 0) + 1;
+        clients[idx].pontos = (clients[idx].pontos || 0) + earned;
+        localStorage.setItem('clientes', JSON.stringify(clients));
+        window.dispatchEvent(new CustomEvent('clientsUpdated'));
+      }
+      // skip remote update to avoid 400 when DB schema doesn't include analytic columns
+    } catch (e) { console.warn('failed to update client card locally', e); }
+
+    // Mostrar resumo salvo
+    setSelectedOrder(newOrder);
+    setShowSavedSummary(true);
+
+      // não enviar WhatsApp automaticamente — mostrar mensagem de finalização para opção do usuário
+
     // Mensagem de fidelização - Serviço recebido
     setFidelizacaoMessage(`Olá ${newOrder.client}! 😊\n\n*Cleusa Ateliê de Costura*\n\nSua ordem foi registrada com sucesso!\n\nServiço: ${servicesText}\nPrazo de entrega: ${newOrder.dateOut}\nValor: R$ ${totalValue.toFixed(2)}\n\nObrigada pela confiança! ✨`);
     setClientePhone(newOrder.phone);
+    // abrir apenas a mensagem de fidelização — a opção de impressão será exibida
+    // quando o usuário fechar a mensagem (via copiar/enviar/fechar)
     setShowFidelizacaoModal(true);
-    
+
     setShowModal(false);
     setOrderServices([]);
+    setNewOrderClientId(null);
+    setNewOrderObservacoes('');
+    setPieces([]);
   };
 
   const markAsDelivered = (order: any) => {
     // Se já foi pago antecipadamente, marca direto como entregue
     if (order.paymentStatus === 'Pago') {
       const updatedOrder = { ...order, status: 'Retirado' };
-      setOrders(orders.map(o => o.id === order.id ? updatedOrder : o));
+      const next = orders.map(o => o.id === order.id ? updatedOrder : o);
+      setOrders(next);
+      try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+      (async () => {
+        try {
+          if (supabase && typeof supabase.from === 'function') {
+            await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id);
+          }
+        } catch (e) { console.warn('Failed to persist order status to Supabase', e); }
+      })();
       // Mensagem de agradecimento sem cobrança
       setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n✅ *Pagamento já realizado!*\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`);
       setClientePhone(order.phone);
@@ -446,7 +1106,16 @@ export default function OrdensPage() {
 
   const confirmDeliveryWithPayment = (isPaid: boolean) => {
     const updatedOrder = { ...selectedOrder, status: 'Retirado', paymentStatus: isPaid ? 'Pago' : 'Pendente' };
-    setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
+    const next = orders.map(o => o.id === selectedOrder.id ? updatedOrder : o);
+    setOrders(next);
+    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+    (async () => {
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          await supabase.from('ordens').update({ status: updatedOrder.status, paymentStatus: updatedOrder.paymentStatus }).eq('id', updatedOrder.id);
+        }
+      } catch (e) { console.warn('Failed to persist delivery/payment to Supabase', e); }
+    })();
 
     // Mensagem de fidelização - Agradecimento pela retirada
     const paymentText = isPaid 
@@ -484,27 +1153,34 @@ export default function OrdensPage() {
     window.open(`https://wa.me/55${phone}?text=${message}`, '_blank');
     try { if (selectedOrder) markMessageSent(selectedOrder.id, selectedOrder.status); } catch (e) {}
     setShowFidelizacaoModal(false);
+    setShowPrintOptions(true);
+  };
+
+  const copyFidelizacao = () => {
+    try { navigator.clipboard.writeText(fidelizacaoMessage); alert('Mensagem copiada!'); } catch (e) { alert('Não foi possível copiar'); }
+    setShowFidelizacaoModal(false);
+    setShowPrintOptions(true);
   };
 
   const composeStatusMessage = (order: any, newStatus: string) => {
     if (!order) return '';
     switch (newStatus) {
       case 'Recebido':
-        return `Olá ${order.client}! 😊\n\nSua ordem ${order.id} foi *recebida* e está sendo processada.`;
+        return `Olá ${order.client}! 😊\n\nSua ordem ${orderRef(order)} foi *recebida* e está sendo processada.`;
       case 'Em costura':
-        return `Olá ${order.client}! 👗\n\nIniciamos a costura da sua peça (OS ${order.id}). Em breve atualizamos o andamento.`;
+        return `Olá ${order.client}! 👗\n\nIniciamos a costura da sua peça (OS ${orderRef(order)}). Em breve atualizamos o andamento.`;
       case 'Aguardando prova':
-        return `Olá ${order.client}! 👀\n\nSua peça (OS ${order.id}) está pronta para prova. Aguardo sua visita.`;
+        return `Olá ${order.client}! 👀\n\nSua peça (OS ${orderRef(order)}) está pronta para prova. Aguardo sua visita.`;
       case 'Ajuste final':
-        return `Olá ${order.client}! ✂️\n\nEstamos nos ajustes finais da sua peça (OS ${order.id}). Em breve avisamos quando estiver pronta.`;
+        return `Olá ${order.client}! ✂️\n\nEstamos nos ajustes finais da sua peça (OS ${orderRef(order)}). Em breve avisamos quando estiver pronta.`;
       case 'Pronto':
-        return `Olá ${order.client}! 🎉\n\nSua peça (OS ${order.id}) está *pronta para retirada*. Obrigada pela preferência!`;
+        return `Olá ${order.client}! 🎉\n\nSua peça (OS ${orderRef(order)}) está *pronta para retirada*. Obrigada pela preferência!`;
       case 'Retirado':
-        return `Olá ${order.client}! 💝\n\nObrigado por retirar sua peça (OS ${order.id}). Esperamos que tenha gostado!`;
+        return `Olá ${order.client}! 💝\n\nObrigado por retirar sua peça (OS ${orderRef(order)}). Esperamos que tenha gostado!`;
       case 'Cancelado':
-        return `Olá ${order.client}, informamos que a OS ${order.id} foi cancelada. Se houver dúvidas, entre em contato.`;
+        return `Olá ${order.client}, informamos que a OS ${orderRef(order)} foi cancelada. Se houver dúvidas, entre em contato.`;
       default:
-        return `Olá ${order.client}, sua ordem ${order.id} está com o status: ${newStatus}.`;
+        return `Olá ${order.client}, sua ordem ${orderRef(order)} está com o status: ${newStatus}.`;
     }
   };
 
@@ -547,10 +1223,13 @@ export default function OrdensPage() {
 
   const applyQuickStatus = (order: any, newStatus: string) => {
     // If marking as Retirado, handle payment confirmation and marking
-    if (newStatus === 'Retirado') {
+      if (newStatus === 'Retirado') {
       if (order.paymentStatus === 'Pago') {
         const updatedOrder = { ...order, status: 'Retirado' };
-        setOrders(orders.map(o => o.id === order.id ? updatedOrder : o));
+        const next = orders.map(o => o.id === order.id ? updatedOrder : o);
+        setOrders(next);
+        try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+        (async () => { try { if (supabase && typeof supabase.from === 'function') await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id); } catch(e){console.warn('Failed to persist quick status to Supabase', e);} })();
         // mensagem de agradecimento e pontos
         setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n✅ *Pagamento já realizado!*\n\nEsperamos que tenha ficado perfeita!`);
         setClientePhone(order.phone);
@@ -572,7 +1251,16 @@ export default function OrdensPage() {
     }
 
     const updatedOrder = { ...order, status: newStatus };
-    setOrders(orders.map(o => o.id === order.id ? updatedOrder : o));
+    const next = orders.map(o => o.id === order.id ? updatedOrder : o);
+    setOrders(next);
+    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+    (async () => {
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id);
+        }
+      } catch (e) { console.warn('Failed to persist order status to Supabase', e); }
+    })();
     setSelectedOrder(updatedOrder);
     setStatusChangeMessage(composeStatusMessage(updatedOrder, newStatus));
     setShowStatusMessageOptions(true);
@@ -586,18 +1274,180 @@ export default function OrdensPage() {
     setOrders(next);
     try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
 
-    // try to persist in Supabase if configured
+    // persist order payment status to Supabase (best-effort)
+    // Do not update `ordens` table with `paymentStatus` (column may not exist).
+    // Payment is persisted in `fluxo_caixa` above; financeiro merges that back into orders.
+
+    // --- sincronizar fluxo_caixa ---
     try {
-      if (supabase && typeof supabase.from === 'function') {
-        const tableName = 'ordens';
-        const payload: any = { paymentStatus: newStatus };
-        const res = await supabase.from(tableName).update(payload).eq('id', order.id);
-        if ((res as any).error) {
-          console.warn('Supabase update paymentStatus error', (res as any).error);
+      const orderId = order.id;
+      const numero = order.numero || orderRef(order) || '';
+      const pieces = order.pieces || order.pecas || [];
+      const amount = parseCurrency(order.value ?? order.valor ?? 0);
+
+      if (newStatus === 'Pago') {
+        // try to update existing fluxo_caixa entry for this order, else insert
+        const cashEntry: any = {
+          date: new Date().toLocaleDateString('pt-BR'),
+          client: order.client || '',
+          service: order.service || '',
+          value: amount,
+          status: 'Pago',
+          orderId,
+          numero,
+          pecas: pieces
+        };
+        try {
+          if (isFluxoAvailable() && supabase && typeof supabase.from === 'function') {
+            // try by orderId
+            let found: any = null;
+            try {
+              const q = await supabase.from('fluxo_caixa').select('*').eq('orderid', orderId).limit(1).maybeSingle();
+              if ((q as any).error) {
+                if ((q as any).error.code === 'PGRST205') { markFluxoMissing(); }
+              } else if ((q as any).data) {
+                found = (q as any).data;
+              }
+            } catch (e) {}
+            // if not found, try by numero
+            if (!found && numero) {
+              try {
+                const q2 = await supabase.from('fluxo_caixa').select('*').eq('numero', numero).limit(1).maybeSingle();
+                if ((q2 as any).error) {
+                  if ((q2 as any).error.code === 'PGRST205') { markFluxoMissing(); }
+                } else if ((q2 as any).data) {
+                  found = (q2 as any).data;
+                }
+              } catch (e) {}
+            }
+
+            if (found && found.id) {
+              const serverUpdate: any = { ...cashEntry };
+              // normalize keys for PostgREST
+              if (serverUpdate.orderId) { serverUpdate.orderid = serverUpdate.orderId; }
+              delete serverUpdate.orderId;
+              delete serverUpdate.id;
+              const r = await supabase.from('fluxo_caixa').update(serverUpdate).eq('id', found.id);
+              if ((r as any).error) {
+                if ((r as any).error.code === 'PGRST205') { markFluxoMissing(); }
+                throw (r as any).error;
+              }
+            } else {
+              const serverInsert: any = { ...cashEntry };
+              if (serverInsert.orderId) { serverInsert.orderid = serverInsert.orderId; }
+              delete serverInsert.orderId;
+              delete serverInsert.id;
+              const r = await supabase.from('fluxo_caixa').insert(serverInsert);
+              if ((r as any).error) {
+                if ((r as any).error.code === 'PGRST205') { markFluxoMissing(); }
+                throw (r as any).error;
+              }
+              try {
+                const resp = (r as any).data && (r as any).data[0] ? (r as any).data[0] : serverInsert;
+                const rawLocal2 = localStorage.getItem('cashFlowDetails');
+                const parsedLocal2 = rawLocal2 ? JSON.parse(rawLocal2) : [];
+                parsedLocal2.unshift(resp);
+                localStorage.setItem('cashFlowDetails', JSON.stringify(parsedLocal2));
+              } catch (ee) {}
+            }
+            window.dispatchEvent(new CustomEvent('financeUpdated'));
+          } else {
+            throw new Error('no-supabase-or-fluxo-missing');
+          }
+        } catch (e) {
+          // local fallback: update existing local entry or prepend
+          try {
+            const raw = localStorage.getItem('cashFlowDetails');
+            const parsed = raw ? JSON.parse(raw) : [];
+            const idx = (parsed || []).findIndex((c:any) => String(c.orderId || c.orderid) === String(orderId) || (numero && String(c.numero) === String(numero)));
+            if (idx >= 0) {
+              parsed[idx] = { ...parsed[idx], ...cashEntry, id: parsed[idx].id || (`cash-${Date.now()}`) };
+            } else {
+              parsed.unshift({ ...cashEntry, id: `cash-${Date.now()}` });
+            }
+            localStorage.setItem('cashFlowDetails', JSON.stringify(parsed));
+            window.dispatchEvent(new CustomEvent('financeUpdated'));
+          } catch (ee) { console.warn('failed to save cash entry locally', ee); }
+        }
+      } else {
+        // remove entradas relacionadas no fluxo_caixa (server then local)
+        try {
+          if (isFluxoAvailable() && supabase && typeof supabase.from === 'function') {
+            const del1 = await supabase.from('fluxo_caixa').delete().eq('orderid', orderId);
+            if (del1 && (del1 as any).error && (del1 as any).error.code === 'PGRST205') { markFluxoMissing(); throw (del1 as any).error; }
+            if (numero) {
+              const del2 = await supabase.from('fluxo_caixa').delete().eq('numero', numero);
+              if (del2 && (del2 as any).error && (del2 as any).error.code === 'PGRST205') { markFluxoMissing(); throw (del2 as any).error; }
+            }
+            window.dispatchEvent(new CustomEvent('financeUpdated'));
+          } else {
+            throw new Error('no-supabase-or-fluxo-missing');
+          }
+        } catch (e) {
+          try {
+            const raw = localStorage.getItem('cashFlowDetails');
+            const parsed = raw ? JSON.parse(raw) : [];
+            const filtered = (parsed || []).filter((c:any) => String(c.orderId || c.orderid) !== String(orderId) && !(numero && String(c.numero || '') === String(numero)));
+            localStorage.setItem('cashFlowDetails', JSON.stringify(filtered));
+            window.dispatchEvent(new CustomEvent('financeUpdated'));
+          } catch (ee) { console.warn('failed to remove local cash entries on unpaid', ee); }
         }
       }
     } catch (e) {
-      console.warn('Failed to persist payment status to Supabase', e);
+      console.warn('fluxo_caixa sync error', e);
+    }
+
+    // se marcado como pago, atualizar cartão do cliente (local + supabase)
+    if (newStatus === 'Pago') {
+      (async () => {
+        try {
+          const amount = parseCurrency(order.value ?? order.valor ?? 0);
+          const phoneNormalized = (order.phone || '').toString().replace(/\D/g,'');
+          const clientName = order.client || '';
+          if (supabase && typeof supabase.from === 'function') {
+            let clientRes: any = null;
+            if (phoneNormalized) {
+              const r = await supabase.from('clientes').select('*').ilike('telefone', `%${phoneNormalized}%`).limit(1).maybeSingle();
+              if (!(r as any).error && (r as any).data) clientRes = (r as any).data;
+            }
+            if (!clientRes && clientName) {
+              const r2 = await supabase.from('clientes').select('*').ilike('nome', clientName).limit(1).maybeSingle();
+              if (!(r2 as any).error && (r2 as any).data) clientRes = (r2 as any).data;
+            }
+            if (clientRes) {
+              try {
+                const rawClients = localStorage.getItem('clientes');
+                const clients = rawClients ? JSON.parse(rawClients) : [];
+                const idx = clients.findIndex((c:any) => String(c.id) === String(clientRes.id));
+                const amt = amount || 0;
+                if (idx >= 0) {
+                  clients[idx].totalGasto = (clients[idx].totalGasto || 0) + amt;
+                  clients[idx].servicosRealizados = (clients[idx].servicosRealizados || 0) + 1;
+                  localStorage.setItem('clientes', JSON.stringify(clients));
+                  window.dispatchEvent(new CustomEvent('clientsUpdated'));
+                }
+              } catch (ee) { /* ignore */ }
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to update client card on payment via supabase', e);
+        }
+        try {
+          const raw = localStorage.getItem('clientes');
+          const clients = raw ? JSON.parse(raw) : [];
+          const match = clients.find((c:any) => (c.telefone && order.phone && c.telefone.replace(/\D/g,'') === String(order.phone).replace(/\D/g,'')) || (c.nome && order.client && c.nome === order.client));
+          const amount = parseCurrency(order.value ?? order.valor ?? 0);
+          if (match) {
+            match.totalGasto = (match.totalGasto || 0) + amount;
+            match.servicosRealizados = (match.servicosRealizados || 0) + 1;
+            const earned = Math.floor(amount / 100);
+            match.pontos = (match.pontos || 0) + earned;
+            localStorage.setItem('clientes', JSON.stringify(clients));
+            window.dispatchEvent(new CustomEvent('clientsUpdated'));
+          }
+        } catch (e) { console.warn('failed to update local client card on payment', e); }
+      })();
     }
   };
 
@@ -616,13 +1466,27 @@ export default function OrdensPage() {
     return 2; // Retirado, Cancelado or others
   };
 
-  const parseDate = (d: string) => {
+  const parseDate = (d?: string | null) => {
+    if (!d || typeof d !== 'string') return new Date(0);
     const parts = d.split('/');
     if (parts.length !== 3) return new Date(0);
     const day = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1;
     const year = parseInt(parts[2], 10);
     return new Date(year, month, day);
+  };
+
+  const orderRef = (order: any) => {
+    if (!order) return '';
+    const rawNum = String(order.numero || '');
+    // if numero already contains digits, extract and pad to 6 digits and prefix with 'N'
+    const digits = rawNum.replace(/\D/g, '');
+    if (digits) return `N${digits.padStart(6, '0')}`;
+    // if no numeric numero, try id fallback
+    const idFallback = String(order.id || '').replace(/^OS-/, '');
+    const idDigits = idFallback.replace(/\D/g, '');
+    if (idDigits) return `N${idDigits.padStart(6, '0')}`;
+    return String(order.numero || order.id || '');
   };
 
   const sortedOrders = filteredOrders.slice().sort((a, b) => {
@@ -651,6 +1515,39 @@ export default function OrdensPage() {
       window.dispatchEvent(new CustomEvent('ordersUpdated'));
     } catch (e) {}
   }, [orders]);
+
+  // Listen for external ordersUpdated events (e.g., from Financeiro) and reload local orders
+  useEffect(() => {
+    const onOrdersUpdated = () => {
+      try {
+        const raw = localStorage.getItem('orders');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            try {
+              const cashMap = getCashMap();
+              const normalized = parsed.map((o:any) => {
+                const cash = cashMap[String(o.id)] || cashMap[String(o.numero)];
+                return {
+                  ...o,
+                  status: o.status || 'Recebido',
+                  paymentStatus: cash && String(cash.status).toLowerCase() === 'pago' ? 'Pago' : (o.paymentStatus || null),
+                  value: o.value || (cash ? `R$ ${Number(cash.value || cash.valor || 0).toFixed(2)}` : o.value)
+                };
+              });
+              const currJson = JSON.stringify(ordersRef.current || []);
+              const newJson = JSON.stringify(normalized || []);
+              if (currJson !== newJson) setOrders(normalized);
+            } catch (ee) {
+              try { const normalized = parsed.map((o:any) => ({ ...o, status: o.status || 'Recebido' })); setOrders(normalized); } catch(_){}
+            }
+          }
+        }
+      } catch (e) { }
+    };
+    window.addEventListener('ordersUpdated', onOrdersUpdated as EventListener);
+    return () => { window.removeEventListener('ordersUpdated', onOrdersUpdated as EventListener); };
+  }, []);
 
   const statusCounts = {
     Todos: orders.length,
@@ -864,12 +1761,15 @@ export default function OrdensPage() {
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 w-full">
                         <div className="flex items-center gap-2">
+                          {order.client_foto ? (
+                            <img src={order.client_foto} alt={order.client || 'cliente'} className="w-8 h-8 rounded-full object-cover" />
+                          ) : null}
                           <div className="font-medium text-sm text-gray-900 truncate">{order.client}</div>
                           <div className="mt-0">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${statusOptions.find(s=>s.id===order.status)?.color || 'bg-gray-100 text-gray-800'}`}>{order.status}</span>
                           </div>
                         </div>
-                        <div className="text-xs text-gray-500 break-words">{order.id} · {order.service}</div>
+                        <div className="text-xs text-gray-500 break-words">{orderRef(order)} · {order.service}</div>
                         <div className="text-xs text-gray-600 mt-1">Prazo: {order.dateOut || '—'}</div>
                       </div>
                       <div className="text-right ml-3">
@@ -886,12 +1786,15 @@ export default function OrdensPage() {
                       <button onClick={() => applyQuickStatus(order, 'Pronto')} title="Finalizar" className="w-8 h-8 flex items-center justify-center text-white bg-green-600 rounded"><i className="ri-check-line"></i></button>
                       <button onClick={() => applyQuickStatus(order, 'Retirado')} title="Retirado" className="w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded"><i className="ri-hand-heart-line"></i></button>
 
+                      <button onClick={() => printTicket(order)} title="Imprimir" className="w-8 h-8 flex items-center justify-center text-gray-700 bg-gray-50 rounded"><i className="ri-printer-line"></i></button>
+
                       <div className="flex-1" />
 
                       <button onClick={() => handleEdit(order)} title="Editar" className="w-8 h-8 flex items-center justify-center text-rose-600 bg-rose-50 rounded"><i className="ri-edit-line"></i></button>
                       <button onClick={() => handleDelete(order)} title="Excluir" className="w-8 h-8 flex items-center justify-center text-red-600 bg-red-50 rounded"><i className="ri-delete-bin-line"></i></button>
                       {order.phone && (
-                        <button onClick={() => sendMessageManual(order, order.status)} title="WhatsApp" className="w-8 h-8 flex items-center justify-center text-amber-700 bg-amber-50 rounded"><i className="ri-whatsapp-line"></i></button>
+                        // WhatsApp button removed per request
+                        null
                       )}
                     </div>
                   </div>
@@ -917,8 +1820,11 @@ export default function OrdensPage() {
                       return (
                         <tr key={order.id} className="hover:bg-gray-50">
                           <td className="px-3 py-3 align-top text-sm text-gray-900 min-w-0">
-                            <div className="font-medium">{order.client}</div>
-                            <div className="text-xs text-gray-500">{order.id}</div>
+                            <div className="flex items-center gap-2">
+                              {order.client_foto ? <img src={order.client_foto} alt={order.client || 'cliente'} className="w-8 h-8 rounded-full object-cover inline-block" /> : null}
+                              <div className="font-medium">{order.client}</div>
+                            </div>
+                            <div className="text-xs text-gray-500">{orderRef(order)}</div>
                             <div className="sm:hidden mt-1 text-xs text-gray-600">{order.service} · {order.dateOut || '—'}</div>
                           </td>
                           <td className="hidden sm:table-cell px-3 py-3 align-top text-sm text-gray-700 break-words">{order.service}</td>
@@ -984,6 +1890,10 @@ export default function OrdensPage() {
                                     <i className="ri-hand-heart-line"></i>
                                   </button>
                                 )}
+
+                                <button onClick={() => printTicket(order)} title="Imprimir" className="w-8 h-8 flex items-center justify-center text-gray-700 bg-gray-50 rounded">
+                                  <i className="ri-printer-line"></i>
+                                </button>
                               </div>
 
                               <div className="flex items-center gap-2">
@@ -1009,9 +1919,7 @@ export default function OrdensPage() {
                                   <button onClick={() => sendMessageManual(order, order.status)} title="Enviar via WhatsApp" className="w-8 h-8 flex items-center justify-center text-rose-600 bg-rose-50 rounded hover:bg-rose-100">
                                     <i className="ri-send-plane-line"></i>
                                   </button>
-                                  <button onClick={() => { const m = getFormattedMessage(order, order.status); const phone = (order.phone||'').replace(/\D/g,''); window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(m)}`, '_blank'); }} title="Abrir WhatsApp" className="w-8 h-8 flex items-center justify-center text-amber-700 bg-amber-50 rounded hover:bg-amber-100">
-                                    <i className="ri-whatsapp-line"></i>
-                                  </button>
+                                  {/* Abrir WhatsApp removido */}
                                 </div>
                               )}
 
@@ -1113,8 +2021,8 @@ export default function OrdensPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Cliente</label>
                   <div className="flex gap-2">
-                    <select className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm">
-                      <option>Selecione um cliente</option>
+                    <select value={newOrderClientId || ''} onChange={(e) => setNewOrderClientId(e.target.value || null)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm">
+                      <option value="">Selecione um cliente</option>
                       {clientes.map((cliente) => (
                         <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>
                       ))}
@@ -1204,11 +2112,69 @@ export default function OrdensPage() {
                 </div>
               )}
 
+              {/* Adicionar Peças (obrigatório primeiro) */}
+              <div className="border-t border-gray-200 pt-4">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Peças (cadastre antes dos serviços)</h3>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Tipo da Peça</label>
+                      <div className="flex gap-2">
+                        <input value={pieceTipo} onChange={(e) => setPieceTipo(e.target.value)} onFocus={() => setShowPecasModal(true)} onClick={() => setShowPecasModal(true)} placeholder="ex: Calça (clique para escolher)" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm cursor-pointer" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Cor</label>
+                      <div className="flex gap-2">
+                        <input value={pieceCor} onChange={(e) => setPieceCor(e.target.value)} onFocus={() => setShowCorModal(true)} onClick={() => setShowCorModal(true)} placeholder="ex: Preta (clique para escolher)" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm cursor-pointer" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Modelo</label>
+                      <input value={pieceModelo} onChange={(e) => setPieceModelo(e.target.value)} placeholder="ex: Jeans" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => { setPieceTipo(''); setPieceCor(''); setPieceModelo(''); }} className="px-3 py-2 border rounded text-sm">Limpar</button>
+                    <button onClick={() => {
+                      if (!pieceTipo) return alert('Informe o tipo da peça');
+                      const id = `P-${Date.now()}`;
+                      const newPiece = { id, tipo: pieceTipo, cor: pieceCor || '', modelo: pieceModelo || '', services: [] };
+                      setPieces([...pieces, newPiece]);
+                      setPieceTipo(''); setPieceCor(''); setPieceModelo('');
+                    }} className="px-3 py-2 bg-green-600 text-white rounded text-sm">Adicionar Peça</button>
+                  </div>
+
+                  {pieces.length > 0 && (
+                    <div className="mt-2 space-y-2">
+                      <div className="text-xs text-gray-600">Peças Cadastradas:</div>
+                      {pieces.map(p => (
+                        <div key={p.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                          <div>
+                            <div className="font-medium">{`${(availablePieces.find(x=>x.nome===p.tipo)?.icone||'🧵')} ${p.tipo}`}</div>
+                            <div className="text-xs text-gray-500">Cor: {p.cor || '—'} · Modelo: {p.modelo || '—'}</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => { setPieces(pieces.filter(x => x.id !== p.id)); setOrderServices(orderServices.filter(s => s.pieceId !== p.id)); }} className="text-red-600">Remover</button>
+                            <button onClick={() => setSelectedPieceForService(p.id)} className="text-rose-600">Selecionar</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Adicionar Serviço */}
               <div className="border-t border-gray-200 pt-4">
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Adicionar Serviço</h3>
                 <div className="space-y-3">
                   <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Vincular serviço à peça</label>
+                    <select value={selectedPieceForService || ''} onChange={(e) => setSelectedPieceForService(e.target.value || null)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2">
+                      <option value="">Selecione a peça...</option>
+                      {pieces.map(p => <option key={p.id} value={p.id}>{p.tipo} · {p.cor || '—'}</option>)}
+                    </select>
                     <label className="block text-xs font-medium text-gray-700 mb-1">Categoria do Serviço</label>
                     <select value={newServiceCategoryFilter} onChange={(e) => setNewServiceCategoryFilter(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-500 cursor-pointer mb-2">
                       <option value="">Todas as categorias</option>
@@ -1305,6 +2271,8 @@ export default function OrdensPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Observações Gerais</label>
                 <textarea
                   rows={4}
+                  value={newOrderObservacoes}
+                  onChange={(e) => setNewOrderObservacoes(e.target.value)}
                   placeholder="Detalhes adicionais sobre a ordem..."
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm resize-none"
                   maxLength={500}
@@ -1334,6 +2302,92 @@ export default function OrdensPage() {
       )}
 
       {/* Modal Novo Cliente Rápido */}
+      {/* Modal Escolher Peça */}
+      {showPecasModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-lg w-full max-w-lg max-h-[80vh] overflow-y-auto">
+            <div className="p-4 flex items-center justify-between border-b">
+              <h3 className="font-bold text-lg">Escolher Tipo de Peça</h3>
+              <button onClick={() => { setShowPecasModal(false); setPecasSearch(''); }} className="text-gray-500"><i className="ri-close-line text-2xl"></i></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <input placeholder="Pesquisar peças..." value={pecasSearch} onChange={(e) => setPecasSearch(e.target.value)} className="w-full px-3 py-2 border rounded" />
+              <div className="grid grid-cols-2 gap-2">
+                {(availablePieces || []).filter((p:any) => !pecasSearch || String(p.nome).toLowerCase().includes(pecasSearch.toLowerCase())).map((p:any) => (
+                  <button key={p.id || p.nome} onClick={() => { setPieceTipo(p.nome); setShowPecasModal(false); setPecasSearch(''); }} className="text-left p-2 border rounded hover:bg-gray-50 flex items-center gap-3">
+                    <span className="text-xl">{p.icone || '🧵'}</span>
+                    <div className="text-left">
+                      <div className="font-medium">{p.nome}</div>
+                      <div className="text-xs text-gray-500">{p.categoria || ''}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Escolher Cor */}
+      {showCorModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-lg w-full max-w-sm">
+            <div className="p-4 flex items-center justify-between border-b">
+              <h3 className="font-bold text-lg">Escolher Cor</h3>
+              <button onClick={() => setShowCorModal(false)} className="text-gray-500"><i className="ri-close-line text-2xl"></i></button>
+            </div>
+            <div className="p-4">
+              <div className="grid grid-cols-3 gap-2">
+                {COLORS.map((c) => (
+                  <button key={c} onClick={() => { setPieceCor(c); setShowCorModal(false); }} className="px-3 py-2 border rounded text-sm text-left hover:bg-gray-50">{c}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPrintOptions && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-lg max-w-sm w-full p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-bold">Opções de Impressão</h3>
+              <button onClick={() => { setShowPrintOptions(false); setShowSavedSummary(false); setShowFidelizacaoModal(false); setSelectedOrder(null); }} className="text-gray-500">Fechar</button>
+            </div>
+            <div className="space-y-3">
+              <p className="text-sm text-gray-700">Deseja imprimir ou salvar a OS em PDF? Use as opções abaixo.</p>
+              <div className="flex gap-2">
+                <button onClick={() => { printTicket(orders[orders.length-1]); setShowPrintOptions(false); setShowSavedSummary(false); setSelectedOrder(null); }} className="flex-1 px-3 py-2 bg-rose-600 text-white rounded">🖨️ Imprimir OS</button>
+                <button onClick={() => { printTicket(orders[orders.length-1]); setShowPrintOptions(false); setShowSavedSummary(false); setSelectedOrder(null); }} className="flex-1 px-3 py-2 border rounded">📄 Salvar em PDF</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Resumo Salvo */}
+      {showSavedSummary && selectedOrder && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-70 p-4">
+          <div className="bg-white rounded-lg w-full max-w-md p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-bold">Ordem Salva</h3>
+              <button onClick={() => setShowSavedSummary(false)} className="text-gray-500"><i className="ri-close-line text-2xl"></i></button>
+            </div>
+            <div className="space-y-2 text-sm text-gray-700">
+              <div><strong>OS:</strong> {selectedOrder.numero}</div>
+              <div><strong>Cliente:</strong> {selectedOrder.client}</div>
+              <div><strong>Peça:</strong> {(selectedOrder.pieces||[]).map((p:any)=>p.tipo).join(', ')}</div>
+              <div><strong>Serviço:</strong> {selectedOrder.service}</div>
+              <div><strong>Prazo:</strong> {selectedOrder.dateOut || '—'}</div>
+              <div><strong>Status:</strong> {selectedOrder.status}</div>
+              <div><strong>Valor:</strong> {selectedOrder.value} · <em>{selectedOrder.paymentStatus === 'Pago' ? 'Pago' : 'Não Pago'}</em></div>
+            </div>
+            <div className="mt-4 flex gap-2 justify-end">
+              <button onClick={() => { setShowSavedSummary(false); setShowPrintOptions(true); }} className="px-3 py-2 bg-rose-600 text-white rounded">Imprimir / PDF</button>
+              <button onClick={() => setShowSavedSummary(false)} className="px-3 py-2 border rounded">Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showNewClientModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-lg max-w-md w-full">
@@ -1351,6 +2405,8 @@ export default function OrdensPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
                 <input
                   type="text"
+                  value={quickClientName}
+                  onChange={(e) => setQuickClientName(e.target.value)}
                   placeholder="Nome do cliente"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 text-sm"
                 />
@@ -1359,6 +2415,8 @@ export default function OrdensPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
                 <input
                   type="tel"
+                  value={quickClientPhone}
+                  onChange={(e) => setQuickClientPhone(e.target.value)}
                   placeholder="(11) 99999-9999"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 text-sm"
                 />
@@ -1372,9 +2430,25 @@ export default function OrdensPage() {
                 Cancelar
               </button>
               <button
-                onClick={() => {
-                  alert('Cliente cadastrado com sucesso!');
-                  setShowNewClientModal(false);
+                onClick={async () => {
+                  try {
+                    if (!quickClientName) return alert('Informe o nome do cliente');
+                    const saved = await upsertClient({ nome: quickClientName, telefone: quickClientPhone });
+                    try {
+                      const list = await loadClients();
+                      setClientes(list || []);
+                    } catch (e) {}
+                    // if we are creating a new order, preselect the new client
+                    if (saved && saved.id) setNewOrderClientId(String(saved.id));
+                    alert('Cliente cadastrado com sucesso!');
+                  } catch (e) {
+                    console.warn('quick client save failed', e);
+                    alert('Falha ao salvar cliente');
+                  } finally {
+                    setShowNewClientModal(false);
+                    setQuickClientName('');
+                    setQuickClientPhone('');
+                  }
                 }}
                 className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all text-sm font-medium whitespace-nowrap cursor-pointer"
               >
@@ -1477,7 +2551,34 @@ export default function OrdensPage() {
                     dateOut: dateOutStr,
                     observation: editObservation,
                   };
-                  setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
+                  const next = orders.map(o => o.id === selectedOrder.id ? updatedOrder : o);
+                  setOrders(next);
+                  try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+                  (async () => {
+                    try {
+                      if (supabase && typeof supabase.from === 'function') {
+                        const payload: any = {
+                          client: updatedOrder.client,
+                          category: updatedOrder.category,
+                          service: updatedOrder.service,
+                          value: updatedOrder.value,
+                          status: updatedOrder.status,
+                          dateIn: updatedOrder.dateIn,
+                          dateOut: updatedOrder.dateOut,
+                          observation: updatedOrder.observation,
+                        };
+                        // include notas (pieces + services) if present
+                        try {
+                          const notas = { pieces: updatedOrder.pieces || [], services: updatedOrder.services || [] };
+                          payload.notas = JSON.stringify(notas);
+                          // attempt to set numeric total if available
+                          const total = Number(String(updatedOrder.value || '').replace(/[^0-9,.-]/g,'').replace(/,/g,'.')) || undefined;
+                          if (!isNaN(total)) payload.total = total;
+                        } catch (ee) {}
+                        await supabase.from('ordens').update(payload).eq('id', updatedOrder.id);
+                      }
+                    } catch (e) { console.warn('Failed to persist edited order to Supabase', e); }
+                  })();
                   // preparar mensagem e abrir opções de envio (copiar/enviar/não enviar)
                   setSelectedOrder(updatedOrder);
                   setStatusChangeMessage(composeStatusMessage(updatedOrder, editStatus));
@@ -1516,7 +2617,10 @@ export default function OrdensPage() {
                         if (statusSelection === 'Retirado') {
                           if (selectedOrder.paymentStatus === 'Pago') {
                             const updatedOrder = { ...selectedOrder, status: 'Retirado' };
-                            setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
+                            const next = orders.map(o => o.id === selectedOrder.id ? updatedOrder : o);
+                            setOrders(next);
+                            try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+                            (async () => { try { if (supabase && typeof supabase.from === 'function') await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id); } catch(e){console.warn('Failed to persist status-only Retirado to Supabase', e);} })();
                             const msg = composeStatusMessage(updatedOrder, 'Retirado');
                             setStatusChangeMessage(msg);
                             setShowStatusMessageOptions(true);
@@ -1533,7 +2637,10 @@ export default function OrdensPage() {
 
                         // apply status change and prepare message
                         const updatedOrder = { ...selectedOrder, status: statusSelection };
-                        setOrders(orders.map(o => o.id === selectedOrder.id ? updatedOrder : o));
+                        const next = orders.map(o => o.id === selectedOrder.id ? updatedOrder : o);
+                        setOrders(next);
+                        try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+                        (async () => { try { if (supabase && typeof supabase.from === 'function') await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id); } catch(e){console.warn('Failed to persist status-only change to Supabase', e);} })();
                         const msg = composeStatusMessage(updatedOrder, statusSelection);
                         setStatusChangeMessage(msg);
                         setShowStatusMessageOptions(true);
@@ -1871,21 +2978,21 @@ export default function OrdensPage() {
               </div>
               <div className="flex gap-3">
                 <button
-                  onClick={() => copyToClipboard(fidelizacaoMessage)}
+                  onClick={() => { try { navigator.clipboard.writeText(fidelizacaoMessage); alert('Mensagem copiada!'); } catch(e){ alert('Não foi possível copiar'); } setShowFidelizacaoModal(false); setShowPrintOptions(true); }}
                   className="flex-1 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all text-xs lg:text-sm font-medium whitespace-nowrap cursor-pointer flex items-center justify-center gap-2"
                 >
                   <i className="ri-file-copy-line text-base lg:text-lg w-4 h-4 flex items-center justify-center"></i>
                   Copiar
                 </button>
                 <button
-                  onClick={openWhatsApp}
+                  onClick={() => { openWhatsApp(); }}
                   className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all text-xs lg:text-sm font-medium whitespace-nowrap cursor-pointer flex items-center justify-center gap-2"
                 >
                   <i className="ri-whatsapp-line text-base lg:text-lg w-4 h-4 flex items-center justify-center"></i>
-                  WhatsApp
+                  Enviar
                 </button>
                 <button
-                  onClick={() => setShowFidelizacaoModal(false)}
+                  onClick={() => { setShowFidelizacaoModal(false); setShowPrintOptions(true); }}
                   className="flex-0 px-3 py-2 border border-transparent text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all text-xs lg:text-sm font-medium whitespace-nowrap cursor-pointer flex items-center justify-center gap-2"
                 >
                   Fechar

@@ -38,7 +38,7 @@ export default function ClienteDetalhe() {
     <div className="flex min-h-screen bg-gray-50"><Sidebar /><main className="flex-1 lg:ml-56 p-8">Cliente não encontrado</main></div>
   );
 
-  const totalGasto = orders.reduce((s,o) => s + (parseFloat(String(o.value || '0').replace(/[^0-9,\.]/g,'').replace(/\./g,'').replace(/,/g,'.')) || 0), 0);
+  const totalGasto = orders.reduce((s,o) => s + (parseCurrency(o.value ?? o.valor ?? 0) || 0), 0);
   const servicos = orders.length;
   const ticket = servicos ? (totalGasto / servicos) : 0;
 

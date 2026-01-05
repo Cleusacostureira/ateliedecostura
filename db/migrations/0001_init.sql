@@ -1,5 +1,3 @@
--- Initial schema for Cleusa Ateliê de Costura
--- Target: PostgreSQL (Supabase)
 
 -- Extensions
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -62,84 +60,96 @@ CREATE TABLE IF NOT EXISTS ordem_itens (
   preco_unitario numeric(12,2) NOT NULL DEFAULT 0,
   total numeric(12,2) NOT NULL DEFAULT 0
 );
+-- Criar sequência para numeração das ordens, se ainda não existir
+CREATE SEQUENCE IF NOT EXISTS ordens_numero_seq START 1;
 
--- Pagamentos / financeiro
-CREATE TABLE IF NOT EXISTS pagamentos (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  ordem_id uuid REFERENCES ordens(id) ON DELETE SET NULL,
-  valor numeric(12,2) NOT NULL DEFAULT 0,
-  metodo text,
-  status text NOT NULL DEFAULT 'pending',
-  pago_em timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Disparos (notificações / envios)
-CREATE TABLE IF NOT EXISTS disparos (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tipo text,
-  payload jsonb,
-  agendado_para timestamptz,
-  enviado boolean DEFAULT false,
-  enviado_em timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Configurações gerais
-CREATE TABLE IF NOT EXISTS configuracoes (
-  chave text PRIMARY KEY,
-  valor jsonb,
-  atualizado_em timestamptz NOT NULL DEFAULT now()
-);
-
--- Relatórios salvos
-CREATE TABLE IF NOT EXISTS relatorios (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  nome text NOT NULL,
-  parametros jsonb,
-  criado_por uuid REFERENCES users(id) ON DELETE SET NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Useful indexes
-CREATE INDEX IF NOT EXISTS idx_ordens_cliente_id ON ordens(cliente_id);
-CREATE INDEX IF NOT EXISTS idx_ordens_usuario_id ON ordens(usuario_id);
-CREATE INDEX IF NOT EXISTS idx_pagamentos_ordem_id ON pagamentos(ordem_id);
-
--- Trigger to update updated_at timestamps (simple example)
-CREATE OR REPLACE FUNCTION trigger_set_timestamp()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Ensure triggers exist: drop if present then create (avoids dollar-quoting issues)
-DROP TRIGGER IF EXISTS set_timestamp_users ON users;
-CREATE TRIGGER set_timestamp_users BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
-
-DROP TRIGGER IF EXISTS set_timestamp_clientes ON clientes;
-CREATE TRIGGER set_timestamp_clientes BEFORE UPDATE ON clientes FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
-
-DROP TRIGGER IF EXISTS set_timestamp_servicos ON servicos;
-CREATE TRIGGER set_timestamp_servicos BEFORE UPDATE ON servicos FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
-
-DROP TRIGGER IF EXISTS set_timestamp_ordens ON ordens;
-CREATE TRIGGER set_timestamp_ordens BEFORE UPDATE ON ordens FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
-
--- Materiais (inventário/consumíveis)
-CREATE TABLE IF NOT EXISTS materiais (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  nome text NOT NULL,
-  unidade text,
-  preco numeric(12,2) NOT NULL DEFAULT 0,
-  estoque numeric DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-DROP TRIGGER IF EXISTS set_timestamp_materiais ON materiais;
-CREATE TRIGGER set_timestamp_materiais BEFORE UPDATE ON materiais FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
+ALTER TABLE ordens ADD COLUMN IF NOT EXISTS numero bigint UNIQUE DEFAULT nextval('ordens_numero_seq');
 
 -- End of migration
+
+  -- Tabela de peças pré-cadastradas (tipos de peça)
+  CREATE TABLE IF NOT EXISTS pecas (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome text NOT NULL,
+    categoria text,
+    icone text,
+    created_at timestamptz NOT NULL DEFAULT now()
+  );
+
+  -- Inserir tipos de peça padrão (se ainda não existirem)
+  INSERT INTO pecas (nome, categoria, icone)
+  SELECT * FROM (VALUES
+    ('Camiseta','ROUPAS SUPERIORES','👕'),
+    ('Camisa social','ROUPAS SUPERIORES','👔'),
+    ('Camisa polo','ROUPAS SUPERIORES','👕'),
+    ('Blusa','ROUPAS SUPERIORES','👕'),
+    ('Cropped','ROUPAS SUPERIORES','👕'),
+    ('Regata','ROUPAS SUPERIORES','👕'),
+    ('Bata','ROUPAS SUPERIORES','👕'),
+    ('Top','ROUPAS SUPERIORES','👕'),
+    ('Moletom','ROUPAS SUPERIORES','👕'),
+    ('Casaco','ROUPAS SUPERIORES','🧥'),
+    ('Jaqueta','ROUPAS SUPERIORES','🧥'),
+    ('Blazer','ROUPAS SUPERIORES','🧥'),
+    ('Colete','ROUPAS SUPERIORES','🧥'),
+
+    ('Calça jeans','ROUPAS INFERIORES','👖'),
+    ('Calça social','ROUPAS INFERIORES','👖'),
+    ('Calça de alfaiataria','ROUPAS INFERIORES','👖'),
+    ('Calça legging','ROUPAS INFERIORES','👖'),
+    ('Calça moletom','ROUPAS INFERIORES','👖'),
+    ('Bermuda','ROUPAS INFERIORES','🩳'),
+    ('Short','ROUPAS INFERIORES','🩳'),
+    ('Saia curta','ROUPAS INFERIORES','👗'),
+    ('Saia média','ROUPAS INFERIORES','👗'),
+    ('Saia longa','ROUPAS INFERIORES','👗'),
+
+    ('Vestido curto','VESTIDOS E PEÇAS ÚNICAS','👗'),
+    ('Vestido médio','VESTIDOS E PEÇAS ÚNICAS','👗'),
+    ('Vestido longo','VESTIDOS E PEÇAS ÚNICAS','👗'),
+    ('Vestido de festa','VESTIDOS E PEÇAS ÚNICAS','👗'),
+    ('Vestido social','VESTIDOS E PEÇAS ÚNICAS','👗'),
+    ('Macacão','VESTIDOS E PEÇAS ÚNICAS','👗'),
+    ('Macaquinho','VESTIDOS E PEÇAS ÚNICAS','👗'),
+    ('Jardineira','VESTIDOS E PEÇAS ÚNICAS','👗'),
+
+    ('Casaco pesado','ROUPAS DE FRIO / EXTERNAS','🧥'),
+    ('Sobretudo','ROUPAS DE FRIO / EXTERNAS','🧥'),
+    ('Jaqueta jeans','ROUPAS DE FRIO / EXTERNAS','🧥'),
+    ('Jaqueta de couro','ROUPAS DE FRIO / EXTERNAS','🧥'),
+    ('Parka','ROUPAS DE FRIO / EXTERNAS','🧥'),
+    ('Capa','ROUPAS DE FRIO / EXTERNAS','🧥'),
+
+    ('Lingerie','ROUPAS ÍNTIMAS / LEVES','🩲'),
+    ('Sutiã','ROUPAS ÍNTIMAS / LEVES','🩲'),
+    ('Calcinha','ROUPAS ÍNTIMAS / LEVES','🩲'),
+    ('Cueca','ROUPAS ÍNTIMAS / LEVES','🩲'),
+    ('Pijama','ROUPAS ÍNTIMAS / LEVES','🛌'),
+    ('Camisola','ROUPAS ÍNTIMAS / LEVES','🛌'),
+    ('Baby doll','ROUPAS ÍNTIMAS / LEVES','🛌'),
+
+    ('Body infantil','ROUPAS INFANTIS','👶'),
+    ('Conjunto infantil','ROUPAS INFANTIS','👶'),
+    ('Camiseta infantil','ROUPAS INFANTIS','👶'),
+    ('Calça infantil','ROUPAS INFANTIS','👶'),
+    ('Vestido infantil','ROUPAS INFANTIS','👶'),
+    ('Short infantil','ROUPAS INFANTIS','👶'),
+
+    ('Uniforme escolar','ROUPAS ESPECIAIS','🎓'),
+    ('Uniforme profissional','ROUPAS ESPECIAIS','🎓'),
+    ('Roupa hospitalar','ROUPAS ESPECIAIS','🎓'),
+    ('Jaleco','ROUPAS ESPECIAIS','🎓'),
+    ('Avental','ROUPAS ESPECIAIS','🎓'),
+    ('Roupa esportiva','ROUPAS ESPECIAIS','🏃'),
+    ('Roupa de academia','ROUPAS ESPECIAIS','🏃'),
+
+    ('Barra de cortina','ACESSÓRIOS EM TECIDO','🧵'),
+    ('Cortina','ACESSÓRIOS EM TECIDO','🧵'),
+    ('Capa de almofada','ACESSÓRIOS EM TECIDO','🧵'),
+    ('Fronha','ACESSÓRIOS EM TECIDO','🧵'),
+    ('Lençol','ACESSÓRIOS EM TECIDO','🛏️'),
+    ('Colcha','ACESSÓRIOS EM TECIDO','🛏️'),
+    ('Toalha','ACESSÓRIOS EM TECIDO','🧺'),
+    ('Guardanapo de tecido','ACESSÓRIOS EM TECIDO','🍽️')
+  ) AS t(nome, categoria, icone)
+  WHERE NOT EXISTS (SELECT 1 FROM pecas p WHERE p.nome = t.nome);

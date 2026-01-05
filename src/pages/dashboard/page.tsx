@@ -29,6 +29,7 @@ export default function DashboardPage() {
   const [topServices, setTopServices] = useState<any[]>([]);
   const [upcomingDeliveries, setUpcomingDeliveries] = useState<any[]>([]);
   const [revenueThisMonth, setRevenueThisMonth] = useState<number>(0);
+  const [totalOrdersAll, setTotalOrdersAll] = useState<number>(0);
 
   const computeCounts = () => {
     const list = orders || [];
@@ -148,11 +149,14 @@ export default function DashboardPage() {
         const v = parseFloat((o.total || o.valor || o.value || 0).toString()) || 0;
         vals[m] += v;
       });
-      setMonthlyData(months.map((m, i) => ({ month: m, value: Math.round(vals[i]) })));
-      // revenue this month
+      setMonthlyData(months.map((m, i) => ({ month: m, value: Number((vals[i] || 0).toFixed(2)) })));
+      // revenue this month (exact with cents)
       const currentMonth = now.getMonth();
       const rev = vals[currentMonth] || 0;
-      setRevenueThisMonth(Math.round(rev));
+      setRevenueThisMonth(Number(rev.toFixed(2)));
+      // total of all orders (sum)
+      const totalAll = vals.reduce((acc, v) => acc + v, 0);
+      setTotalOrdersAll(Number(totalAll.toFixed(2)));
 
       // top services from ordem_itens joined with servicos
       const svcCounts: Record<string, {count:number, total:number, servicoId?:string}> = {};
@@ -165,7 +169,28 @@ export default function DashboardPage() {
         svcCounts[key].count += qty;
         svcCounts[key].total += qty * price;
       });
+      // also collect service items from orders payloads (some installations store items inside `ordens`)
+      const orderSvcCounts: Record<string, {count:number, total:number, servicoId?:string}> = {};
+      orders.forEach(o => {
+        const items = (o.itens || o.ordem_itens || o.items || o.pecas || []).map((it:any) => it || {}).filter(Boolean);
+        items.forEach((it:any) => {
+          const name = (it.nome || it.name || it.servico || it.title || it.titulo || '').toString() || null;
+          if (!name) return;
+          const qty = parseInt(it.quantidade || it.qty || 1) || 1;
+          const price = parseFloat((it.preco_unitario || it.preco || it.price || 0).toString()) || 0;
+          orderSvcCounts[name] = orderSvcCounts[name] || { count: 0, total: 0 };
+          orderSvcCounts[name].count += qty;
+          orderSvcCounts[name].total += qty * price;
+        });
+      });
+
       const svcArr = Object.keys(svcCounts).map(k => ({ servicoId: svcCounts[k].servicoId, name: (servicosList.find(s=>s.id===svcCounts[k].servicoId)?.titulo) || k, count: svcCounts[k].count, total: svcCounts[k].total }));
+      // merge with order-level items
+      Object.keys(orderSvcCounts).forEach(k => {
+        const existing = svcArr.find(s => s.name === k);
+        if (existing) { existing.count += orderSvcCounts[k].count; existing.total += orderSvcCounts[k].total; }
+        else svcArr.push({ servicoId: undefined, name: k, count: orderSvcCounts[k].count, total: orderSvcCounts[k].total });
+      });
       setTopServices(svcArr.sort((a,b)=>b.count - a.count).slice(0,5));
 
       // upcoming deliveries (next 5)
@@ -211,7 +236,7 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6 mb-4 lg:mb-6">
             <div>
-              <StatCard icon="ri-money-dollar-circle-line" label="Faturamento do Mês" value={`R$ ${revenueThisMonth.toLocaleString('pt-BR')}`} trend="" trendUp={true} color="bg-rose-400" />
+              <StatCard icon="ri-money-dollar-circle-line" label="Faturamento do Mês" value={`R$ ${revenueThisMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} trend="" trendUp={true} color="bg-rose-400" />
             </div>
             <div>
               <StatCard icon="ri-file-list-3-line" label="OS em costura" value={String(inProgress)} trend="" trendUp={false} color="bg-amber-400" />
@@ -265,9 +290,9 @@ export default function DashboardPage() {
                     <div className="flex-1 bg-gray-100 rounded-full h-5 lg:h-6 overflow-hidden">
                       <div 
                         className="bg-gradient-to-r from-rose-400 to-pink-500 h-full rounded-full flex items-center justify-end pr-2"
-                        style={{ width: `${Math.min(100, (item.value / (Math.max(...monthlyData.map(m=>m.value||1)) || 1)) * 100)}%` }}
+                        style={{ width: `${Math.min(100, (item.value / (Math.max(...monthlyData.map(m=>m.value||0)) || 1)) * 100)}%` }}
                       >
-                        <span className="text-[9px] lg:text-xs text-white font-medium">R$ {(item.value / 1000).toFixed(1)}k</span>
+                        <span className="text-[9px] lg:text-xs text-white font-medium">R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                     </div>
                   </div>
