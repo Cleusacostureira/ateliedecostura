@@ -325,11 +325,18 @@ export default function OrdensPage() {
                         const byNum = cashMap[String(o.numero)];
                         const cash = byId || byNum;
                         if (cash) {
-                          return {
-                            ...o,
-                            paymentStatus: (cash.status && String(cash.status).toLowerCase() === 'pago') ? 'Pago' : o.paymentStatus,
-                            value: o.value && String(o.value).startsWith('R$') ? o.value : `R$ ${Number(cash.value || cash.valor || 0).toFixed(2)}`
-                          };
+                          try {
+                            const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
+                            const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
+                            const finalPaid = currentPaid || cashPaid;
+                            return {
+                              ...o,
+                              paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
+                              value: o.value && String(o.value).startsWith('R$') ? o.value : `R$ ${Number(cash.value || cash.valor || 0).toFixed(2)}`
+                            };
+                          } catch (_inner) {
+                            return o;
+                          }
                         }
                         return o;
                       });
@@ -366,7 +373,12 @@ export default function OrdensPage() {
                 const cash = (cashMap[String(o.id)] || cashMap[String(o.numero)]) || {};
                 const amount = (cash && (cash.value || cash.valor)) ? Number(cash.value || cash.valor) : 0;
                 const displayValue = o.value && String(o.value).trim() !== '' ? String(o.value) : `R$ ${amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-                return { ...o, status: o.status || 'Recebido', paymentStatus: (cash && cash.status && String(cash.status).toLowerCase() === 'pago') ? 'Pago' : (o.paymentStatus || null), value: displayValue };
+                try {
+                  const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
+                  const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
+                  const finalPaid = currentPaid || cashPaid;
+                  return { ...o, status: o.status || 'Recebido', paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null), value: displayValue };
+                } catch (_inner) { return { ...o, status: o.status || 'Recebido', paymentStatus: (o.paymentStatus || null), value: displayValue }; }
               }));
             } catch (ee) { setOrders(parsed.map((o: any) => ({ ...o, status: o.status || 'Recebido' }))); }
             return;
@@ -1528,12 +1540,17 @@ export default function OrdensPage() {
               const cashMap = getCashMap();
               const normalized = parsed.map((o:any) => {
                 const cash = cashMap[String(o.id)] || cashMap[String(o.numero)];
-                return {
-                  ...o,
-                  status: o.status || 'Recebido',
-                  paymentStatus: cash && String(cash.status).toLowerCase() === 'pago' ? 'Pago' : (o.paymentStatus || null),
-                  value: o.value || (cash ? `R$ ${Number(cash.value || cash.valor || 0).toFixed(2)}` : o.value)
-                };
+                try {
+                  const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
+                  const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
+                  const finalPaid = currentPaid || cashPaid;
+                  return {
+                    ...o,
+                    status: o.status || 'Recebido',
+                    paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
+                    value: o.value || (cash ? `R$ ${Number(cash.value || cash.valor || 0).toFixed(2)}` : o.value)
+                  };
+                } catch (_inner) { return { ...o, status: o.status || 'Recebido', paymentStatus: (o.paymentStatus || null), value: o.value }; }
               });
               const currJson = JSON.stringify(ordersRef.current || []);
               const newJson = JSON.stringify(normalized || []);
