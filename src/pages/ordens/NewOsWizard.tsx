@@ -653,7 +653,8 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                 </div>
               </div>
 
-              <div className="mb-3">
+              {/* Hide the desktop color swatches on small screens so piece icons take priority there */}
+              <div className="mb-3 hidden sm:block">
                 <div className="text-sm text-gray-600 mb-2">Cores</div>
                 <div className="flex flex-wrap gap-2">
                   {COLORS.map(c => {
@@ -695,7 +696,52 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                   </div>
                 ))}
               </div>
-              {selectedPieceForService ? (
+              {/* On mobile we keep a hint here; services are managed in step 6 */}
+              <div className="text-sm text-gray-500 sm:hidden">Selecione uma peça no próximo passo para ver e adicionar serviços.</div>
+            </div>
+          )}
+
+          {step === 6 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Adicionar Serviços às Peças</label>
+              <div className="mb-3">
+                <div className="text-sm font-medium mb-2">Peças</div>
+                <div className="flex gap-2 overflow-x-auto py-2">
+                  {pieces.map(p => (
+                    <button key={p.id} onClick={()=>setSelectedPieceForService(p.id)} className={`flex items-center gap-2 px-3 py-2 border rounded ${selectedPieceForService===p.id ? 'ring-2 ring-rose-500' : ''}`}>
+                      <span className="text-lg">{p.icone}</span>
+                      <span className="text-sm">{p.tipo}</span>
+                      <span className="text-xs text-gray-500 ml-2">{p.cor || ''}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* mobile-only color selector after selecting a piece */}
+              {selectedPieceForService && (
+                <div className="mb-3 sm:hidden">
+                  <div className="text-sm text-gray-600 mb-2">Cor (após selecionar a peça)</div>
+                  <div className="flex flex-wrap gap-2">
+                    {COLORS.map(c=>{
+                      const hex = COLOR_MAP[c] || '#ccc';
+                      const isWhite = c === 'Branco';
+                      const selectedCor = pieces.find(pp=>pp.id===selectedPieceForService)?.cor;
+                      return (
+                        <button key={c} onClick={()=> setPieces(prev=> prev.map(pp=> pp.id===selectedPieceForService ? {...pp, cor: c} : pp)) }
+                          className={`w-10 h-8 rounded border flex items-center justify-center ${ (selectedCor===c) ? 'ring-2 ring-rose-500' : ''}`}
+                          style={{ backgroundColor: hex, borderColor: isWhite ? '#e5e7eb' : undefined }}
+                        >
+                          <span className="sr-only">{c}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {pieces.length === 0 ? (
+                <div className="text-sm text-gray-500">Nenhuma peça cadastrada. Volte ao passo anterior para adicionar peças.</div>
+              ) : (
                 <div>
                   <div className="mt-3">
                     <input placeholder="Nome do serviço" value={newServiceName} onChange={e=>setNewServiceName(e.target.value)} className="w-full border p-2 rounded mb-2" />
@@ -754,8 +800,6 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                     </div>
                   </div>
                 </div>
-              ) : (
-                <div className="text-sm text-gray-500">Selecione uma peça para ver e adicionar serviços.</div>
               )}
             </div>
           )}
