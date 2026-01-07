@@ -574,9 +574,7 @@ export default function FinanceiroPage() {
                         <p className="text-[8px] text-gray-500">{item.date}</p>
                       </div>
                       <div className="text-right ml-3 flex-shrink-0">
-                        <p className="text-[10px] font-bold text-green-600">R$ {(Number(item.value) || 0).toFixed(2)}</p>
-                                                <p className="text-[10px] font-bold text-green-600">R$ {(Number(item.value) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                                              <p className="text-[10px] font-bold text-green-600">R$ {(Number(item.value) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                        <p className="text-[10px] font-bold text-green-600">R$ {parseCurrency(item.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                         <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${item.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{item.status}</span>
                       </div>
                     </div>

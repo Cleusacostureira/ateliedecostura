@@ -2124,7 +2124,7 @@ const getCashMap = () => {
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${statusOptions.find(s=>s.id===order.status)?.color || 'bg-gray-100 text-gray-800'}`}>{order.status}</span>
                           </div>
                         </div>
-                        <div className="text-xs text-gray-500 break-words">{orderRef(order)} · {serviceDisplayFor(order)}</div>
+                        <div className="text-xs text-gray-500 break-words">{orderRef(order)} · <span className={order.status === 'Em costura' ? 'font-bold' : ''}>{serviceDisplayFor(order)}</span></div>
                         <div className="text-xs text-gray-600 mt-1">Prazo: {order.dateOut || '—'}</div>
                       </div>
                       <div className="text-right ml-3">
@@ -2136,8 +2136,10 @@ const getCashMap = () => {
                                 </div>
                       </div>
                     </div>
-                    <div className="mt-3 flex items-center gap-2">
-                      <button onClick={() => applyQuickStatus(order, 'Em costura')} title="Iniciar" className="w-8 h-8 flex items-center justify-center text-white bg-blue-600 rounded"><i className="ri-play-line"></i></button>
+                      <div className="mt-3 flex items-center gap-2">
+                      {order.status !== 'Em costura' && order.status !== 'Pronto' && order.status !== 'Retirado' && (
+                        <button onClick={() => applyQuickStatus(order, 'Em costura')} title="Iniciar" className="w-8 h-8 flex items-center justify-center text-white bg-blue-600 rounded"><i className="ri-play-line"></i></button>
+                      )}
                       <button onClick={() => applyQuickStatus(order, 'Pronto')} title="Finalizar" className="w-8 h-8 flex items-center justify-center text-white bg-green-600 rounded"><i className="ri-check-line"></i></button>
                       <button onClick={() => applyQuickStatus(order, 'Retirado')} title="Retirado" className="w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded"><i className="ri-hand-heart-line"></i></button>
 
