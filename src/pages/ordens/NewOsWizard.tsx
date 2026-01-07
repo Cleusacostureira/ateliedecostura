@@ -510,8 +510,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
       console.debug('supabase ordens insert failed', e);
     }
     if (onCreated) onCreated(finalOrder);
-    // close wizard UI now; parent will open fidelizaçao modal
-    onClose();
+    // keep wizard open and show post-confirm modal so user can send fidelização and print
     setLastCreatedOrder(finalOrder);
     setShowPostConfirm(true);
     setIsSubmitting(false);
@@ -635,7 +634,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
 
               <div className="mb-3">
                 <div className="text-sm text-gray-600 mb-2">Peças rápidas (por categoria)</div>
-                <div className="max-h-40 overflow-auto space-y-3">
+                <div className="max-h-[60vh] sm:max-h-40 overflow-auto space-y-3">
                   {(() => {
                     const excluded = new Set(['ACESSÓRIOS EM TECIDO','ROUPAS DE FRIO / EXTERNAS','ROUPAS ESPECIAIS','ROUPAS INFANTIS']);
                     return PREDEFINED_PECAS
@@ -906,23 +905,37 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
               {
                 (() => {
                   const o = lastCreatedOrder;
-                  const header = '   ATELIÊ DE COSTUREIRA\n   Rua Exemplo, 123 - Cidade\n   Tel: (11) 99999-9999\n';
-                  const line = '-'.repeat(32) + '\n';
-                  const cliente = `Cliente: ${o?.cliente || o?.client || ''}` + '\n';
-                  const numero = `OS: ${o?.numero || ''}` + '  ' + (o?.dateIn ? `Entrada: ${formatDate(o.dateIn)}` : '') + '\n';
+                  const eqLine = '='.repeat(32) + '\n';
+                  const dashLine = '-'.repeat(32) + '\n';
+                  const header = 'Cleusa Ateliê de Costura\nAJUSTES E CONSERTOS EM GERAL\n';
+                  const created = o?.created_at ? new Date(o.created_at) : new Date();
+                  const dataEntrada = o?.dateIn ? formatDate(o.dateIn) : created.toLocaleDateString('pt-BR');
+                  const horaEntrada = created.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                  const identificacao = `OS Nº: ${o?.numero || ''}\nData: ${dataEntrada}\nHora: ${horaEntrada}\n\n`;
+
+                  const clienteBlock = `CLIENTE\nCliente:\n${o?.cliente || o?.client || ''}\n\n`;
+
                   let items = '';
-                  (o?.pieces || []).forEach((p:any) => {
-                    items += `${p.tipo}\n`;
-                    (p.services||[]).forEach((s:any) => {
-                      const name = (s.name || s.titulo || '').substring(0,22);
-                      const price = Number(s.price||s.preco||0).toFixed(2);
-                      const padded = name.padEnd(24,' ')+price.padStart(8,' ')+"\n";
-                      items += padded;
-                    });
+                  (o?.pieces || []).forEach((p:any, idx:number) => {
+                    const num = idx+1;
+                    const ic = p.icone || '';
+                    const nome = p.tipo || '';
+                    const cor = p.cor || '-';
+                    const modelo = p.modelo || '-';
+                    const servs = (p.services||[]).map((s:any) => (s.name || s.titulo || s.title || '')).join(', ') || '-';
+                    items += `${num}) ${ic} ${nome} (${cor} / ${modelo}) - ${servs}\n`;
                   });
-                  const total = `\nTotal: R$ ${Number(o?.total||0).toFixed(2)}\n`;
-                  const footer = '\nObrigado pela preferência!\nRetirada prevista: ' + (o?.dateOut ? formatDate(o.dateOut) : '-') + '\n';
-                  const receipt = header + line + numero + cliente + line + items + line + total + footer + line;
+
+                  const totalPecas = `\nTOTAL DE PEÇAS\n${dashLine}Qtd. Total de Peças: ${(o?.pieces||[]).length}\n\n`;
+                  const valorTotal = `VALOR TOTAL\n${dashLine}VALOR TOTAL: R$ ${Number(o?.total||0).toFixed(2)}\n\n`;
+
+                  const termo = `TERMO DE AUTORIZAÇÃO\n${dashLine}Declaro que conferi as peças\ndescritas acima e autorizo\na execução dos serviços.\n\n`;
+                  const assinatura = `ASSINATURA\n${dashLine}Assinatura do Cliente:\n${o?.cliente || o?.client || ''}\n\n`;
+                  const retirada = `RETIRADA\n${dashLine}Retirada prevista:\n${o?.dateOut ? formatDate(o.dateOut) : '-'}\n\n`;
+                  const footer = `Obrigado pela preferência!\n${eqLine}`;
+
+                  const receipt = eqLine + header + eqLine + '\n' + 'IDENTIFICAÇÃO DA OS\n' + eqLine + identificacao + clienteBlock + 'ITENS RECEBIDOS\n' + dashLine + items + dashLine + totalPecas + valorTotal + termo + assinatura + retirada + footer;
                   return (<pre className="font-mono text-sm whitespace-pre-wrap">{receipt}</pre>);
                 })()
               }
