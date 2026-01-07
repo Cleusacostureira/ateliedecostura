@@ -562,24 +562,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                   </div>
                 </div>
               )}
-              {showPostConfirm && lastCreatedOrder && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                  <div className="absolute inset-0 bg-black/40" onClick={()=>{ setShowPostConfirm(false); onClose(); }}></div>
-                  <div className="bg-white rounded-lg p-4 z-10 w-full max-w-md">
-                    <div className="text-lg font-medium mb-2">Ordem criada — #{lastCreatedOrder.numero}</div>
-                    <div className="text-sm text-gray-600 mb-4">Deseja enviar a mensagem de fidelização agora?</div>
-                    <div className="flex gap-2 justify-end">
-                      {!postConfirmSentMessage && (
-                        <button onClick={()=>{ sendFidelizacaoAndOpenPrint(lastCreatedOrder); }} className="px-4 py-2 bg-rose-500 text-white rounded">Enviar mensagem</button>
-                      )}
-                      {postConfirmSentMessage && (
-                        <button onClick={()=>{ setShowPrintPreview(true); }} className="px-4 py-2 bg-blue-600 text-white rounded">Imprimir</button>
-                      )}
-                      <button onClick={()=>{ setShowPostConfirm(false); onClose(); }} className="px-4 py-2 border rounded">Fechar</button>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* post-confirm modal moved to global area so it appears regardless of current step */}
               <div className="border rounded p-2 max-h-[60vh] sm:max-h-40 overflow-auto">
                 {(clients||[]).filter(c => String(c.nome || c.name || '').toLowerCase().includes(searchClient.toLowerCase())).map(c => (
                   <div key={c.id || c.nome} onClick={()=>setSelectedClient(c)} className={`p-2 rounded cursor-pointer ${selectedClient?.id===c.id ? 'bg-rose-50 border border-rose-200' : ''}`}>
@@ -885,6 +868,25 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
               <div className="flex justify-center gap-4">
                 <button onClick={()=>{ setShowAddAnotherModal(false); /* stay on step 5 */ }} className="px-6 py-3 bg-rose-500 text-white rounded">Sim</button>
                 <button onClick={()=>{ setShowAddAnotherModal(false); setStep(6); }} className="px-6 py-3 border rounded">Não</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Global post-confirm modal: shown after creating an OS */}
+        {showPostConfirm && lastCreatedOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={()=>{ setShowPostConfirm(false); }}></div>
+            <div className="bg-white rounded-lg p-4 z-10 w-full max-w-md">
+              <div className="text-lg font-medium mb-2">Ordem criada — #{lastCreatedOrder.numero}</div>
+              <div className="text-sm text-gray-600 mb-4">Deseja enviar a mensagem de fidelização agora?</div>
+              <div className="flex gap-2 justify-end">
+                {!postConfirmSentMessage && (
+                  <button onClick={()=>{ sendFidelizacaoAndOpenPrint(lastCreatedOrder); }} className="px-4 py-2 bg-rose-500 text-white rounded">Enviar mensagem</button>
+                )}
+                {postConfirmSentMessage && (
+                  <button onClick={()=>{ setShowPrintPreview(true); }} className="px-4 py-2 bg-blue-600 text-white rounded">Imprimir</button>
+                )}
+                <button onClick={()=>{ setShowPostConfirm(false); }} className="px-4 py-2 border rounded">Fechar</button>
               </div>
             </div>
           </div>
