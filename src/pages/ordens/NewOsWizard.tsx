@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { loadClients, upsertClient } from '../../lib/clients';
+import PieceFlowModal from './PieceFlowModal';
 
 type Piece = {
   id: string;
@@ -48,6 +49,18 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   const formatDate = (d?: string | null) => {
     if (!d) return '';
     try { return new Date(d).toLocaleDateString('pt-BR'); } catch (e) { return d; }
+  }
+
+  const formatFidelizacaoMessage = (o: any) => {
+    try {
+      const cliente = o?.cliente || o?.client || selectedClient?.nome || '';
+      const numero = o?.numero || '';
+      const servicesText = (o?.pieces || []).flatMap((p:any) => (p.services||[]).map((s:any) => s.name || s.titulo || s.title || '')).join(', ') || '-';
+      const total = Number(o?.total || 0).toFixed(2);
+      const dataRetirada = o?.dateOut ? formatDate(o.dateOut) : '-';
+
+      return `${cliente}! 🎉\n\n✂️ Cleusa Ateliê de Costura\n\nSua(s) peça(s) da OS ${numero} está(ão) registrada(s) e em breve pronta(s).\n\n🧾 Serviço(s): ${servicesText}\n💰 Valor: R$ ${total}\n\n📅 Previsão de retirada: ${dataRetirada}\n\n🔁 Dados para pagamento (PIX):\nNome: Cleusa Belani David\nTelefone: 45 99912-6130\nCPF: 641.667.240-53\n\n✨ Aguardamos você!`;
+    } catch (e) { return '' + (o?.cliente || ''); }
   }
 
   const PREDEFINED_PECAS: Array<{ nome: string; categoria: string; icone: string }> = [
@@ -138,6 +151,32 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState('');
   const [showAddAnotherModal, setShowAddAnotherModal] = useState(false);
+  const [pieceFlowOpen, setPieceFlowOpen] = useState(false);
+
+  const handlePieceDone = (piece: any, opts?: { keepOpen?: boolean }) => {
+    try {
+      setPieces(prev => [...prev, piece]);
+      setSelectedPieceForService(piece.id);
+      // if the piece flow indicated keepOpen, keep the modal open so user can add another piece
+      if (!opts || !opts.keepOpen) {
+        setPieceFlowOpen(false);
+        // after adding a piece, move to the pieces/services step so user can add services
+        setStep(5);
+      } else {
+        // keep the modal open and reset its internal flow (PieceFlowModal handles reset)
+        // but still update preview/step to reflect added piece
+        setStep(5);
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    try {
+      if (step === 4) {
+        setPieceFlowOpen(true);
+      }
+    } catch (e) {}
+  }, [step]);
 
   useEffect(() => {
     (async () => {
@@ -271,41 +310,39 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   };
 
   const subtotal = () => {
-    try { return pieces.reduce((s,p) => s + (p.services||[]).reduce((ss,si)=> ss + Number(si.price||0), 0), 0); } catch (e) { return 0; }
+    try { return pieces.reduce((s,p) => s + ((p.services||[]).reduce((ss,si)=> ss + Number(si.price||0), 0) - (Number(p.discount||0) || 0)), 0); } catch (e) { return 0; }
   };
 
   const addPiece = () => {
-    if (!currentPieceTipo) return;
-    const id = `local-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
-    const matched = PREDEFINED_PECAS.find(p => (p.nome || '').toLowerCase() === (currentPieceTipo || '').toLowerCase());
-    const icone = matched ? matched.icone : '🧵';
-    const newPiece: Piece = { id, tipo: currentPieceTipo, cor: currentPieceCor || undefined, modelo: currentPieceModelo || undefined, services: [], icone };
-    setPieces(prev => [...prev, newPiece]);
-    setCurrentPieceTipo(''); setCurrentPieceCor(''); setCurrentPieceModelo('');
-    setSelectedPieceForService(newPiece.id);
+    // abrir fluxo de peças em tela cheia
+    setPieceFlowOpen(true);
+  };
+
+  const updatePieceServicePrice = (pieceId: string, svcIdx: number, price: number) => {
+    setPieces(prev => prev.map(p => p.id === pieceId ? { ...p, services: (p.services||[]).map((s:any,i:number) => i===svcIdx ? { ...s, price: Number(price||0) } : s) } : p));
+  };
+
+  const updatePieceDiscount = (pieceId: string, discount: number) => {
+    setPieces(prev => prev.map(p => p.id === pieceId ? { ...p, discount: Number(discount||0) } : p));
   };
 
   const next = () => {
     // simple validations per step
     if (step === 1 && !selectedClient) return alert('Selecione ou cadastre um cliente');
-    if (step === 4 && !dateOut) return alert('Informe a previsão de entrega');
+    if (step === 3 && !dateOut) return alert('Informe a previsão de entrega');
     if (step === 5) {
-      console.debug('next(step5) invoked', { currentPieceTipo, piecesLen: pieces.length });
-      // if user has filled the current piece fields, add it first
-      if (currentPieceTipo) {
-        addPiece();
-        // open in-app modal asking whether to add another piece
-        console.debug('setting showAddAnotherModal(true) after addPiece');
-        setShowAddAnotherModal(true);
-        return;
+      // if there are no pieces, require at least one
+      if (!pieces || pieces.length === 0) {
+        return alert('Adicione pelo menos uma peça');
       }
-      // if there are already pieces added, ask whether to add another
-      if (pieces.length > 0) {
-        console.debug('pieces already exist, setting showAddAnotherModal(true)');
-        setShowAddAnotherModal(true);
-        return;
+      // if all pieces already have services, skip services step
+      const allHaveServices = pieces.every(p => Array.isArray(p.services) && p.services.length > 0);
+      if (allHaveServices) {
+        setStep(7); // go to resumo financeiro
+      } else {
+        setStep(6); // go to add services
       }
-      return alert('Adicione pelo menos uma peça');
+      return;
     }
     if (step === 6) {
       // if no piece selected but we have pieces, auto-select first
@@ -469,11 +506,13 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
           // Remove other local-only duplicates that share the same normalized numero (temp records)
           try {
             const numKey = String(merged.numero || '');
-            const normalizedKey = numKey.replace(/\D/g, '');
+            const normalizedKeyRaw = numKey.replace(/\D/g, '');
+            const normalizedKey = normalizedKeyRaw ? String(parseInt(normalizedKeyRaw, 10)) : '';
             if (normalizedKey) {
               arr = arr.filter((a:any) => {
                 try {
-                  const aNum = String(a.numero || '').replace(/\D/g, '');
+                  const aNumRaw = String(a.numero || '').replace(/\D/g, '');
+                  const aNum = aNumRaw ? String(parseInt(aNumRaw, 10)) : '';
                   if (aNum !== normalizedKey) return true;
                   if (String(a.id || '') === String(merged.id || '')) return true; // keep merged/server row
                   if (a._local === true || String(a.id || '').startsWith('local-')) return false; // drop local temp
@@ -481,8 +520,34 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                 } catch (ee) { return true; }
               });
             }
+            // Additional defensive dedupe: remove obvious local duplicates
+            try {
+              const keepId = String(merged.id || '');
+              const mergedCreated = merged.created_at ? new Date(merged.created_at).getTime() : null;
+              const mergedClient = String(merged.cliente || merged.client || '').trim();
+              const mergedTotal = Number(merged.total || merged.valor || merged.paidAmount || 0);
+              if (keepId) {
+                arr = arr.filter((a:any) => {
+                  try {
+                    if (String(a.id || '') === keepId) return true;
+                    // drop local records that look like temporaries: local- ids
+                    if (a._local === true || String(a.id||'').startsWith('local-')) {
+                      // same numero already handled above; also drop if same client+total and created_at close
+                      const aClient = String(a.cliente || a.client || '').trim();
+                      const aTotal = Number(a.total || a.valor || a.paidAmount || 0);
+                      if (mergedClient && aClient && mergedClient === aClient && Math.abs((new Date(a.created_at || '').getTime() || 0) - (mergedCreated || 0)) < 15000 && Math.abs((aTotal || 0) - (mergedTotal || 0)) < 0.01) {
+                        return false; // drop probable duplicate
+                      }
+                      // otherwise drop obvious temporaries that are local and share numero digits
+                      return false;
+                    }
+                    return true;
+                  } catch (eee) { return true; }
+                });
+              }
+            } catch (ee) { /* ignore */ }
           } catch (ee) { /* ignore dedupe errors */ }
-          try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: arr })); } catch(e){}
+          try { localStorage.setItem('orders', JSON.stringify(arr)); } catch(e){}
           try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
         } catch(e) { /* ignore local update errors */ }
       }
@@ -517,14 +582,21 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
     setLastCreatedOrder(finalOrder);
     // build default fidelizacao message for user review
     try {
-      const servicesText = (finalOrder.pieces || []).flatMap((p:any) => (p.services||[]).map((s:any) => s.name || s.titulo || s.title || '')).join(', ');
-      const msg = `Olá ${finalOrder.cliente || selectedClient?.nome || ''}! Obrigado pela preferência. Sua OS ${finalOrder.numero} foi confirmada. Serviço(s): ${servicesText || '-'}.
-Total: R$ ${Number(finalOrder.total||0).toFixed(2)}.`;
-      setFidelizacaoMessage(msg);
+      setFidelizacaoMessage(formatFidelizacaoMessage(finalOrder));
     } catch (e) { setFidelizacaoMessage(''); }
     setShowPostConfirm(true);
     setIsSubmitting(false);
   };
+
+  const doPrintAndClose = () => {
+    try {
+      // trigger native print
+      window.print();
+    } catch (e) { /* ignore */ }
+    // close any post-confirm UI and the wizard modal itself
+    try { setShowPrintPreview(false); setShowPostConfirm(false); setShowPrintConfirm(false); } catch(e){}
+    try { onClose(); } catch(e){}
+  }
 
   const sendFidelizacaoAndDontAutoPrint = (order:any) => {
     try {
@@ -543,26 +615,40 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose}></div>
-      {/* remove debug banner for add-another flow */}
-      <div className="bg-white shadow-xl w-full h-full sm:h-auto sm:max-w-3xl sm:rounded-lg p-4 sm:p-6 z-10 overflow-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold">Nova Ordem de Serviço — Passo {step} de 10</h3>
-          <button onClick={onClose} className="text-gray-500">Fechar</button>
-        </div>
+      {/* modal: header + scrollable content + footer */}
+      <div className="bg-white shadow-xl w-full h-full rounded-none p-4 z-10 flex flex-col" style={{ minHeight: '80vh', maxHeight: '98vh' }}>
+        <div className="p-4 sm:p-0">
+          <div className="flex items-start justify-between mb-4 gap-4">
+            <div>
+              <h3 className="text-lg font-bold">Nova Ordem de Serviço — Passo {step} de 10</h3>
+            </div>
+            <div className="ml-auto flex flex-col items-end gap-2 text-right">
+              <div className="text-2xl font-bold text-blue-600">{selectedClient?.nome || selectedClient?.name || '-'}</div>
+              <div className="flex items-center gap-2">
+                <div className={`px-2 py-1 rounded text-sm ${priority === 'Urgente' ? 'bg-red-100 text-red-700' : 'bg-rose-50 text-rose-700'}`}>{priority}</div>
+                <div className="text-sm text-gray-600">Entrada: {formatDate(dateIn)}</div>
+                <div className="text-sm text-gray-600">Previsão: {formatDate(dateOut) || '-'}</div>
+              </div>
+              <div className="text-sm text-gray-600">Peças: {(pieces||[]).length} — Serviços: {Array.from(new Set((pieces||[]).flatMap(p=> (p.services||[]).map((s:any)=> s.name || s.titulo || s.title || '')))).join(', ') || '-'}</div>
+              <div className="text-xl font-semibold text-green-600">R$ { (paymentStatus === 'Pago' && (paidAmount !== null && paidAmount !== undefined)) ? Number(paidAmount).toFixed(2) : subtotal().toFixed(2) }</div>
+            </div>
+            <button onClick={onClose} className="text-gray-500">Fechar</button>
+          </div>
 
-        <div className="mb-4">
-          <div className="w-full h-2 bg-gray-100 rounded overflow-hidden">
-            <div style={{ width: `${(step/10)*100}%` }} className="h-full bg-rose-500"></div>
+          <div className="mb-4">
+            <div className="w-full h-2 bg-gray-100 rounded overflow-hidden">
+              <div style={{ width: `${(step/10)*100}%` }} className="h-full bg-rose-500"></div>
+            </div>
           </div>
         </div>
 
-        <div className="min-h-[240px] max-h-[60vh] overflow-auto">
+        <div className="flex-1 overflow-auto p-4">
           {step === 1 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Selecione o Cliente</label>
-              <div className="flex gap-2 mb-3">
-                <input value={searchClient} onChange={e=>setSearchClient(e.target.value)} placeholder="Buscar cliente" className="flex-1 border px-3 py-2 rounded" />
-                <button onClick={()=>setShowNewClientForm(s=>!s)} className="px-4 py-2 bg-rose-500 text-white rounded">+ Novo Cliente</button>
+              <div className="flex gap-2 mb-3 items-center">
+                <input value={searchClient} onChange={e=>setSearchClient(e.target.value)} placeholder="Buscar cliente" className="flex-1 border px-4 py-3 rounded text-base" />
+                <button onClick={()=>setShowNewClientForm(s=>!s)} className="px-5 py-3 bg-rose-500 text-white rounded text-sm">+ Novo Cliente</button>
               </div>
               {showNewClientForm && (
                 <div className="p-3 border rounded mb-2">
@@ -575,7 +661,7 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
                 </div>
               )}
               {/* post-confirm modal moved to global area so it appears regardless of current step */}
-              <div className="border rounded p-2 max-h-[60vh] sm:max-h-40 overflow-auto">
+              <div className="border rounded p-4 mb-2 h-[44vh] sm:h-[56vh] overflow-auto">
                 {(clients||[]).filter(c => String(c.nome || c.name || '').toLowerCase().includes(searchClient.toLowerCase())).map(c => (
                   <div key={c.id || c.nome} onClick={()=>setSelectedClient(c)} className={`p-2 rounded cursor-pointer ${selectedClient?.id===c.id ? 'bg-rose-50 border border-rose-200' : ''}`}>
                     <div className="flex items-center justify-between">
@@ -600,98 +686,76 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
 
           {step === 3 && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Data de Entrada</label>
-              <div className="border rounded p-4 text-center">
-                <div className="text-sm text-gray-500 mb-2">Clique para adicionar a data</div>
-                <input type="date" value={dateIn} onChange={e=>setDateIn(e.target.value)} className="mx-auto border p-3 rounded text-base" />
-              </div>
-            </div>
-          )}
-
-          {step === 4 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Previsão de Entrega</label>
-              <div className="border rounded p-4 text-center">
-                <div className="text-sm text-gray-500 mb-2">Clique para adicionar a data</div>
-                <input type="date" value={dateOut} onChange={e=>setDateOut(e.target.value)} className="mx-auto border p-3 rounded text-base" />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Datas</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-sm text-gray-500 mb-2">Data de Entrada</div>
+                  <input type="date" value={dateIn} onChange={e=>setDateIn(e.target.value)} className="w-full border p-3 rounded text-base" />
+                </div>
+                <div>
+                  <div className="text-sm text-gray-500 mb-2">Previsão de Entrega</div>
+                  <input type="date" value={dateOut} onChange={e=>setDateOut(e.target.value)} className="w-full border p-3 rounded text-base" />
+                </div>
               </div>
             </div>
           )}
 
           {step === 5 && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Cadastrar Peça</label>
-              <div className="flex gap-2 mb-2">
-                <input placeholder="Nome da peça" className="flex-1 border p-2 rounded" value={currentPieceTipo} onChange={e=>setCurrentPieceTipo(e.target.value)} />
-                <input placeholder="Modelo / Observação" className="w-40 border p-2 rounded" value={currentPieceModelo} onChange={e=>setCurrentPieceModelo(e.target.value)} />
-                <button onClick={addPiece} className="px-4 py-2 bg-rose-500 text-white rounded">Adicionar</button>
-              </div>
-
-              <div className="mb-3">
-                <div className="text-sm text-gray-600 mb-2">Peças rápidas (por categoria)</div>
-                <div className="max-h-[60vh] sm:max-h-40 overflow-auto space-y-3">
-                  {(() => {
-                    const excluded = new Set(['ACESSÓRIOS EM TECIDO','ROUPAS DE FRIO / EXTERNAS','ROUPAS ESPECIAIS','ROUPAS INFANTIS']);
-                    return PREDEFINED_PECAS
-                      .filter(p => !excluded.has(p.categoria))
-                      .filter(p => !currentPieceTipo || p.nome.toLowerCase().includes(currentPieceTipo.toLowerCase()))
-                      .slice()
-                      .sort((a,b) => a.nome.localeCompare(b.nome))
-                      .map(p => (
-                        <button key={p.nome} onClick={()=>setCurrentPieceTipo(p.nome)} className={`flex items-center gap-2 px-3 py-1 border rounded ${currentPieceTipo===p.nome ? 'bg-rose-50 border-rose-200' : 'bg-white'}`}>
-                          <span className="text-lg">{p.icone}</span>
-                          <span className="text-sm">{p.nome}</span>
-                        </button>
-                      ));
-                  })()}
-                </div>
-              </div>
-
-              {/* Hide the desktop color swatches on small screens so piece icons take priority there */}
-              <div className="mb-3 hidden sm:block">
-                <div className="text-sm text-gray-600 mb-2">Cores</div>
-                <div className="flex flex-wrap gap-2">
-                  {COLORS.map(c => {
-                    const hex = COLOR_MAP[c] || '#ccc';
-                    const isWhite = c === 'Branco';
-                    return (
-                      <button
-                        key={c}
-                        title={c}
-                        aria-label={c}
-                        onClick={() => setCurrentPieceCor(c)}
-                        className={`w-10 h-8 rounded border flex items-center justify-center ${currentPieceCor===c ? 'ring-2 ring-rose-500' : ''}`}
-                        style={{ backgroundColor: hex, borderColor: isWhite ? '#e5e7eb' : undefined }}
-                      >
-                        <span className="sr-only">{c}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {pieces.map(p => (
-                  <div key={p.id} className="p-2 border rounded">
-                    <div className="flex justify-between items-center">
-                      <div className="font-medium flex items-center gap-2">{p.icone || '🧵'} <span>{p.tipo}</span> <span className="text-xs text-gray-500">{p.cor}</span></div>
-                      <div className="text-sm text-gray-500">Serviços: {(p.services||[]).length}</div>
-                    </div>
-                    {(p.services||[]).length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {(p.services||[]).map((s:any, idx:number) => (
-                          <div key={idx} className="flex justify-between items-center">
-                            <div className="font-semibold">{s.name}</div>
-                            <div className="text-sm text-gray-700">R$ {Number(s.price||0).toFixed(2)}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+              {pieces.length === 0 ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Cadastrar Peça</label>
+                  <div className="flex gap-2 mb-2">
+                    <input placeholder="Nome da peça" className="flex-1 border p-2 rounded" value={currentPieceTipo} onChange={e=>setCurrentPieceTipo(e.target.value)} />
+                    <input placeholder="Modelo / Observação" className="w-40 border p-2 rounded" value={currentPieceModelo} onChange={e=>setCurrentPieceModelo(e.target.value)} />
+                    <button onClick={addPiece} className="px-4 py-2 bg-rose-500 text-white rounded">Adicionar</button>
                   </div>
-                ))}
-              </div>
-              {/* On mobile we keep a hint here; services are managed in step 6 */}
-              <div className="text-sm text-gray-500 sm:hidden">Selecione uma peça no próximo passo para ver e adicionar serviços.</div>
+
+                  <div className="mb-3">
+                    <div className="text-sm text-gray-600 mb-2">Peças rápidas (por categoria)</div>
+                    <div className="max-h-[60vh] sm:max-h-40 overflow-auto space-y-3">
+                      {(() => {
+                        const excluded = new Set(['ACESSÓRIOS EM TECIDO','ROUPAS DE FRIO / EXTERNAS','ROUPAS ESPECIAIS','ROUPAS INFANTIS']);
+                        return PREDEFINED_PECAS
+                          .filter(p => !excluded.has(p.categoria))
+                          .filter(p => !currentPieceTipo || p.nome.toLowerCase().includes(currentPieceTipo.toLowerCase()))
+                          .slice()
+                          .sort((a,b) => a.nome.localeCompare(b.nome))
+                          .map(p => (
+                            <button key={p.nome} onClick={()=>setCurrentPieceTipo(p.nome)} className={`flex items-center gap-2 px-3 py-1 border rounded ${currentPieceTipo===p.nome ? 'bg-rose-50 border-rose-200' : 'bg-white'}`}>
+                              <span className="text-lg">{p.icone}</span>
+                              <span className="text-sm">{p.nome}</span>
+                            </button>
+                          ));
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Prévia das Peças</label>
+                  <div className="space-y-3">
+                    {pieces.map((p, idx) => (
+                      <div key={p.id} className="p-3 border rounded flex items-start gap-3">
+                        <div className="w-12 h-12 flex items-center justify-center bg-gray-100 rounded text-2xl">{p.icone || '🧵'}</div>
+                        <div className="flex-1">
+                          <div className="font-medium">{idx+1}. {p.tipo} <span className="text-xs text-gray-500">{p.cor || ''} {p.modelo ? '— ' + p.modelo : ''}</span></div>
+                          {(p.services||[]).length > 0 && (
+                            <div className="mt-2 text-sm">
+                              <div className="font-medium">Serviços:</div>
+                              <ul className="list-disc pl-5">
+                                {p.services.map((s:any,i:number)=>(<li key={i}>{s.name} — R$ {Number(s.price||0).toFixed(2)}</li>))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-sm font-semibold">R$ {(p.services||[]).reduce((s,si)=> s+Number(si.price||0),0).toFixed(2)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Navigation handled by footer: only Back/Next buttons should appear there */}
+                </div>
+              )}
             </div>
           )}
 
@@ -746,7 +810,7 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
                   </div>
 
                   <div className="mb-2 font-medium">Serviços disponíveis</div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-auto">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[50vh] overflow-auto">
                     {((servicesList||[]).slice().sort((a:any,b:any) => (String(a.titulo||a.name||a.title||'')).localeCompare(String(b.titulo||b.name||b.title||''), 'pt-BR', { sensitivity: 'base' })).filter((s:any)=> !serviceSearch || (String(s.titulo||s.name||s.title||'')).toLowerCase().includes(serviceSearch.toLowerCase()))) .map((s:any) => {
                       const displayName = s.titulo || s.name || s.title || '';
                       const price = Number(s.preco ?? s.price ?? 0) || 0;
@@ -817,8 +881,14 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Pagamento</label>
               <div className="flex gap-2 mb-2">
-                <button onClick={()=>setPaymentStatus('Pago')} className={`px-4 py-2 rounded ${paymentStatus==='Pago' ? 'bg-green-600 text-white' : 'border'}`}>Pago</button>
-                <button onClick={()=>setPaymentStatus('Não pago')} className={`px-4 py-2 rounded ${paymentStatus==='Não pago' ? 'bg-red-600 text-white' : 'border'}`}>Não pago</button>
+                <button onClick={()=>setPaymentStatus('Pago')} className={`px-4 py-2 rounded flex items-center gap-2 ${paymentStatus==='Pago' ? 'bg-green-600 text-white' : 'border'}`}>
+                  <span className="text-lg">💵</span>
+                  <span>Pago</span>
+                </button>
+                <button onClick={()=>setPaymentStatus('Não pago')} className={`px-4 py-2 rounded flex items-center gap-2 ${paymentStatus==='Não pago' ? 'bg-red-600 text-white' : 'border'}`}>
+                  <span className="text-lg">❌</span>
+                  <span>Não pago</span>
+                </button>
               </div>
               {paymentStatus === 'Pago' && (
                 <div className="space-y-2">
@@ -862,11 +932,11 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
           )}
         </div>
 
-        <div className="mt-4 flex justify-between">
+        <div className="border-t p-4 flex justify-between items-center bg-white">
           <div>
             {step > 1 && <button onClick={prev} className="px-4 py-2 border rounded">Voltar</button>}
           </div>
-            <div className="flex gap-2">
+          <div>
             {step < 10 && <button onClick={next} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Avançar</button>}
             {step === 10 && <button onClick={handleConfirm} className="px-4 py-2 bg-rose-500 text-white rounded">Confirmar OS</button>}
           </div>
@@ -917,9 +987,9 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
             <div className="absolute inset-0 bg-black/40" onClick={()=>setShowPrintConfirm(false)}></div>
             <div className="bg-white rounded-lg p-4 z-10 w-full max-w-sm text-center">
               <div className="mb-3">Deseja imprimir a OS agora?</div>
-              <div className="flex justify-center gap-3">
+                <div className="flex justify-center gap-3">
                 <button onClick={()=>{ setShowPrintConfirm(false); setShowPostConfirm(false); setShowPrintPreview(true); }} className="px-4 py-2 bg-rose-500 text-white rounded">Sim</button>
-                <button onClick={()=>{ setShowPrintConfirm(false); setShowPostConfirm(false); }} className="px-4 py-2 border rounded">Não</button>
+                <button onClick={()=>{ setShowPrintConfirm(false); setShowPostConfirm(false); try { onClose(); } catch(e){} }} className="px-4 py-2 border rounded">Não</button>
               </div>
             </div>
           </div>
@@ -930,6 +1000,20 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
             <div className="bg-green-600 text-white px-4 py-2 rounded shadow">Serviço adicionado com sucesso!</div>
           </div>
         )}
+
+        {/* Fluxo de peças full-screen */}
+        <PieceFlowModal
+          open={pieceFlowOpen}
+          onClose={() => setPieceFlowOpen(false)}
+          onDone={handlePieceDone}
+          servicesCatalog={servicesList}
+          allTipos={PREDEFINED_PECAS.map(p=>({ nome: p.nome, icone: p.icone }))}
+          clientName={selectedClient?.nome || selectedClient?.name || selectedClient?.client || ''}
+          colorMap={COLOR_MAP}
+          initialTipo={currentPieceTipo}
+          initialCor={currentPieceCor}
+          initialModelo={currentPieceModelo}
+        />
 
         {/* Print preview modal */}
         {showPrintPreview && lastCreatedOrder && (
@@ -975,7 +1059,7 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
                 })()
               }
               <div className="mt-4 flex gap-2 justify-end">
-                <button onClick={()=>{ window.print(); }} className="px-4 py-2 bg-blue-600 text-white rounded">Imprimir</button>
+                <button onClick={doPrintAndClose} className="px-4 py-2 bg-blue-600 text-white rounded">Imprimir</button>
                 <button onClick={()=>setShowPrintPreview(false)} className="px-4 py-2 border rounded">Fechar</button>
               </div>
             </div>

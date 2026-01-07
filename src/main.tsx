@@ -46,7 +46,20 @@ try {
 
         // Merge by id/numero preserving fields from newArr over existingArr
         const map = new Map<string, any>();
-        const keyFor = (it: any) => String(it && (it.id ?? it.numero ?? '')) || JSON.stringify(it || '');
+        const normalizeNumeroKey = (n: any) => {
+          try {
+            const raw = String(n || '').replace(/\D/g, '');
+            return raw ? String(parseInt(raw, 10)) : null;
+          } catch (e) { return null; }
+        }
+        const keyFor = (it: any) => {
+          try {
+            const numKey = normalizeNumeroKey(it?.numero || it?.numero || (it && it.numero));
+            if (numKey) return `num:${numKey}`;
+            if (it && it.id) return `id:${String(it.id)}`;
+            return `raw:${JSON.stringify(it || '')}`;
+          } catch (e) { return `raw:${JSON.stringify(it || '')}`; }
+        };
         (existingArr || []).forEach((it:any) => map.set(keyFor(it), it));
         (newArr || []).forEach((it:any) => {
           const k = keyFor(it);

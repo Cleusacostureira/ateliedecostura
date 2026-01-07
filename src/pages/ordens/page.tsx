@@ -1,182 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import NewOsWizard from './NewOsWizard';
-import { addPointsForOrder, loadClients, upsertClient } from '../../lib/clients';
+import { addPointsForOrder, loadClients, upsertClient, getClientById } from '../../lib/clients';
 import { formatMessageForStatus } from '../../lib/messages';
 import { supabase } from '../../lib/supabaseClient';
 
-export default function OrdensPage() {
-  // runtime flag to avoid repeated failing requests when the `fluxo_caixa` table is missing
-  const isFluxoAvailable = () => !((window as any).__fluxoCaixaMissing === true);
-  const markFluxoMissing = () => { (window as any).__fluxoCaixaMissing = true; console.info('fluxo_caixa table missing — falling back to localStorage'); };
-  const [selectedPeriod, setSelectedPeriod] = useState('mes');
-  const [showNewOrderModal, setShowNewOrderModal] = useState(false);
-  const [showAdvancePaymentModal, setShowAdvancePaymentModal] = useState(false);
-  // backward-compatible aliases: some parts of the code use `showModal`/`setShowModal`
-  const showModal = showNewOrderModal;
-  const setShowModal = setShowNewOrderModal;
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState<any>(null);
-  const [showMaterialsModal, setShowMaterialsModal] = useState(false);
-  const [showDeliverModal, setShowDeliverModal] = useState(false);
-  const [showPecasModal, setShowPecasModal] = useState(false);
-  const [pecasSearch, setPecasSearch] = useState('');
-  const [showCorModal, setShowCorModal] = useState(false);
-  const [showNewClientModal, setShowNewClientModal] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [showFidelizacaoModal, setShowFidelizacaoModal] = useState(false);
-  const [showPrintOptions, setShowPrintOptions] = useState(false);
-  const [showSavedSummary, setShowSavedSummary] = useState(false);
-  const [showConfirmDeliverPrompt, setShowConfirmDeliverPrompt] = useState(false);
-  const [showStatusMessageOptions, setShowStatusMessageOptions] = useState(false);
-  const [showInlineServiceForm, setShowInlineServiceForm] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('Todos');
-  const [clientFilter, setClientFilter] = useState('');
-  const [periodStart, setPeriodStart] = useState('');
-  const [periodEnd, setPeriodEnd] = useState('');
-  const [onlyLateFilter, setOnlyLateFilter] = useState(false);
-  const [showStatusOnlyModal, setShowStatusOnlyModal] = useState(false);
-  const [statusSelection, setStatusSelection] = useState('');
-  const [statusChangeMessage, setStatusChangeMessage] = useState('');
-  const [orders, setOrders] = useState<any[]>([]);
-  const ordersRef = useRef<any[]>([]);
-  const [clientes, setClientes] = useState<any[]>([]);
-  const [availablePieces, setAvailablePieces] = useState<any[]>([]);
-  // debug panel state (visible when URL contains ?debug=1)
-  const [debugOpen, setDebugOpen] = useState<boolean>(false);
-  const [debugInfo, setDebugInfo] = useState<any>(null);
-  // New Order form state
-  const [newOrderClientId, setNewOrderClientId] = useState<string | null>(null);
-  const [newOrderDate, setNewOrderDate] = useState<string>('');
-  const [newOrderStatus, setNewOrderStatus] = useState<string>('Recebido');
-  const [newOrderPaymentStatus, setNewOrderPaymentStatus] = useState<string | null>(null);
-  const [newOrderObservacoes, setNewOrderObservacoes] = useState<string>('');
-  const [orderServices, setOrderServices] = useState<any[]>([]);
-  const [pieces, setPieces] = useState<any[]>([]);
-  const [selectedPieceForService, setSelectedPieceForService] = useState<any>(null);
-  const [selectedServiceId, setSelectedServiceId] = useState<any>('');
-  const [serviceValue, setServiceValue] = useState<string>('');
-  const [serviceObservation, setServiceObservation] = useState<string>('');
-  const [fidelizacaoMessage, setFidelizacaoMessage] = useState<string>('');
-  const [clientePhone, setClientePhone] = useState<string>('');
-  // pieces form helpers (declared here to avoid ReferenceErrors in the modal)
-  const [pieceTipo, setPieceTipo] = useState<string>('');
-  const [pieceCor, setPieceCor] = useState<string>('');
-  const [pieceModelo, setPieceModelo] = useState<string>('');
-  const [newServiceCategoryFilter, setNewServiceCategoryFilter] = useState<string>('');
-  const [inlineServiceCategory, setInlineServiceCategory] = useState<string>('');
-  const [inlineServiceName, setInlineServiceName] = useState<string>('');
-  const [inlineServicePrice, setInlineServicePrice] = useState<string>('');
-  const [quickClientName, setQuickClientName] = useState<string>('');
-  const [quickClientPhone, setQuickClientPhone] = useState<string>('');
-  const [orderMaterials, setOrderMaterials] = useState<any[]>([]);
-  const [selectedMaterialId, setSelectedMaterialId] = useState<any>('');
-  const [materialQuantity, setMaterialQuantity] = useState<string>('1');
-  const [materialPrice, setMaterialPrice] = useState<string>('');
+// small constants used by the piece/color pickers when DB lists are missing
+const COLORS = ['Preta','Branca','Azul','Vermelha','Verde','Amarela','Rosa','Bege','Cinza','Marrom'];
+const DEFAULT_PECAS = [
+  { id: 'calca', nome: 'Calça', icone: '👖', categoria: 'calcas' },
+  { id: 'camisa', nome: 'Camisa', icone: '👕', categoria: 'camisas' },
+  { id: 'vestido', nome: 'Vestido', icone: '👗', categoria: 'vestidos' },
+];
 
-  // edit modal state placeholders
-  const [editClient, setEditClient] = useState<string>('');
-  const [editCategory, setEditCategory] = useState<string>('');
-  const [editServiceName, setEditServiceName] = useState<string>('');
-  const [editValue, setEditValue] = useState<string>('');
-  const [editStatus, setEditStatus] = useState<string>('');
-  const [editDateIn, setEditDateIn] = useState<string>('');
-  const [editDateOut, setEditDateOut] = useState<string>('');
-  const [editObservation, setEditObservation] = useState<string>('');
-  const defaultSampleOrders: any[] = [];
-  // small constants used by the piece/color pickers when DB lists are missing
-  const COLORS = ['Preta','Branca','Azul','Vermelha','Verde','Amarela','Rosa','Bege','Cinza','Marrom'];
-  const DEFAULT_PECAS = [
-    { id: 'calca', nome: 'Calça', icone: '👖', categoria: 'calcas' },
-    { id: 'camisa', nome: 'Camisa', icone: '👕', categoria: 'camisas' },
-    { id: 'vestido', nome: 'Vestido', icone: '👗', categoria: 'vestidos' },
-  ];
+// runtime flag to avoid repeated failing requests when the `fluxo_caixa` table is missing
+const isFluxoAvailable = () => !((window as any).__fluxoCaixaMissing === true);
+const markFluxoMissing = () => { (window as any).__fluxoCaixaMissing = true; console.info('fluxo_caixa table missing — falling back to localStorage'); };
 
-  // small utility for printing tickets during development
-  const printTicket = (order: any) => {
-    try {
-      const w = window.open('', '_blank');
-      if (!w) return;
-      w.document.write('<pre>' + JSON.stringify(order, null, 2) + '</pre>');
-      w.document.close();
-    } catch (e) { console.info('printTicket error', e); }
-  };
-  useEffect(() => { ordersRef.current = orders; }, [orders]);
-// helper: build a map of cashFlowDetails by order id/numero, ignoring locally deleted tombstones
-const getCashMap = () => {
+// Normalize various status representations into canonical display strings
+const normalizeStatus = (s: any) => {
   try {
-    const raw = localStorage.getItem('cashFlowDetails');
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(parsed)) return {};
-
-    let deletedSet = new Set<string>();
-    try {
-      const deletedRaw = localStorage.getItem('deletedOrders');
-      const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
-      deletedSet = new Set(Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : []);
-    } catch (e) { /* ignore */ }
-
-    const map: Record<string, any> = {};
-    parsed.forEach((c: any) => {
-      try {
-        const oid = c.orderId || c.orderid;
-        const num = c.numero;
-        if (oid && deletedSet.has(String(oid))) return;
-        if (num && deletedSet.has(String(num))) return;
-        if (oid) map[String(oid)] = c;
-        if (num) map[String(num)] = c;
-      } catch (e) { /* ignore entry */ }
-    });
-    return map;
-  } catch (e) { return {}; }
-};
-
-  // helper: ensure local cashFlowDetails only contains entries for currently active orders
-  const reconcileLocalCashForOrders = (activeOrders: any[]) => {
-    try {
-      const activeSet = new Set<string>();
-      (activeOrders || []).forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
-      const raw = localStorage.getItem('cashFlowDetails');
-      const parsed = raw ? JSON.parse(raw) : [];
-      if (!Array.isArray(parsed)) {
-        localStorage.setItem('cashFlowDetails', JSON.stringify([]));
-        return;
-      }
-      if (activeSet.size === 0) {
-        // no active orders -> clear local financial entries
-        localStorage.setItem('cashFlowDetails', JSON.stringify([]));
-        try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(e){}
-        return;
-      }
-      const filtered = (parsed || []).filter((c:any) => {
-        try {
-          const oid = c.orderId || c.orderid;
-          const num = c.numero;
-          if (oid && activeSet.has(String(oid))) return true;
-          if (num && activeSet.has(String(num))) return true;
-          return false;
-        } catch (e) { return false; }
-      });
-      localStorage.setItem('cashFlowDetails', JSON.stringify(filtered));
-      try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(e){}
-    } catch (e) { /* ignore */ }
-  };
-
-  // small helper to parse currency-ish strings into numbers
-  const parseCurrency = (raw: any) => {
-    try {
-      if (raw === null || raw === undefined) return 0;
-      if (typeof raw === 'number') return raw;
-      const s = String(raw).replace(/[^0-9,.-]/g, '').replace(',', '.');
-      const n = Number(s);
-      return isNaN(n) ? 0 : n;
-    } catch (e) { return 0; }
-  };
-
-  // normalize various status representations into the canonical display strings used by the app
-  const normalizeStatus = (s: any) => {
     if (s === null || s === undefined) return 'Recebido';
     const str = String(s).trim().toLowerCase();
     if (!str) return 'Recebido';
@@ -187,324 +30,240 @@ const getCashMap = () => {
     if (str.includes('pronto')) return 'Pronto';
     if (str.includes('retir')) return 'Retirado';
     if (str.includes('cancel')) return 'Cancelado';
-    // fallback: Title Case the incoming string
-    return String(s).split(/\s+/).map((w:any) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    return String(s);
+  } catch (e) { return String(s || 'Recebido'); }
+};
+
+export default function OrdensPage() {
+  // small utility for printing tickets during development
+  const printTicket = (order: any) => {
+    try {
+      const w = window.open('', '_blank');
+      if (!w) return;
+      w.document.write('<pre>' + JSON.stringify(order, null, 2) + '</pre>');
+      w.document.close();
+      w.print();
+    } catch (e) { console.warn('print failed', e); }
   };
+  
+    // component state
+    const [orders, setOrders] = useState<any[]>([]);
+    const ordersRef = useRef<any[]>([]);
+      const ignoreLocalSaveRef = useRef(false);
+    const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+    const [orderServices, setOrderServices] = useState<any[]>([]);
+    const [clientes, setClientes] = useState<any[]>([]);
+    const [availablePieces, setAvailablePieces] = useState<any[]>([]);
+    const [debugInfo, setDebugInfo] = useState<any>(null);
+    const [debugOpen, setDebugOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
 
-  // Load orders from Supabase on mount; fallback to localStorage or empty list
+    // various modal / UI flags used across the component
+    const [showStoragePanel, setShowStoragePanel] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [showMaterialsModal, setShowMaterialsModal] = useState(false);
+    const [showDeliverModal, setShowDeliverModal] = useState(false);
+    const [showAdvancePaymentModal, setShowAdvancePaymentModal] = useState(false);
+    const [showFidelizacaoModal, setShowFidelizacaoModal] = useState(false);
+    const [showStatusMessageOptions, setShowStatusMessageOptions] = useState(false);
+    const [showModal, setShowModal] = useState(false);
+    const [showSavedSummary, setShowSavedSummary] = useState(false);
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [showStatusOnlyModal, setShowStatusOnlyModal] = useState(false);
+    const [showConfirmDeliverPrompt, setShowConfirmDeliverPrompt] = useState(false);
+    const [showPrintOptions, setShowPrintOptions] = useState(false);
+    const [showPecasModal, setShowPecasModal] = useState(false);
+    const [showCorModal, setShowCorModal] = useState(false);
+    const [showNewClientModal, setShowNewClientModal] = useState(false);
+
+    // small UI inputs
+    const [statusFilter, setStatusFilter] = useState('Todos');
+    const [statusSelection, setStatusSelection] = useState<any>(null);
+    const [selectedMaterialId, setSelectedMaterialId] = useState<any>(null);
+    const [materialPrice, setMaterialPrice] = useState('');
+    const [fidelizacaoMessage, setFidelizacaoMessage] = useState('');
+    const [clientePhone, setClientePhone] = useState('');
+    const [pecasSearch, setPecasSearch] = useState('');
+    const [pieceTipo, setPieceTipo] = useState('');
+    const [pieceCor, setPieceCor] = useState('');
+
+    // NOTE: removed temporary forced import data to avoid injecting fake records
+    // (this block previously added sample orders N00024 and N00025).
+
+  // Initial server fetch: if Supabase is available, try to load canonical orders
   useEffect(() => {
-    let mounted = true;
-    async function fetchOrders() {
+    (async () => {
       try {
-        // attempt Supabase fetch first
-        if (supabase && typeof supabase.from === 'function') {
-          const res = await supabase.from('ordens').select('*');
-          if (!(res as any).error && Array.isArray((res as any).data)) {
-            let raw = (res as any).data as any[];
-
-            // filter out locally deleted tombstones (by id or numero)
-            try {
-              const deletedRaw = localStorage.getItem('deletedOrders');
-              const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
-              const deletedArr = Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : [];
-
-              // Build sets of server ids/numeros so we can clean tombstones that refer to real server rows
-              const serverIdSet = new Set<string>(raw.map((r:any) => String(r.id)).filter(Boolean));
-              const serverNumSet = new Set<string>(raw.map((r:any) => String(r.numero || '').replace(/\D/g,'')).filter(Boolean));
-
-              // Remove tombstones that actually refer to server rows (prevent accidental suppression)
-              const cleaned = deletedArr.filter((d: string) => {
-                const dClean = String(d || '');
-                if (serverIdSet.has(dClean)) return false;
-                if (serverNumSet.has(dClean.replace(/\D/g,''))) return false;
-                return true;
-              });
-              if (cleaned.length !== deletedArr.length) {
-                const removed = deletedArr.filter(d => !cleaned.includes(d));
-                try { localStorage.setItem('deletedOrders', JSON.stringify(cleaned)); } catch(e) {}
-                try { console.info('Removed tombstones that match server rows:', removed); } catch(e){}
-                try { setDebugInfo((prev:any) => ({ ...(prev||{}), removedTombstones: removed })); } catch(e){}
-              }
-
-              const deletedSet = new Set<string>(cleaned);
-              if (deletedSet.size > 0) {
-                raw = raw.filter((o:any) => !deletedSet.has(String(o.id)) && !deletedSet.has(String(o.numero)));
-              }
-            } catch (e) { /* ignore parsing tombstones */ }
-
-            // enrich with clients and cash data
-            let clientsMap: Record<string, any> = {};
-            try {
-              const clientsList = await loadClients();
-              (clientsList || []).forEach((c:any) => { if (c && c.id) clientsMap[String(c.id)] = c; });
-            } catch (e) { /* ignore client load failures */ }
-
-            const cashMap = getCashMap();
-
-            // map raw orders into display-friendly objects
-            let data = raw.map((o: any) => {
-              const client = o.cliente_id ? clientsMap[String(o.cliente_id)] : null;
-              let parsedNotas: any = {};
-              try { parsedNotas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : {}; } catch (e) { parsedNotas = {}; }
-              const pieces = parsedNotas.pieces || parsedNotas.pecas || [];
-              const services = parsedNotas.services || parsedNotas.servicos || [];
-              const servicesText = (services || []).flatMap((s:any) => [s.name || s.titulo || s.title || s.nome || String(s)]).join(', ').trim();
-              const formatIsoToBR = (iso:any) => {
-                try {
-                  if (!iso) return '';
-                  const s = String(iso);
-                  // if already in dd/mm/yyyy form, return as-is
-                  if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(s)) return s;
-                  // if ISO-like (YYYY-MM-DD) parse and format
-                  if (/\d{4}-\d{2}-\d{2}/.test(s)) {
-                    const d = new Date(s);
-                    if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
-                  }
-                  // fallback: try Date parsing
-                  const d2 = new Date(s);
-                  if (!isNaN(d2.getTime())) return d2.toLocaleDateString('pt-BR');
-                  return s;
-                } catch (e) { return String(iso||''); }
-              };
-
-              const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
-              const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
-              const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
-              const finalPaid = currentPaid || cashPaid;
-
-              const rawValue = o.value ?? o.total ?? o.total_valor ?? (cash && (cash.value || cash.valor)) ?? null;
-              const numericVal = Number(String(rawValue).replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
-              const displayValue = numericVal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-              return {
-                ...o,
-                status: normalizeStatus(o.status),
-                client: client?.nome || o.client || '',
-                phone: client?.telefone || o.phone || '',
-                client_foto: client?.foto || o.client_foto || null,
-                pieces,
-                services,
-                service: servicesText || o.service || o.servico || '',
-                dateOut: formatIsoToBR(o.data_entrega || o.dateOut || o.date_out || o.previsao) || o.dateOut || '',
-                paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
-                value: displayValue,
-              };
-            });
-
-            // merge local overrides (local edits should take precedence)
-            try {
-              const rawLocal = localStorage.getItem('orders');
-              if (rawLocal) {
-                const parsedLocal = JSON.parse(rawLocal);
-                if (Array.isArray(parsedLocal)) {
-                  // ignore locally deleted orders when merging
-                  const parsedLocalFiltered = parsedLocal.filter((lo:any) => !(deletedSet && (deletedSet.has(String(lo.id)) || deletedSet.has(String(lo.numero)))));
-                  const localMap: Record<string, any> = {};
-                  parsedLocalFiltered.forEach((lo: any) => { if (lo && lo.id) localMap[String(lo.id)] = lo; });
-                  const formatLocalValue = (v:any, serverVal:any) => {
-                    try {
-                      if (v === undefined || v === null) return serverVal || '';
-                      const s = String(v).trim();
-                      if (!s) return serverVal || '';
-                      // if already contains currency symbol or decimal separators, keep formatted
-                      if (/R\$|\$|BRL|,\d{2}/i.test(s)) return s;
-                      // numeric fallback
-                      const n = Number(s.replace(/[^0-9.-]/g, '').replace(',', '.'));
-                      if (!isNaN(n)) return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                      return s;
-                    } catch (e) { return serverVal || ''; }
-                  };
-
-                  data = data.map((o: any) => {
-                    const local = localMap[String(o.id)] || {};
-                    const serverService = o.service || '';
-                    const serverDateOut = o.dateOut || '';
-                    const serverValue = o.value || '';
-                    const chosenService = (local.service && String(local.service).trim()) ? local.service : serverService;
-                    const chosenDateOut = (local.dateOut && String(local.dateOut).trim()) ? local.dateOut : serverDateOut;
-                    const chosenValue = formatLocalValue(local.value !== undefined ? local.value : serverValue, serverValue);
-                    return {
-                      ...o,
-                      paymentStatus: (local.paymentStatus !== undefined ? local.paymentStatus : o.paymentStatus),
-                      status: (local.status !== undefined ? normalizeStatus(local.status) : o.status),
-                      sentMessages: (local.sentMessages !== undefined ? local.sentMessages : o.sentMessages),
-                      service: chosenService,
-                      dateOut: chosenDateOut,
-                      value: chosenValue,
-                    };
-                  });
-                }
-              }
-            } catch (e) { /* ignore local merge errors */ }
-
-            if (mounted) {
-              try { reconcileLocalCashForOrders(data); } catch (e) {}
-              setOrders(data);
-              try {
-                // clean up localStorage orders so they strictly reflect server state
-                // Keep only rows that exist on the server (by id or numero). This removes local temp/unsynced duplicates.
-                try {
-                  const rawLocal = localStorage.getItem('orders');
-                  const parsedLocal = rawLocal ? JSON.parse(rawLocal) : [];
-                  if (Array.isArray(parsedLocal)) {
-                    const serverIds = new Set<string>(data.map((x:any) => String(x.id)).filter(Boolean));
-                    const serverNumeros = new Set<string>(data.map((x:any) => String(x.numero || '').replace(/\D/g,'')).filter(n=>n));
-                    const removed: string[] = [];
-                    const filteredLocal = parsedLocal.filter((lo:any) => {
-                      try {
-                        if (!lo) return false;
-                        const loId = String(lo.id || '');
-                        const loNum = String(lo.numero || '').replace(/\D/g,'');
-                        const keep = (loId && serverIds.has(loId)) || (loNum && serverNumeros.has(loNum));
-                        if (!keep) removed.push(loId || lo.numero || String(lo));
-                        return keep;
-                      } catch (ee) { return false; }
-                    });
-                    // persist filtered list (server-canonical) — force overwrite
-                    try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: filteredLocal })); } catch(e){}
-
-                    // write tombstones for removed local ids/numeros so they won't resurface
-                    try {
-                      const rawDeleted = localStorage.getItem('deletedOrders');
-                      const deletedList = rawDeleted ? JSON.parse(rawDeleted) : [];
-                      const set = new Set(Array.isArray(deletedList) ? deletedList.map((x:any)=>String(x)) : []);
-                      removed.forEach(r => { if (r) set.add(String(r)); });
-                      localStorage.setItem('deletedOrders', JSON.stringify(Array.from(set)));
-                    } catch (ee) { /* ignore tombstone write errors */ }
-
-                    // also remove any cashFlowDetails that are not associated with server orders
-                    try {
-                      const rawC = localStorage.getItem('cashFlowDetails');
-                      const parsedC = rawC ? JSON.parse(rawC) : [];
-                      const filteredC = (parsedC || []).filter((c:any) => {
-                        try {
-                          const oid = String(c.orderId || c.orderid || '');
-                          const num = String(c.numero || '').replace(/\D/g,'');
-                          if (oid && serverIds.has(oid)) return true;
-                          if (num && serverNumeros.has(num)) return true;
-                          return false;
-                        } catch (e) { return false; }
-                      });
-                      localStorage.setItem('cashFlowDetails', JSON.stringify(filteredC));
-                      try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(e){}
-                    } catch (ee) { /* ignore cash cleanup errors */ }
-                  }
-                } catch (e) { /* ignore cleanup parsing errors */ }
-              } catch (e) { /* ignore cleanup errors */ }
-            }
-            return;
-          } else {
-            console.warn('Supabase fetch ordens error', (res as any).error);
-          }
+        // expose client for manual debugging in browser console
+        try { (window as any).supabase = supabase; } catch(e){}
+        if (!(supabase && typeof supabase.from === 'function')) return;
+        const r = await supabase.from('ordens').select('*').order('numero', { ascending: false });
+        console.debug('initial fetch supabase ordens response', r);
+        if ((r as any).error) {
+          // store debug info so dev can inspect in UI
+          try { setDebugInfo((prev:any) => ({ ...(prev||{}), initialFetchError: (r as any).error })); } catch(e){}
+          return;
         }
-      } catch (e) {
-        console.warn('fetchOrders error', e);
-      }
-
-      // fallback to localStorage-only when Supabase unavailable or on error
-      try {
-        const raw = localStorage.getItem('orders');
-        if (raw) {
-          let parsed = JSON.parse(raw);
-          // filter out deleted tombstones from local fallback as well
-          try {
-            const deletedRaw = localStorage.getItem('deletedOrders');
-            const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
-            const deletedSetLocal = new Set(Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : []);
-            if (Array.isArray(parsed) && deletedSetLocal.size > 0) {
-              parsed = parsed.filter((o:any) => !deletedSetLocal.has(String(o.id)) && !deletedSetLocal.has(String(o.numero)));
-            }
-          } catch (ee) { /* ignore */ }
-          if (Array.isArray(parsed) && mounted) {
-            try {
-              const cashMap = getCashMap();
-              const merged = parsed.map((o: any) => {
-                const cash = (cashMap[String(o.id)] || cashMap[String(o.numero)]) || {};
-                const amount = (cash && (cash.value || cash.valor)) ? Number(cash.value || cash.valor) : 0;
-                const displayValue = o.value && String(o.value).trim() !== '' ? String(o.value) : `R$ ${amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-                try {
-                  const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
-                  const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
-                  const finalPaid = currentPaid || cashPaid;
-                  return { ...o, status: normalizeStatus(o.status), paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null), value: displayValue };
-                } catch (_inner) { return { ...o, status: normalizeStatus(o.status), paymentStatus: (o.paymentStatus || null), value: displayValue }; }
-              });
-              if (mounted) {
-                try { reconcileLocalCashForOrders(merged); } catch (e) {}
-                setOrders(merged);
-              }
-              return;
-            } catch (ee) { if (mounted) setOrders(parsed.map((o: any) => ({ ...o, status: normalizeStatus(o.status) }))); return; }
-          }
+        const raw = (r as any).data || [];
+        // if local storage is empty, populate it with server rows
+        const existing = localStorage.getItem('orders');
+        if (!existing || existing === '[]') {
+          try { localStorage.setItem('orders', JSON.stringify(raw)); } catch (e) {}
+          try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
         }
-      } catch (e) { console.warn('localStorage parse orders failed', e); }
-
-      if (mounted) { try { reconcileLocalCashForOrders(defaultSampleOrders); } catch(e){}; setOrders(defaultSampleOrders); }
-    }
-    fetchOrders();
-    return () => { mounted = false; };
+        // initial load saved; enrichment will run via `refetchOrdersFromServer` handler
+      } catch (e) { console.warn('initial server fetch failed', e); try { setDebugInfo((prev:any)=>({ ...(prev||{}), initialFetchError: String(e) })); } catch(_){} }
+    })();
   }, []);
 
-  // helper to fetch server/local/tombstone status for debug UI
-  const fetchDebugInfo = async () => {
-    try {
-      const localRaw = localStorage.getItem('orders') || '[]';
-      const local = JSON.parse(localRaw || '[]');
-      const deletedRaw = localStorage.getItem('deletedOrders') || '[]';
-      const deleted = JSON.parse(deletedRaw || '[]');
-      let server: any[] = [];
-      try {
-        if (supabase && typeof supabase.from === 'function') {
-          const res = await supabase.from('ordens').select('*');
-          if (!(res as any).error && Array.isArray((res as any).data)) server = (res as any).data;
-        }
-      } catch (e) { /* ignore */ }
-      setDebugInfo({ serverCount: server.length, serverSample: server.slice(0,6), localCount: (Array.isArray(local)?local.length:0), localSample: (Array.isArray(local)?local.slice(0,6):[]), deleted: Array.isArray(deleted)?deleted:[] });
-    } catch (e) { setDebugInfo({ error: String(e) }); }
-  };
-
-  // allow other parts of the app to request a server refresh of orders
+  // TEMP: remover ordens locais que não existem no banco (manter apenas 22 e 23)
   useEffect(() => {
-    const handler = async (e?: Event) => {
+    const handler = async () => {
       try {
-        if (!(supabase && typeof supabase.from === 'function')) return;
-        const res = await supabase.from('ordens').select('*');
-        if ((res as any).error) return;
-        let raw = (res as any).data || [];
+        const raw = localStorage.getItem('orders') || '[]';
+        let parsedRaw: any = [];
+        try { parsedRaw = JSON.parse(raw || '[]'); } catch (e) { parsedRaw = []; }
+        if (!Array.isArray(parsedRaw) || parsedRaw.length === 0) return;
 
-        // filter out locally deleted tombstones (by id or numero)
+        // TEMP: força importação do JSON fornecido pelo usuário (aplica só uma vez)
+        const deletedArr = Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : [];
+
+        // Build sets of server ids/numeros so we can clean tombstones that refer to real server rows
+        const serverIdSet = new Set<string>(parsedRaw.map((r:any) => String(r.id)).filter(Boolean));
+        const serverNumSet = new Set<string>(parsedRaw.map((r:any) => String(r.numero || '').replace(/\D/g,'')).filter(Boolean));
+
+        // Remove tombstones that actually refer to server rows (prevent accidental suppression)
+        const cleaned = deletedArr.filter((d: string) => {
+          const dClean = String(d || '');
+          if (serverIdSet.has(dClean)) return false;
+          if (serverNumSet.has(dClean.replace(/\D/g,''))) return false;
+          return true;
+        });
+        if (cleaned.length !== deletedArr.length) {
+          const removed = deletedArr.filter(d => !cleaned.includes(d));
+          try { localStorage.setItem('deletedOrders', JSON.stringify(cleaned)); } catch(e) {}
+          try { console.info('Removed tombstones that match server rows:', removed); } catch(e){}
+          try { setDebugInfo((prev:any) => ({ ...(prev||{}), removedTombstones: removed })); } catch(e){}
+        }
+
+        const deletedSet = new Set<string>(cleaned);
+        let rawFiltered = parsedRaw;
+        if (deletedSet.size > 0) {
+          rawFiltered = parsedRaw.filter((o:any) => !deletedSet.has(String(o.id)) && !deletedSet.has(String(o.numero)));
+        }
+
+        // enrich with clients and cash data
+        let clientsMap: Record<string, any> = {};
         try {
-          const deletedRaw = localStorage.getItem('deletedOrders');
-          const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
-          const deletedArr = Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : [];
+          const clientsList = await loadClients();
+          (clientsList || []).forEach((c:any) => { if (c && c.id) clientsMap[String(c.id)] = c; });
+        } catch (e) { /* ignore client load failures */ }
 
-          // Build sets of server ids/numeros so we can clean tombstones that refer to real server rows
-          const serverIdSet = new Set<string>(raw.map((r:any) => String(r.id)).filter(Boolean));
-          const serverNumSet = new Set<string>(raw.map((r:any) => String(r.numero || '').replace(/\D/g,'')).filter(Boolean));
+        const cashMap = getCashMap();
 
-          // Remove tombstones that actually refer to server rows (prevent accidental suppression)
-          const cleaned = deletedArr.filter((d: string) => {
-            const dClean = String(d || '');
-            if (serverIdSet.has(dClean)) return false;
-            if (serverNumSet.has(dClean.replace(/\D/g,''))) return false;
-            return true;
-          });
-          if (cleaned.length !== deletedArr.length) {
-            const removed = deletedArr.filter(d => !cleaned.includes(d));
-            try { localStorage.setItem('deletedOrders', JSON.stringify(cleaned)); } catch(e) {}
-            try { console.info('Removed tombstones that match server rows:', removed); } catch(e){}
-            try { setDebugInfo((prev:any) => ({ ...(prev||{}), removedTombstones: removed })); } catch(e){}
+        // map raw orders into display-friendly objects (async to allow fetching missing clients)
+        const data: any[] = [];
+        const formatIsoToBR = (iso:any) => {
+          try {
+            if (!iso) return '';
+            const s = String(iso);
+            if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(s)) return s;
+            if (/\d{4}-\d{2}-\d{2}/.test(s)) {
+              const d = new Date(s);
+              if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+            }
+            const d2 = new Date(s);
+            if (!isNaN(d2.getTime())) return d2.toLocaleDateString('pt-BR');
+            return s;
+          } catch (e) { return String(iso||''); }
+        };
+
+        for (const o of rawFiltered) {
+          try {
+            let client = o.cliente_id ? clientsMap[String(o.cliente_id)] : null;
+            if (!client && o.cliente_id) {
+              try { client = await getClientById(String(o.cliente_id)); } catch(e) { client = null; }
+            }
+            let parsedNotas: any = {};
+            try { parsedNotas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : {}; } catch (e) { parsedNotas = {}; }
+            const pieces = parsedNotas.pieces || parsedNotas.pecas || [];
+            const services = parsedNotas.services || parsedNotas.servicos || [];
+            const servicesText = (services || []).flatMap((s:any) => [s.name || s.titulo || s.title || s.nome || String(s)]).join(', ').trim();
+
+            const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
+            const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
+            const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
+            const finalPaid = currentPaid || cashPaid;
+
+            const rawValue = o.value ?? o.total ?? o.total_valor ?? (cash && (cash.value || cash.valor)) ?? null;
+            const numericVal = Number(String(rawValue).replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
+            const displayValue = numericVal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+            data.push({
+              ...o,
+              status: normalizeStatus(o.status),
+              client: client?.nome || o.client || '',
+              phone: client?.telefone || o.phone || '',
+              client_foto: client?.foto || o.client_foto || null,
+              pieces,
+              services,
+              service: servicesText || o.service || o.servico || '',
+              dateOut: formatIsoToBR(o.data_entrega || o.dateOut || o.date_out || o.previsao) || o.dateOut || '',
+              paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
+              value: displayValue,
+            });
+          } catch (e) {
+            try { data.push({ ...o, status: normalizeStatus(o.status) }); } catch(_) { data.push(o); }
           }
+        }
 
-          const deletedSet = new Set<string>(cleaned);
-          if (deletedSet.size > 0) {
-            raw = raw.filter((o:any) => !deletedSet.has(String(o.id)) && !deletedSet.has(String(o.numero)));
+        // merge local overrides (local edits should take precedence)
+        try {
+          const rawLocal = localStorage.getItem('orders');
+          if (rawLocal) {
+            const parsedLocal = JSON.parse(rawLocal);
+            if (Array.isArray(parsedLocal)) {
+              const parsedLocalFiltered = parsedLocal.filter((lo:any) => !(deletedSet && (deletedSet.has(String(lo.id)) || deletedSet.has(String(lo.numero)))));
+              const localMap: Record<string, any> = {};
+              parsedLocalFiltered.forEach((lo: any) => { if (lo && lo.id) localMap[String(lo.id)] = lo; });
+              const formatLocalValue = (v:any, serverVal:any) => {
+                try {
+                  if (v === undefined || v === null) return serverVal || '';
+                  const s = String(v).trim();
+                  if (!s) return serverVal || '';
+                  if (/R\$|\$|BRL|,\d{2}/i.test(s)) return s;
+                  const n = Number(s.replace(/[^0-9.-]/g, '').replace(',', '.'));
+                  if (!isNaN(n)) return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  return s;
+                } catch (e) { return serverVal || ''; }
+              };
+
+              data = data.map((o: any) => {
+                const local = localMap[String(o.id)] || {};
+                const serverService = o.service || '';
+                const serverDateOut = o.dateOut || '';
+                const serverValue = o.value || '';
+                const chosenService = (local.service && String(local.service).trim()) ? local.service : serverService;
+                const chosenDateOut = (local.dateOut && String(local.dateOut).trim()) ? local.dateOut : serverDateOut;
+                const chosenValue = formatLocalValue(local.value !== undefined ? local.value : serverValue, serverValue);
+                return {
+                  ...o,
+                  paymentStatus: (local.paymentStatus !== undefined ? local.paymentStatus : o.paymentStatus),
+                  status: (local.status !== undefined ? normalizeStatus(local.status) : o.status),
+                  service: chosenService,
+                  dateOut: chosenDateOut,
+                  value: chosenValue,
+                };
+              });
+              try {
+                try { localStorage.setItem('orders', JSON.stringify(data)); } catch(e){}
+                try { setOrders(data); } catch(e){}
+                try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
+              } catch(e){}
+            }
           }
-        } catch (e) { /* ignore */ }
-
-        // persist server-canonical orders to localStorage and notify
-        try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: raw })); } catch(e){}
-        try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
+        } catch(e) { /* ignore persist errors */ }
       } catch (e) { console.warn('refetchOrdersFromServer failed', e); }
     };
     window.addEventListener('refetchOrdersFromServer', handler as any);
@@ -558,7 +317,7 @@ const getCashMap = () => {
       const valNum = Number(String(valCandidate).replace(/[^0-9.-]/g,'').replace(',', '.')) || 0;
       const merged = { ...existing, ...server, _local: false, _unsynced: false, value: valNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) };
       if (idx >= 0) arr[idx] = merged; else arr.unshift(merged);
-      localStorage.setItem('orders', JSON.stringify({ __force: true, payload: arr }));
+      localStorage.setItem('orders', JSON.stringify(arr));
       window.dispatchEvent(new CustomEvent('ordersUpdated'));
       window.dispatchEvent(new CustomEvent('financeUpdated'));
       alert('Ordem reconciliada: ' + (server.numero || server.id));
@@ -623,7 +382,7 @@ const getCashMap = () => {
         });
 
         if (toRemove.length > 0) {
-          try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: filtered })); } catch (e) {}
+                  try { localStorage.setItem('orders', JSON.stringify(filtered)); } catch (e) {}
           try {
             const rawDeleted = localStorage.getItem('deletedOrders');
             const deletedList = rawDeleted ? JSON.parse(rawDeleted) : [];
@@ -769,7 +528,7 @@ const getCashMap = () => {
       } catch (e) { return true; }
     });
     setOrders(next);
-    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+    try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); } catch (e) {}
     setShowDeleteModal(false);
     setSelectedOrder(null);
     const isLocalId = (id: any) => {
@@ -786,24 +545,61 @@ const getCashMap = () => {
 
     (async () => {
       try {
-        // Only attempt server deletion for IDs that look like server-generated (numeric or UUID).
-        if (supabase && typeof supabase.from === 'function' && idToDelete && !isLocalId(idToDelete) && (isNumeric(idToDelete) || isUuid(idToDelete))) {
-          const res = await supabase.from('ordens').delete().eq('id', idToDelete);
-          if ((res as any).error) throw (res as any).error;
+        // Attempt server deletion. Prefer deletion by id for server-generated ids.
+        if (supabase && typeof supabase.from === 'function') {
+          let deletedOnServer = false;
+          if (idToDelete && !isLocalId(idToDelete) && (isNumeric(idToDelete) || isUuid(idToDelete))) {
+            const res = await supabase.from('ordens').delete().eq('id', idToDelete);
+            if ((res as any).error) {
+              console.warn('supabase delete error by id', res);
+            } else {
+              deletedOnServer = true;
+            }
+          }
+          if (!deletedOnServer && numeroToDelete) {
+            const numDigits = String(numeroToDelete).replace(/\D/g, '');
+            if (numDigits) {
+              const res2 = await supabase.from('ordens').delete().eq('numero', Number(numDigits));
+              if ((res2 as any).error) {
+                console.warn('supabase delete error by numero', res2);
+              } else {
+                deletedOnServer = true;
+              }
+            }
+          }
+          if (!deletedOnServer) {
+            // try a best-effort fallback: delete rows that match cliente+data_entrega+total
+            try {
+              const maybe = await supabase.from('ordens').select('*').ilike('cliente', String(selectedOrder?.client || selectedOrder?.cliente || '')).limit(5);
+              if (!(maybe as any).error && Array.isArray((maybe as any).data)) {
+                const candidates = (maybe as any).data;
+                for (const c of candidates) {
+                  try {
+                    const sameDate = selectedOrder?.dateOut && (String(c.data_entrega || c.dateOut || c.data_entrega).startsWith(String(selectedOrder.dateOut)));
+                    const sameTotal = Math.abs(Number(c.total || c.valor || 0) - Number(selectedOrder?.total || selectedOrder?.valor || 0)) < 0.01;
+                    if (sameDate && sameTotal) {
+                      const r = await supabase.from('ordens').delete().eq('id', c.id);
+                      if (!(r as any).error) { deletedOnServer = true; break; }
+                    }
+                  } catch (ee) {}
+                }
+              }
+            } catch (_) {}
+          }
           // if deleted on server, also remove any tombstone locally for id/numero
-          try {
-            const raw = localStorage.getItem('deletedOrders');
-            const list = raw ? JSON.parse(raw) : [];
-            const filtered = (list || []).filter((x:any) => String(x) !== String(idToDelete) && String(x) !== String(numeroToDelete));
-            localStorage.setItem('deletedOrders', JSON.stringify(filtered));
-          } catch (e) {}
+          if (deletedOnServer) {
+            try {
+              const raw = localStorage.getItem('deletedOrders');
+              const list = raw ? JSON.parse(raw) : [];
+              const filtered = (list || []).filter((x:any) => String(x) !== String(idToDelete) && String(x) !== String(numeroToDelete));
+              localStorage.setItem('deletedOrders', JSON.stringify(filtered));
+            } catch (e) {}
+          }
           // tentar remover lançamentos financeiros relacionados (por orderId e por numero)
           try {
-            // primeiro por orderid (PostgREST uses lowercased column names)
             if (isFluxoAvailable() && supabase && typeof supabase.from === 'function') {
               const del1 = await supabase.from('fluxo_caixa').delete().eq('orderid', idToDelete);
               if (del1 && (del1 as any).error && (del1 as any).error.code === 'PGRST205') { markFluxoMissing(); }
-              // depois por numero (se tivermos um numero legível)
               if (numeroToDelete) {
                 const del2 = await supabase.from('fluxo_caixa').delete().eq('numero', numeroToDelete);
                 if (del2 && (del2 as any).error && (del2 as any).error.code === 'PGRST205') { markFluxoMissing(); }
@@ -1828,12 +1624,16 @@ const getCashMap = () => {
   // persist orders to localStorage and notify dashboard
   useEffect(() => {
     try {
+      if (ignoreLocalSaveRef.current) { ignoreLocalSaveRef.current = false; return; }
       localStorage.setItem('orders', JSON.stringify(orders));
       // `localStorage.setItem` is wrapped in `src/main.tsx` which already
       // dispatches the `ordersUpdated` event. Do not re-dispatch here to
       // avoid update loops between components.
     } catch (e) {}
   }, [orders]);
+
+  // keep a Ref copy of the current orders to allow stable comparisons
+  useEffect(() => { ordersRef.current = orders; }, [orders]);
 
   // Listen for external ordersUpdated events (e.g., from Financeiro) and reload local orders
   useEffect(() => {
@@ -1861,9 +1661,9 @@ const getCashMap = () => {
               });
               const currJson = JSON.stringify(ordersRef.current || []);
               const newJson = JSON.stringify(normalized || []);
-              if (currJson !== newJson) setOrders(normalized);
+              if (currJson !== newJson) { ignoreLocalSaveRef.current = true; setOrders(normalized); }
             } catch (ee) {
-              try { const normalized = parsed.map((o:any) => ({ ...o, status: normalizeStatus(o.status) })); setOrders(normalized); } catch(_){ }
+              try { const normalized = parsed.map((o:any) => ({ ...o, status: normalizeStatus(o.status) })); ignoreLocalSaveRef.current = true; setOrders(normalized); } catch(_){ }
             }
           }
         }
@@ -2009,6 +1809,72 @@ const getCashMap = () => {
     { id: 66, name: 'Tag de cliente', unit: 'unidade', price: 0.40 },
   ];
 
+  // helper to run a manual server fetch from the UI (useful when console paste is unavailable)
+  const runServerFetch = async () => {
+    try {
+      if (!(supabase && typeof supabase.from === 'function')) {
+        try { setDebugInfo((prev:any) => ({ ...(prev||{}), runFetch: 'supabase-not-available' })); } catch(e){}
+        return;
+      }
+      const r = await supabase.from('ordens').select('*').order('numero', { ascending: false });
+      try { setDebugInfo((prev:any) => ({ ...(prev||{}), runFetch: r })); } catch(e){}
+      if (!(r as any).error && Array.isArray((r as any).data)) {
+        const raw = (r as any).data;
+        // enrich server rows with client/service defaults to avoid runtime errors in render
+        const enriched = (raw||[]).map((o:any) => ({
+          ...o,
+          client: o.client || o.cliente || '',
+          service: o.service || o.servico || '',
+          client_foto: o.client_foto || o.foto || null,
+          phone: o.phone || o.telefone || '',
+          status: normalizeStatus(o.status),
+        }));
+        try { localStorage.setItem('orders', JSON.stringify(enriched)); } catch(e){}
+        try { setOrders(enriched); } catch(e){}
+        try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
+      }
+    } catch (e) {
+      try { setDebugInfo((prev:any) => ({ ...(prev||{}), runFetchError: String(e) })); } catch(e){}
+    }
+  };
+
+  const cleanTombstones = () => {
+    try {
+      const rawDeleted = localStorage.getItem('deletedOrders') || '[]';
+      const deletedArr = JSON.parse(rawDeleted || '[]');
+      const serverRows = (debugInfo && debugInfo.runFetch && debugInfo.runFetch.data) ? debugInfo.runFetch.data : [];
+      const serverIdSet = new Set((serverRows||[]).map((s:any)=>String(s.id)).filter(Boolean));
+      const serverNumSet = new Set((serverRows||[]).map((s:any)=>String(s.numero||'').replace(/\D/g,'')).filter(Boolean));
+      const cleaned = (deletedArr||[]).filter((d:any) => {
+        try {
+          const dStr = String(d || '');
+          if (serverIdSet.has(dStr)) return false;
+          if (serverNumSet.has(String(dStr).replace(/\D/g,''))) return false;
+          return true;
+        } catch (e) { return true; }
+      });
+      localStorage.setItem('deletedOrders', JSON.stringify(cleaned));
+      try { setDebugInfo((p:any) => ({ ...(p||{}), cleanedTombstones: { before: (deletedArr||[]).length, after: (cleaned||[]).length, removed: (deletedArr||[]).filter((x:any)=> !(cleaned||[]).includes(x)) } })); } catch(e){}
+      try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
+    } catch (e) {
+      try { setDebugInfo((p:any) => ({ ...(p||{}), cleanTombstonesError: String(e) })); } catch(e){}
+    }
+  };
+
+  const clearDeletedTombstones = () => {
+    try {
+      localStorage.setItem('deletedOrders', JSON.stringify([]));
+      try { setDebugInfo((p:any) => ({ ...(p||{}), clearedDeleted: true })); } catch(e){}
+      try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
+    } catch (e) {
+      try { setDebugInfo((p:any) => ({ ...(p||{}), clearDeletedError: String(e) })); } catch(e){}
+    }
+  };
+
+  const localOrdersCount = (() => {
+    try { return JSON.parse(localStorage.getItem('orders') || '[]').length; } catch (e) { return 'n/a'; }
+  })();
+
   return (
     <div className="flex min-h-screen bg-gray-50 overflow-x-hidden">
       <Sidebar />
@@ -2032,7 +1898,10 @@ const getCashMap = () => {
               <i className="ri-add-line text-xl w-5 h-5 flex items-center justify-center"></i>
               Nova Ordem
             </button>
+            {/* Debug buttons removed for production */}
           </div>
+
+          {/* Dev debug panel removed for production/deploy */}
 
           <div className="flex flex-wrap gap-2 mb-6 items-center">
             {Object.entries(statusCounts).map(([status, count]) => {
@@ -2076,6 +1945,407 @@ const getCashMap = () => {
 
             {/* Lista: tabela responsiva com filtros rápidos */}
             <div className="p-4">
+              {showStoragePanel && (
+                <div className="mb-4 p-3 bg-gray-50 border border-dashed rounded text-sm text-gray-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <strong>localStorage snapshot</strong>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          try {
+                            const blob = new Blob([JSON.stringify({ orders: JSON.parse(localStorage.getItem('orders') || '[]'), deletedOrders: JSON.parse(localStorage.getItem('deletedOrders') || '[]') }, null, 2)], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url; a.download = 'orders-storage-backup.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+                          } catch (e) { alert('Falha ao gerar download: ' + String(e)); }
+                        }}
+                        className="px-2 py-1 bg-rose-50 text-rose-700 rounded"
+                      >
+                        Download JSON
+                      </button>
+                      <button
+                        onClick={() => {
+                          try {
+                            const backup = localStorage.getItem('orders_backup_pre_refetch') || null;
+                            if (!backup) { alert('Nenhum backup encontrado'); return; }
+                            localStorage.setItem('orders', backup);
+                            window.dispatchEvent(new CustomEvent('ordersUpdated'));
+                            alert('Restaurado a partir de orders_backup_pre_refetch');
+                          } catch (e) { alert('Falha ao restaurar: ' + String(e)); }
+                        }}
+                        className="px-2 py-1 bg-gray-100 text-gray-800 rounded"
+                      >
+                        Restaurar backup
+                      </button>
+                      <button
+                        onClick={() => {
+                          try {
+                            if (!confirm('Confirma aplicar limpeza forçada com o anexo fornecido? Isso sobrescreverá o localStorage.orders e localStorage.deletedOrders.')) return;
+                            const attached = {
+                              orders: [
+                                {
+                                  id: 'c0d68c80-6754-46c0-8a3d-0a071120f49d',
+                                  cliente_id: '0deed1ad-0765-4651-bd3f-429af90a5d64',
+                                  usuario_id: null,
+                                  status: 'Recebido',
+                                  total: 25,
+                                  data_criacao: '2026-01-07T14:00:13.226502+00:00',
+                                  data_entrega: '2026-01-12T00:00:00+00:00',
+                                  notas: `{"obs":null,"pieces":[{"id":"P-1767794285620","tipo":"Blazer","cor":"Azul","modelo":"Social ","services":[{"id":1767794401303,"serviceId":36,"name":"Ajuste de jaqueta","pieceId":"P-1767794285620","category":"🧥 Casacos / Jaquetas","value":25,"observation":"Revisão de costura "}]}],"services":[{"id":1767794401303,"serviceId":36,"name":"Ajuste de jaqueta","pieceId":"P-1767794285620","category":"🧥 Casacos / Jaquetas","value":25,"observation":"Revisão de costura "}]}`,
+                                  created_at: '2026-01-07T14:00:13.226502+00:00',
+                                  updated_at: '2026-01-07T14:00:13.226502+00:00',
+                                  numero: 23,
+                                  paymentStatus: null,
+                                  client: 'Gladys',
+                                  pieces: [
+                                    {
+                                      id: 'P-1767794285620',
+                                      tipo: 'Blazer',
+                                      cor: 'Azul',
+                                      modelo: 'Social ',
+                                      services: [
+                                        {
+                                          id: 1767794401303,
+                                          serviceId: 36,
+                                          name: 'Ajuste de jaqueta',
+                                          pieceId: 'P-1767794285620',
+                                          category: '🧥 Casacos / Jaquetas',
+                                          value: 25,
+                                          observation: 'Revisão de costura '
+                                        }
+                                      ]
+                                    }
+                                  ],
+                                  services: [
+                                    {
+                                      id: 1767794401303,
+                                      serviceId: 36,
+                                      name: 'Ajuste de jaqueta',
+                                      pieceId: 'P-1767794285620',
+                                      category: '🧥 Casacos / Jaquetas',
+                                      value: 25,
+                                      observation: 'Revisão de costura '
+                                    }
+                                  ],
+                                  service: 'Ajuste de jaqueta',
+                                  dateOut: '11/01/2026',
+                                  value: 'R$ 25,00',
+                                  phone: '4599471106',
+                                  client_foto: null
+                                },
+                                {
+                                  id: 'ea4f8070-3bcb-4844-b92c-e29d1151a66b',
+                                  cliente_id: '5f679511-77f4-45a5-b0fb-b5ba7a7b1e77',
+                                  usuario_id: null,
+                                  status: 'Pronto',
+                                  total: 40,
+                                  data_criacao: '2026-01-07T12:04:52.09225+00:00',
+                                  data_entrega: '2026-01-08T00:00:00+00:00',
+                                  notas: `{"obs":null,"pieces":[{"id":"P-1767785765147","tipo":"Cropped","cor":"","modelo":"","services":[{"id":1767787431585,"serviceId":1767787425661,"name":"Encurtar Alça","pieceId":"P-1767785765147","category":"👕 Camisas / Blusas","value":20,"observation":""}]},{"id":"P-1767785775826","tipo":"Casaco","cor":"","modelo":"","services":[{"id":1767787489017,"serviceId":11,"name":"Ajuste de manga","pieceId":"P-1767785775826","category":"✂️ Ajustes e Modelagem","value":20,"observation":""}]}],"services":[{"id":1767787431585,"serviceId":1767787425661,"name":"Encurtar Alça","pieceId":"P-1767785765147","category":"👕 Camisas / Blusas","value":20,"observation":""},{"id":1767787489017,"serviceId":11,"name":"Ajuste de manga","pieceId":"P-1767785775826","category":"✂️ Ajustes e Modelagem","value":20,"observation":""}]}`,
+                                  created_at: '2026-01-07T12:04:52.09225+00:00',
+                                  updated_at: '2026-01-07T17:47:55.353265+00:00',
+                                  numero: 22,
+                                  paymentStatus: null,
+                                  client: 'Juliana bordiao',
+                                  pieces: [
+                                    {
+                                      id: 'P-1767785765147',
+                                      tipo: 'Cropped',
+                                      cor: '',
+                                      modelo: '',
+                                      services: [
+                                        {
+                                          id: 1767787431585,
+                                          serviceId: 1767787425661,
+                                          name: 'Encurtar Alça',
+                                          pieceId: 'P-1767785765147',
+                                          category: '👕 Camisas / Blusas',
+                                          value: 20,
+                                          observation: ''
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      id: 'P-1767785775826',
+                                      tipo: 'Casaco',
+                                      cor: '',
+                                      modelo: '',
+                                      services: [
+                                        {
+                                          id: 1767787489017,
+                                          serviceId: 11,
+                                          name: 'Ajuste de manga',
+                                          pieceId: 'P-1767785775826',
+                                          category: '✂️ Ajustes e Modelagem',
+                                          value: 20,
+                                          observation: ''
+                                        }
+                                      ]
+                                    }
+                                  ],
+                                  services: [
+                                    {
+                                      id: 1767787431585,
+                                      serviceId: 1767787425661,
+                                      name: 'Encurtar Alça',
+                                      pieceId: 'P-1767785765147',
+                                      category: '👕 Camisas / Blusas',
+                                      value: 20,
+                                      observation: ''
+                                    },
+                                    {
+                                      id: 1767787489017,
+                                      serviceId: 11,
+                                      name: 'Ajuste de manga',
+                                      pieceId: 'P-1767785775826',
+                                      category: '✂️ Ajustes e Modelagem',
+                                      value: 20,
+                                      observation: ''
+                                    }
+                                  ],
+                                  service: 'Encurtar Alça, Ajuste de manga',
+                                  dateOut: '07/01/2026',
+                                  value: 'R$ 40,00',
+                                  phone: '4599368718',
+                                  client_foto: null
+                                },
+                                {
+                                  id: 'cc3b589a-6927-45ab-a93d-e826157cadb0',
+                                  cliente_id: '5a961bca-47b0-4441-8abf-61d588061e32',
+                                  usuario_id: null,
+                                  status: 'Recebido',
+                                  total: 25,
+                                  data_criacao: '2026-01-07T19:24:34.787024+00:00',
+                                  data_entrega: '2026-01-08T00:00:00+00:00',
+                                  notas: `{"pieces":[{"id":"local-1767812424919-nwmdaw","tipo":"Camisa","cor":"Marrom","services":[{"id":"local-s-1767812408988","name":"Barra","price":25}],"icone":"👔"}]}`,
+                                  created_at: '2026-01-07T19:24:34.787024+00:00',
+                                  updated_at: '2026-01-07T19:24:34.787024+00:00',
+                                  numero: 24,
+                                  paymentStatus: null,
+                                  client: 'Andressa guizzo',
+                                  phone: '4599469181',
+                                  client_foto: null,
+                                  pieces: [
+                                    {
+                                      id: 'local-1767812424919-nwmdaw',
+                                      tipo: 'Camisa',
+                                      cor: 'Marrom',
+                                      services: [
+                                        {
+                                          id: 'local-s-1767812408988',
+                                          name: 'Barra',
+                                          price: 25
+                                        }
+                                      ],
+                                      icone: '👔'
+                                    }
+                                  ],
+                                  services: [],
+                                  service: '',
+                                  dateOut: '07/01/2026',
+                                  value: 'R$ 25,00'
+                                },
+                                {
+                                  id: 'ea733f0f-a1a3-4884-8541-d10cf90a33e2',
+                                  cliente_id: 'f9342fb0-bb7f-47d8-8c52-9d215acd853e',
+                                  usuario_id: null,
+                                  status: 'Recebido',
+                                  total: 20,
+                                  data_criacao: '2026-01-07T19:31:09.569904+00:00',
+                                  data_entrega: '2026-01-10T00:00:00+00:00',
+                                  notas: `{"pieces":[{"id":"local-1767814195525-j298oh","tipo":"Regata","cor":"Marrom","services":[{"id":"3bca20e7-f302-485a-a3d3-8a6ea9d236f1","name":"Ajuste de alça ","price":20}],"icone":"👕"}]}`,
+                                  created_at: '2026-01-07T19:31:09.569904+00:00',
+                                  updated_at: '2026-01-07T19:31:09.569904+00:00',
+                                  numero: 25,
+                                  paymentStatus: null,
+                                  client: 'Denise',
+                                  phone: '4599278580',
+                                  client_foto: null,
+                                  pieces: [
+                                    {
+                                      id: 'local-1767814195525-j298oh',
+                                      tipo: 'Regata',
+                                      cor: 'Marrom',
+                                      services: [
+                                        {
+                                          id: '3bca20e7-f302-485a-a3d3-8a6ea9d236f1',
+                                          name: 'Ajuste de alça ',
+                                          price: 20
+                                        }
+                                      ],
+                                      icone: '👕'
+                                    }
+                                  ],
+                                  services: [],
+                                  service: '',
+                                  dateOut: '09/01/2026',
+                                  value: 'R$ 20,00'
+                                },
+                                {
+                                  id: '8609f3a9-d9a6-40e1-9ca7-b1ed530d5b28',
+                                  cliente_id: '23b71f3b-85d1-42f1-b4cb-47460b195550',
+                                  usuario_id: null,
+                                  status: 'Recebido',
+                                  total: 45,
+                                  data_criacao: '2026-01-07T19:40:50.155432+00:00',
+                                  data_entrega: '2026-01-10T00:00:00+00:00',
+                                  notas: `{"pieces":[{"id":"local-1767814656378-kjcbjj","tipo":"Blusa","cor":"Marrom","services":[{"id":"79344e96-ffb8-4688-bf39-a08e3a781171","name":"Reforço de costura","price":25}],"icone":"👕"},{"id":"local-1767814673358-zovntu","tipo":"Blusa","cor":"Verde","services":[{"id":"e4039793-795a-4e07-b007-cfc8f1d4a208","name":"Reparo ","price":20}],"icone":"👕"}]}`,
+                                  created_at: '2026-01-07T19:40:50.155432+00:00',
+                                  updated_at: '2026-01-07T19:40:50.155432+00:00',
+                                  numero: 26,
+                                  client: 'Sabini medina',
+                                  phone: '4598437907',
+                                  client_foto: null,
+                                  pieces: [
+                                    {
+                                      id: 'local-1767814656378-kjcbjj',
+                                      tipo: 'Blusa',
+                                      cor: 'Marrom',
+                                      services: [
+                                        {
+                                          id: '79344e96-ffb8-4688-bf39-a08e3a781171',
+                                          name: 'Reforço de costura',
+                                          price: 25
+                                        }
+                                      ],
+                                      icone: '👕'
+                                    },
+                                    {
+                                      id: 'local-1767814673358-zovntu',
+                                      tipo: 'Blusa',
+                                      cor: 'Verde',
+                                      services: [
+                                        {
+                                          id: 'e4039793-795a-4e07-b007-cfc8f1d4a208',
+                                          name: 'Reparo ',
+                                          price: 20
+                                        }
+                                      ],
+                                      icone: '👕'
+                                    }
+                                  ],
+                                  services: [],
+                                  service: '',
+                                  dateOut: '09/01/2026',
+                                  paymentStatus: null,
+                                  value: 'R$ 45,00'
+                                }
+                              ],
+                              deletedOrders: [
+                                '1f55e98b-e833-4212-b240-92ec4eb92355',
+                                'c9530c55-b51e-4e9b-ae9d-24658f1d7930',
+                                'd946bf24-5952-4bfe-9133-415438ef7194',
+                                'afcda96d-a45d-4cc4-8b6b-86b57450aa8d',
+                                'c263969b-608c-4804-9445-7253b4ae3816',
+                                'c454b92d-92fb-4065-8dd0-55b4cc674784',
+                                'b5058fd0-c4f1-439e-83f3-424d74a15588',
+                                'ad67da03-218a-4e1b-9a09-e84120c32de4',
+                                '79b3ae7b-64b1-407f-8fa5-ef898a7606ab',
+                                '9af922b2-d68e-46c4-9538-f074d960d94a',
+                                '98d7698b-d4d2-48d1-bf45-82bf1fbd280a',
+                                '7394ec6d-c186-4af1-a034-e61f19f71f8f',
+                                '25196547-14eb-40ab-931d-83630af9b529',
+                                '778531ee-3729-4321-87ae-9309adf172a0',
+                                'aca0c87e-61ec-45be-a7e3-6390bd8dc66c',
+                                '47e7bb5f-5b74-4d4f-bc8a-b3172dce9fcd',
+                                'local-1767812487132-l0b3p9',
+                                'cc3b589a-6927-45ab-a93d-e826157cadb0',
+                                'ea733f0f-a1a3-4884-8541-d10cf90a33e2',
+                                '8609f3a9-d9a6-40e1-9ca7-b1ed530d5b28'
+                              ]
+                            };
+                            // Use the global wrapper's forced-write format to replace (not merge) orders
+                            localStorage.setItem('orders', JSON.stringify({ __force: true, payload: attached.orders }));
+                            localStorage.setItem('deletedOrders', JSON.stringify(attached.deletedOrders));
+                            localStorage.setItem('orders_forced_by_agent', '1');
+                            try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+                            try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch (e) {}
+                            alert('Anexo aplicado com sucesso. Recarregue a página.');
+                          } catch (e) { alert('Falha ao aplicar anexo: ' + String(e)); }
+                        }}
+                        className="px-2 py-1 bg-red-50 text-red-700 rounded"
+                      >
+                        Aplicar anexo (limpeza forçada)
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mb-2">
+                    <textarea
+                      value={storageImportText}
+                      onChange={(e) => setStorageImportText(e.target.value)}
+                      placeholder='Cole aqui o JSON com {"orders":[...], "deletedOrders":[...]} e clique em Importar'
+                      className="w-full h-32 p-2 text-xs border rounded mb-2"
+                    />
+                    <div className="flex gap-2 mb-2">
+                      <button
+                        onClick={() => {
+                          try {
+                            const obj = storageImportText ? JSON.parse(storageImportText) : null;
+                            if (!obj || typeof obj !== 'object') { alert('JSON inválido'); return; }
+                            if (obj.orders) localStorage.setItem('orders', JSON.stringify(obj.orders));
+                            if (obj.deletedOrders) localStorage.setItem('deletedOrders', JSON.stringify(obj.deletedOrders));
+                            window.dispatchEvent(new CustomEvent('ordersUpdated'));
+                            window.dispatchEvent(new CustomEvent('financeUpdated'));
+                            alert('Importação concluída');
+                          } catch (e) { alert('Falha ao importar JSON: ' + String(e)); }
+                        }}
+                        className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded"
+                      >
+                        Importar JSON
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const raw = localStorage.getItem('orders') || '[]';
+                            let arr = [];
+                            try { arr = JSON.parse(raw || '[]'); } catch(e){ alert('Não foi possível ler localStorage.orders'); return; }
+                            if (!Array.isArray(arr) || arr.length === 0) { alert('Nenhuma ordem local encontrada para enriquecer'); return; }
+                            // load clients to enrich names
+                            let clientsMap: Record<string, any> = {};
+                            try { const cls = await loadClients(); (cls||[]).forEach((c:any) => { if (c && c.id) clientsMap[String(c.id)] = c; }); } catch(e) { /* ignore */ }
+                            const enriched = (arr||[]).map((o:any) => {
+                              try {
+                                const client = o.client || o.cliente || (o.cliente_id ? (clientsMap[String(o.cliente_id)]?.nome || '') : '') || '';
+                                let parsedNotas: any = {};
+                                try { parsedNotas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : {}; } catch(e) { parsedNotas = {}; }
+                                const pieces = parsedNotas.pieces || parsedNotas.pecas || o.pieces || [];
+                                const services = parsedNotas.services || parsedNotas.servicos || (pieces || []).flatMap((p:any) => p.services || []);
+                                const servicesText = (services || []).flatMap((s:any) => [s.name || s.nome || s.title || String(s)]).join(', ').trim();
+                                const dateOutRaw = o.data_entrega || o.previsao || o.dateOut || o.date_out || o.dataEntrega || '';
+                                let dateOut = '';
+                                try { if (dateOutRaw) { const d = new Date(String(dateOutRaw)); if (!isNaN(d.getTime())) dateOut = d.toLocaleDateString('pt-BR'); else dateOut = String(dateOutRaw); } } catch(e) { dateOut = String(dateOutRaw||''); }
+                                const rawValue = o.total ?? o.value ?? o.total_valor ?? 0;
+                                let value = '';
+                                try { const n = Number(String(rawValue).replace(/[^0-9.-]/g,'').replace(',', '.')) || 0; value = n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); } catch(e) { value = String(rawValue || ''); }
+                                return { ...o, client, pieces, services, service: servicesText, dateOut, value, status: normalizeStatus(o.status) };
+                              } catch (e) { return o; }
+                            });
+                            // forced write to replace existing orders fully
+                            try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: enriched })); } catch(e){ alert('Falha ao escrever orders: '+String(e)); return; }
+                            try { localStorage.setItem('orders_sanitized_by_agent', '1'); } catch(e){}
+                            try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
+                            try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(e){}
+                            alert('Enriquecimento concluído — recarregue a página.');
+                          } catch (e) { console.warn('enrich failed', e); alert('Falha ao enriquecer: ' + String(e)); }
+                        }}
+                        className="px-2 py-1 bg-blue-50 text-blue-700 rounded"
+                      >
+                        Enriquecer ordens
+                      </button>
+                      {/* Preencher com storage atual removed per UX request */}
+                      <button
+                        onClick={() => { setStorageImportText(''); }}
+                        className="px-2 py-1 bg-white text-gray-700 border rounded"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="max-h-56 overflow-auto text-xs p-2 bg-white border rounded">{(() => {
+                    try { return JSON.stringify({ orders: JSON.parse(localStorage.getItem('orders') || '[]'), deletedOrders: JSON.parse(localStorage.getItem('deletedOrders') || '[]') }, null, 2); } catch (e) { return String(e); }
+                  })()}</pre>
+                </div>
+              )}
               <div className="mb-2" />
               {/* Debug button removed in production */}
 
@@ -2084,7 +2354,7 @@ const getCashMap = () => {
                 <div className="p-3 bg-yellow-50 rounded-lg mb-4 border border-yellow-200">
                   <div className="flex items-center gap-3 mb-2">
                     <button onClick={() => { fetchDebugInfo(); setDebugOpen(true); }} className="px-3 py-1 bg-yellow-400 text-white rounded">Fetch Server/Local</button>
-                    <button onClick={() => { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); setTimeout(fetchDebugInfo, 800); }} className="px-3 py-1 bg-amber-500 text-white rounded">Force Refetch</button>
+                    {/* Force Refetch button removed per UX request */}
                     <button onClick={() => { setDebugOpen(d => !d); }} className="px-3 py-1 border rounded">Toggle</button>
                   </div>
                   {debugOpen && debugInfo && (
@@ -2366,7 +2636,10 @@ const getCashMap = () => {
             try {
               // helper: extract only digits from numero for stable comparison
               const numeroDigits = (n: any) => {
-                try { return String(n || '').replace(/\D/g, ''); } catch (e) { return String(n || ''); }
+                try {
+                  const raw = String(n || '').replace(/\D/g, '');
+                  return raw ? String(parseInt(raw, 10)) : '';
+                } catch (e) { return String(n || ''); }
               };
               // reload canonical orders from localStorage (NewOsWizard already persisted there)
               const raw = localStorage.getItem('orders');
