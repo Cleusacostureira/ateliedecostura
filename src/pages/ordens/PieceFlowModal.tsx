@@ -59,11 +59,33 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
     Marrom: '#8B4513',
   };
   const [showAllIcons, setShowAllIcons] = useState(false);
+  const [pendingService, setPendingService] = useState<any | null>(null);
+  const [pendingCatalogPrice, setPendingCatalogPrice] = useState<number>(0);
+  const [editingPendingPrice, setEditingPendingPrice] = useState<boolean>(false);
+  const [pendingPriceInput, setPendingPriceInput] = useState<string>('');
+
+  // debug: log when selectedTipo/selectedCor change
+  React.useEffect(()=>{
+    try { console.log('[PieceFlowModal] state change', { selectedTipo, selectedCor, otherColor }); } catch(e) {}
+  }, [selectedTipo, selectedCor, otherColor]);
+
+  const handleSelectTipo = (nome: string) => {
+    try { console.log('[PieceFlowModal] handleSelectTipo', nome); } catch(e) {}
+    setSelectedTipo(nome);
+    setStep(2);
+  }
 
   const toggleService = (svc:any) => {
-    const exists = selectedServices.find(s=> (s.id && svc.id && s.id===svc.id) || s.name===svc.name);
-    if (exists) setSelectedServices(prev=>prev.filter(s=>!( (s.id && svc.id && s.id===svc.id) || s.name===svc.name)));
-    else setSelectedServices(prev=>[...prev, { id: svc.id, name: svc.titulo || svc.name || svc.title || svc.nome || svc.name, price: Number(svc.preco || svc.price || svc.valor || 0) }]);
+    const exists = selectedServices.find(s=> (s.id && svc.id && s.id===svc.id) || s.name=== (svc.titulo||svc.name||svc.title||svc.nome));
+    if (exists) {
+      setSelectedServices(prev=>prev.filter(s=>!( (s.id && svc.id && s.id===svc.id) || s.name=== (svc.titulo||svc.name||svc.title||svc.nome))));
+      return;
+    }
+    const catalogPrice = Number(svc.preco || svc.price || svc.valor || 0) || 0;
+    setPendingService(svc);
+    setPendingCatalogPrice(catalogPrice);
+    setEditingPendingPrice(false);
+    setPendingPriceInput('');
   }
 
   const addInlineService = () => {
@@ -171,7 +193,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center">
       <div className="bg-white w-full h-full overflow-auto p-4 sm:rounded-none">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">Adicionar Peça</h2>
+          <h2 className="text-lg sm:text-xl font-bold">Adicionar Peça</h2>
           <button onClick={onClose} className="text-gray-600">Fechar</button>
         </div>
 
@@ -182,7 +204,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
               <div>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-4">
                   {(showAllIcons ? PREDEFINED : PREDEFINED.slice(0,12)).map(p=> (
-                    <button key={p.key} onClick={()=>{ setSelectedTipo(p.nome); setStep(2); }} className="flex flex-col items-center p-4 border rounded hover:shadow">
+                    <button type="button" key={p.key} onClick={()=>handleSelectTipo(p.nome)} className="flex flex-col items-center p-4 border rounded hover:shadow">
                       <div className={`w-20 h-20 flex items-center justify-center rounded bg-gray-100 ${iconsize}`}>{p.icone}</div>
                       <div className="mt-2 text-sm">{p.nome}</div>
                     </button>
@@ -201,7 +223,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
                 <h3 className="text-lg font-semibold mb-3">Qual a cor da peça?</h3>
                 <div className="flex flex-wrap gap-3 mb-4">
                   {COLORS.map(c=> (
-                    <button key={c} onClick={()=>{ setSelectedCor(c); setOtherColor(''); setStep(3); }} className="w-12 h-12 rounded-full flex items-center justify-center border" aria-label={c} title={c} style={{ backgroundColor: COLOR_MAP[c] || undefined }}>
+                    <button key={c} type="button" onClick={()=>{ setSelectedCor(c); setOtherColor(''); setStep(3); try{ console.log('[PieceFlowModal] color clicked', c, COLOR_MAP[c]||c); }catch(e){} }} className="w-12 h-12 rounded-full flex items-center justify-center border" aria-label={c} title={c} style={{ backgroundColor: COLOR_MAP[c] || undefined }}>
                       {!COLOR_MAP[c] || (COLOR_MAP[c] && COLOR_MAP[c].toLowerCase() === '#ffffff') ? <div className="w-3 h-3 rounded-full border"></div> : null}
                     </button>
                   ))}
@@ -230,7 +252,39 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
             {step===4 && (
               <div>
                 <h3 className="text-lg font-semibold mb-3">Quais serviços serão feitos nessa peça?</h3>
-                <div className="mb-3">
+                  <div className="mb-3">
+                    {/* inline confirm/edit UI for adding service */}
+                    {pendingService && (
+                      <div className="mb-2 p-2 border rounded bg-white">
+                        <div className="mb-2">Manter preço atual R$ {Number(pendingCatalogPrice).toFixed(2)}?</div>
+                        {!editingPendingPrice ? (
+                          <div className="flex gap-2">
+                            <button type="button" onClick={()=>{
+                              // confirm keep price
+                              const svc = pendingService;
+                              const newSvc = { id: svc.id || `s-${Date.now()}`, name: svc.titulo || svc.name || svc.title || svc.nome || svc.name, price: Number(pendingCatalogPrice || 0) };
+                              setSelectedServices(prev=>[...prev, newSvc]);
+                              setPendingService(null); setPendingCatalogPrice(0);
+                            }} className="px-3 py-1 bg-green-600 text-white rounded">Sim</button>
+                            <button type="button" onClick={()=>{ setEditingPendingPrice(true); setPendingPriceInput(String(Number(pendingCatalogPrice||0).toFixed(2))); }} className="px-3 py-1 bg-gray-200 rounded">Não</button>
+                            <button type="button" onClick={()=>{ setPendingService(null); setPendingCatalogPrice(0); }} className="px-3 py-1 text-red-600">Cancelar</button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2 items-center">
+                            <input type="text" value={pendingPriceInput} onChange={e=>setPendingPriceInput(e.target.value)} className="border p-1 rounded w-28" />
+                            <button type="button" onClick={()=>{
+                              const parsed = Number((pendingPriceInput||'').replace(/[^0-9.\-]/g,''));
+                              const svc = pendingService;
+                              const priceToUse = (!isNaN(parsed) && parsed >= 0) ? parsed : Number(pendingCatalogPrice||0);
+                              const newSvc = { id: svc.id || `s-${Date.now()}`, name: svc.titulo || svc.name || svc.title || svc.nome || svc.name, price: Number(priceToUse || 0) };
+                              setSelectedServices(prev=>[...prev, newSvc]);
+                              setPendingService(null); setPendingCatalogPrice(0); setEditingPendingPrice(false); setPendingPriceInput('');
+                            }} className="px-3 py-1 bg-rose-500 text-white rounded">Salvar</button>
+                            <button type="button" onClick={()=>{ setEditingPendingPrice(false); setPendingPriceInput(''); }} className="px-3 py-1 border rounded">Cancelar</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                       <div className="flex gap-2 mb-2 items-center">
                     <input placeholder="Nome do serviço" value={newServiceName} onChange={e=>{ setNewServiceName(e.target.value); setServiceSearch(e.target.value); }} onKeyDown={async (e)=>{
                         if (e.key === 'Enter') {
@@ -326,10 +380,11 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
                 <div className="text-lg font-bold text-blue-600">{clientName || '-'}</div>
               </div>
             <div>
-              <div className="mb-2">
-                <div className="text-lg font-bold text-blue-600">{clientName || '-'}</div>
-              </div>
-              <PiecePreview pieceType={selectedTipo} color={(COLOR_MAP && selectedCor) ? (COLOR_MAP[selectedCor] || selectedCor) : (otherColor || undefined)} services={selectedServices} />
+              {(() => {
+                const previewColor = (COLOR_MAP && selectedCor) ? (COLOR_MAP[selectedCor] || selectedCor) : (otherColor || undefined);
+                try { console.debug('[PieceFlowModal] preview props', { selectedTipo, selectedCor, otherColor, previewColor, selectedServicesCount: (selectedServices||[]).length }); } catch(e) {}
+                return <PiecePreview pieceType={selectedTipo} color={previewColor} services={selectedServices} />
+              })()}
               <div className="mt-3 text-sm"><strong>Tipo:</strong> {selectedTipo || '-'}</div>
               <div className="text-sm"><strong>Cor:</strong> {selectedCor || otherColor || '-'}</div>
               <div className="text-sm"><strong>Modelo:</strong> {modelo || '-'}</div>

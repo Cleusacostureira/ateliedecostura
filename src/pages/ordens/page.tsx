@@ -34,6 +34,35 @@ const normalizeStatus = (s: any) => {
   } catch (e) { return String(s || 'Recebido'); }
 };
 
+// build a map of cashFlowDetails by order id/numero, ignoring locally deleted tombstones
+const getCashMap = () => {
+  try {
+    const raw = localStorage.getItem('cashFlowDetails');
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return {};
+
+    let deletedSet = new Set<string>();
+    try {
+      const deletedRaw = localStorage.getItem('deletedOrders');
+      const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
+      deletedSet = new Set(Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : []);
+    } catch (e) { /* ignore */ }
+
+    const map: Record<string, any> = {};
+    (parsed || []).forEach((c: any) => {
+      try {
+        const oid = c.orderId || c.orderid;
+        const num = c.numero;
+        if (oid && deletedSet.has(String(oid))) return;
+        if (num && deletedSet.has(String(num))) return;
+        if (oid) map[String(oid)] = c;
+        if (num) map[String(num)] = c;
+      } catch (e) { /* ignore entry */ }
+    });
+    return map;
+  } catch (e) { return {}; }
+};
+
 export default function OrdensPage() {
   // small utility for printing tickets during development
   const printTicket = (order: any) => {
@@ -106,11 +135,23 @@ export default function OrdensPage() {
           return;
         }
         const raw = (r as any).data || [];
-        // if local storage is empty, populate it with server rows
-        const existing = localStorage.getItem('orders');
-        if (!existing || existing === '[]') {
-          try { localStorage.setItem('orders', JSON.stringify(raw)); } catch (e) {}
-          try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
+        // Merge server rows into localStorage (force payload) so server orders are reflected.
+        // Only force-write when server returned items to avoid clearing local edits when server is empty.
+        try {
+          if (Array.isArray(raw) && raw.length > 0) {
+            const forced = { __force: true, payload: raw };
+            localStorage.setItem('orders', JSON.stringify(forced));
+            try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
+          } else {
+            // server returned no rows; don't overwrite local orders
+            try { setDebugInfo((prev:any)=>({ ...(prev||{}), initialFetchInfo: 'server returned no orders; preserving local storage' })); } catch(e){}
+          }
+        } catch (e) {
+          // fallback: if forced write fails, only write raw when local is empty
+          try {
+            const existing = localStorage.getItem('orders');
+            if (!existing || existing === '[]') { localStorage.setItem('orders', JSON.stringify(raw)); try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){} }
+          } catch (_) {}
         }
         // initial load saved; enrichment will run via `refetchOrdersFromServer` handler
       } catch (e) { console.warn('initial server fetch failed', e); try { setDebugInfo((prev:any)=>({ ...(prev||{}), initialFetchError: String(e) })); } catch(_){} }
@@ -124,10 +165,18 @@ export default function OrdensPage() {
         const raw = localStorage.getItem('orders') || '[]';
         let parsedRaw: any = [];
         try { parsedRaw = JSON.parse(raw || '[]'); } catch (e) { parsedRaw = []; }
+        // support forced write shape: { __force: true, payload: [...] }
+        try { if (parsedRaw && parsedRaw.__force === true && Array.isArray(parsedRaw.payload)) parsedRaw = parsedRaw.payload; } catch(e) {}
         if (!Array.isArray(parsedRaw) || parsedRaw.length === 0) return;
 
         // TEMP: força importação do JSON fornecido pelo usuário (aplica só uma vez)
-        const deletedArr = Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : [];
+        // read tombstone list safely from localStorage
+        let deletedArr: string[] = [];
+        try {
+          const rawDeletedLocal = localStorage.getItem('deletedOrders');
+          const parsedDeleted = rawDeletedLocal ? JSON.parse(rawDeletedLocal) : [];
+          deletedArr = Array.isArray(parsedDeleted) ? parsedDeleted.map((x:any) => String(x)) : [];
+        } catch (e) { deletedArr = []; }
 
         // Build sets of server ids/numeros so we can clean tombstones that refer to real server rows
         const serverIdSet = new Set<string>(parsedRaw.map((r:any) => String(r.id)).filter(Boolean));
@@ -200,16 +249,21 @@ export default function OrdensPage() {
             const numericVal = Number(String(rawValue).replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
             const displayValue = numericVal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+            const clientName = client?.nome || o.client || o.cliente || o.cliente_nome || o.nome || '';
+            const phoneVal = client?.telefone || o.phone || o.telefone || o.celular || '';
+            const clientFoto = client?.foto || o.client_foto || o.foto || null;
+            const serviceField = servicesText || o.service || o.servico || o.servicos || o.serviceText || '';
+            const dateOutField = formatIsoToBR(o.data_entrega || o.dateOut || o.date_out || o.previsao || o.dataPrevista || o.delivery) || o.dateOut || '';
             data.push({
               ...o,
               status: normalizeStatus(o.status),
-              client: client?.nome || o.client || '',
-              phone: client?.telefone || o.phone || '',
-              client_foto: client?.foto || o.client_foto || null,
+              client: clientName,
+              phone: phoneVal,
+              client_foto: clientFoto,
               pieces,
               services,
-              service: servicesText || o.service || o.servico || '',
-              dateOut: formatIsoToBR(o.data_entrega || o.dateOut || o.date_out || o.previsao) || o.dateOut || '',
+              service: serviceField,
+              dateOut: dateOutField,
               paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
               value: displayValue,
             });
@@ -816,7 +870,14 @@ export default function OrdensPage() {
       ? '\n✅ *Pagamento já realizado!*\n\nAguardamos você! ✨'
       : `\n\n*DADOS PARA PAGAMENTO PIX:*\n\n*Nome:* Cleusa Belani David\n*Telefone:* 45999126130\n*CPF:* 64166724053\n\nAguardamos você! ✨`;
     
-    setFidelizacaoMessage(`Olá ${selectedOrder.client}! 🎉\n\n*Cleusa Ateliê de Costura*\n\nSua peça já está pronta e pode ser retirada!\n\nServiço: ${selectedOrder.service}\nValor: ${selectedOrder.value}${paymentInfo}`);
+    const clientNameMsg = getOrderField(selectedOrder, 'client', 'cliente', 'client_name', 'nome');
+    const piecesText = formatPiecesAndServicesForMessage(selectedOrder);
+    const serviceLine = getOrderField(selectedOrder, 'service', 'servico', 'servicos', 'serviceText');
+    const dateOutMsg = getOrderField(selectedOrder, 'dateOut', 'data_entrega', 'previsao');
+    const valueMsg = getOrderField(selectedOrder, 'value', 'valor', 'total');
+    const header = `Olá ${clientNameMsg || selectedOrder.client || '-'}! 🎉\n\n*Cleusa Ateliê de Costura*\n\nSua(s) peça(s) da OS ${orderRef(selectedOrder)} está(ão) pronta(s).`;
+    const details = `${serviceLine ? `\n\n🧾 Serviço(s): ${serviceLine}` : ''}\n${valueMsg ? `\n💰 Valor: ${valueMsg}` : ''}\n${dateOutMsg ? `\n\n📅 Previsão de retirada: ${dateOutMsg}` : ''}`;
+    setFidelizacaoMessage(`${header}\n\n${piecesText || ''}${details}\n\n${paymentInfo}`);
     setClientePhone(selectedOrder.phone);
     setShowFidelizacaoModal(true);
     
@@ -1173,7 +1234,12 @@ export default function OrdensPage() {
       // não enviar WhatsApp automaticamente — mostrar mensagem de finalização para opção do usuário
 
     // Mensagem de fidelização - Serviço recebido
-    setFidelizacaoMessage(`Olá ${newOrder.client}! 😊\n\n*Cleusa Ateliê de Costura*\n\nSua ordem foi registrada com sucesso!\n\nServiço: ${servicesText}\nPrazo de entrega: ${newOrder.dateOut}\nValor: R$ ${totalValue.toFixed(2)}\n\nObrigada pela confiança! ✨`);
+    const clientNameNew = getOrderField(newOrder, 'client', 'cliente', 'client_name', 'nome') || newOrder.client;
+    const piecesTextNew = formatPiecesAndServicesForMessage(newOrder);
+    const serviceLineNew = getOrderField(newOrder, 'service', 'servico', 'servicos', 'serviceText');
+    const dateOutNew = getOrderField(newOrder, 'dateOut', 'data_entrega', 'previsao') || newOrder.dateOut;
+    const valueNew = `R$ ${totalValue.toFixed(2)}`;
+    setFidelizacaoMessage(`Olá ${clientNameNew}! 😊\n\n*Cleusa Ateliê de Costura*\n\nSua ordem foi registrada com sucesso!\n\n${piecesTextNew}\n${serviceLineNew ? `Serviço(s): ${serviceLineNew}\n` : ''}Prazo de entrega: ${dateOutNew}\nValor: ${valueNew}\n\nObrigada pela confiança! ✨`);
     setClientePhone(newOrder.phone);
     // abrir apenas a mensagem de fidelização — a opção de impressão será exibida
     // quando o usuário fechar a mensagem (via copiar/enviar/fechar)
@@ -1259,6 +1325,70 @@ export default function OrdensPage() {
     alert('Mensagem copiada!');
     setShowFidelizacaoModal(false);
   };
+
+  const formatPiecesAndServicesForMessage = (order: any) => {
+    try {
+      const pieces = order.pieces || order.pecas || [];
+      let out = '';
+      let total = 0;
+      // If pieces present, list each piece and its services
+      if (Array.isArray(pieces) && pieces.length > 0) {
+        for (const p of pieces) {
+          const tipo = p.tipo || p.nome || p.nomePeca || p.name || 'Peça';
+          const cor = p.cor || p.color || p.corEscolhida || '';
+          out += `- ${tipo}${cor ? ` (${cor})` : ''}\n`;
+          const svcs = p.services || p.servicos || p.servicos_vinculados || [];
+          if (Array.isArray(svcs) && svcs.length > 0) {
+            for (const s of svcs) {
+              const n = s.name || s.titulo || s.nome || String(s || '');
+              const v = Number(s.price || s.preco || s.valor || s.valor_servico || 0) || 0;
+              total += v;
+              out += `  • ${n} — R$ ${v.toFixed(2)}\n`;
+            }
+          }
+        }
+        out += `\nSubtotal: R$ ${total.toFixed(2)}`;
+        return out;
+      }
+
+      // No pieces: try grouping order-level services by pieceTipo if available
+      const rootServices = order.services || order.servicos || [];
+      if (Array.isArray(rootServices) && rootServices.length > 0) {
+        const grouped: Record<string, any[]> = {};
+        for (const s of rootServices) {
+          const pieceTipo = s.pieceTipo || s.peca || s.peca_tipo || s.piece || s.piece_name || 'Geral';
+          const key = pieceTipo || 'Geral';
+          if (!grouped[key]) grouped[key] = [];
+          grouped[key].push(s);
+        }
+        for (const k of Object.keys(grouped)) {
+          out += `- ${k}\n`;
+          for (const s of grouped[k]) {
+            const n = s.name || s.titulo || s.nome || String(s || '');
+            const v = Number(s.price || s.preco || s.valor || 0) || 0;
+            total += v;
+            out += `  • ${n} — R$ ${v.toFixed(2)}\n`;
+          }
+        }
+        out += `\nSubtotal: R$ ${total.toFixed(2)}`;
+        return out;
+      }
+
+      // Fallback: show single-line service text or empty
+      return order.service || '';
+    } catch (e) { return order.service || ''; }
+  }
+
+  const getOrderField = (order: any, ...keys: string[]) => {
+    try {
+      if (!order) return '';
+      for (const k of keys) {
+        const v = order[k];
+        if (v !== undefined && v !== null && String(v).toString().trim() !== '') return v;
+      }
+      return '';
+    } catch (e) { return ''; }
+  }
 
   const openWhatsApp = () => {
     const message = encodeURIComponent(fidelizacaoMessage);
@@ -1623,6 +1753,7 @@ export default function OrdensPage() {
 
   // persist orders to localStorage and notify dashboard
   useEffect(() => {
+    try { console.debug('[OrdensPage] orders state changed — count:', (orders||[]).length, (orders||[]).slice(0,3)); } catch(e) {}
     try {
       if (ignoreLocalSaveRef.current) { ignoreLocalSaveRef.current = false; return; }
       localStorage.setItem('orders', JSON.stringify(orders));
@@ -1661,7 +1792,16 @@ export default function OrdensPage() {
               });
               const currJson = JSON.stringify(ordersRef.current || []);
               const newJson = JSON.stringify(normalized || []);
-              if (currJson !== newJson) { ignoreLocalSaveRef.current = true; setOrders(normalized); }
+              // Avoid replacing a populated local list with an empty one (this triggers suppressed write warnings)
+              if (currJson !== newJson) {
+                if (Array.isArray(normalized) && normalized.length === 0 && Array.isArray(ordersRef.current) && ordersRef.current.length > 0) {
+                  // keep existing local orders; record debug info
+                  try { setDebugInfo((prev:any)=>({ ...(prev||{}), skippedClearFromRefetch: true })); } catch(e){}
+                } else {
+                  ignoreLocalSaveRef.current = true;
+                  setOrders(normalized);
+                }
+              }
             } catch (ee) {
               try { const normalized = parsed.map((o:any) => ({ ...o, status: normalizeStatus(o.status) })); ignoreLocalSaveRef.current = true; setOrders(normalized); } catch(_){ }
             }
