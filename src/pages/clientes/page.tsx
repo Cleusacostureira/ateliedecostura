@@ -184,89 +184,88 @@ export default function ClientesPage() {
           <div className="bg-white rounded-lg border border-gray-200 p-3 lg:p-4">
             {/* Mobile: stacked list (no horizontal scroll) */}
             <div className="sm:hidden space-y-3">
-              {filteredClientes.map(cliente => (
-                <div key={cliente.id} className="bg-white p-3 rounded-lg border">
-                  <div className="flex items-start justify-between">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                          {cliente.foto ? (
-                            <img src={cliente.foto} alt={cliente.nome} className="w-full h-full object-cover" />
-                          ) : (
-                            <i className="ri-user-line text-base text-gray-400"></i>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div onClick={() => openDetail(cliente)} className="text-sm font-semibold text-gray-900 truncate cursor-pointer">{cliente.nome}</div>
-                          {cliente.cpf && <div className="text-xs text-gray-500">{cliente.cpf}</div>}
-                        </div>
+              {filteredClientes.length === 0 ? (
+                <div className="p-4 text-center text-sm text-gray-500">Nenhum cliente encontrado.</div>
+              ) : (
+                filteredClientes.map(cliente => (
+                  <div key={cliente.id} className="bg-white p-3 rounded-lg border">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {cliente.foto ? (
+                          <img src={cliente.foto} alt={cliente.nome} className="w-full h-full object-cover" />
+                        ) : (
+                          <i className="ri-user-line text-base text-gray-400"></i>
+                        )}
                       </div>
-                      <div className="mt-2 text-xs text-gray-700">
-                        <div>Total: <span className="font-semibold text-rose-600">R$ {(Number(cliente.totalGasto) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
-                        <div>Serviços: <span className="font-medium text-gray-900">{cliente.servicosRealizados || 0}x</span></div>
-                        <div className="mt-1">
-                          <button onClick={() => handleEdit(cliente)} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 text-xs font-medium mr-2">Editar</button>
-                          <button onClick={() => handleDelete(cliente)} className="px-3 py-1 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 text-xs font-medium">Excluir</button>
+                      <div className="min-w-0">
+                        <div onClick={() => openDetail(cliente)} className="text-sm font-semibold text-gray-900 truncate cursor-pointer">{cliente.nome}</div>
+                        {cliente.cpf && <div className="text-xs text-gray-500">{cliente.cpf}</div>}
+                        <div className="mt-2 text-xs text-gray-700">
+                          <div>Total: <span className="font-semibold text-rose-600">R$ {(Number(cliente.totalGasto) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                          <div>Serviços: <span className="font-medium text-gray-900">{cliente.servicosRealizados || 0}x</span></div>
+                          <div className="mt-1">
+                            <button onClick={() => handleEdit(cliente)} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 text-xs font-medium mr-2">Editar</button>
+                            <button onClick={() => handleDelete(cliente)} className="px-3 py-1 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 text-xs font-medium">Excluir</button>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
-              {filteredClientes.length === 0 && (
-                <div className="p-4 text-center text-sm text-gray-500">Nenhum cliente encontrado.</div>
+                ))
               )}
             </div>
 
             {/* Desktop: tabela */}
             <div className="hidden sm:block overflow-auto">
               <table className="w-full table-auto">
-              <thead>
-                <tr className="text-left text-xs lg:text-sm text-gray-600">
-                  <th className="py-2 px-3">Cliente</th>
-                  <th className="py-2 px-3">Telefone</th>
-                  <th className="py-2 px-3">Total Gasto</th>
-                  <th className="py-2 px-3">Serviços</th>
-                  <th className="py-2 px-3">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredClientes.map((cliente) => (
-                  <tr key={cliente.id} className="border-t last:border-b hover:bg-gray-50">
-                    <td className="py-3 px-3 align-top">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                          {cliente.foto ? (
-                            <img src={cliente.foto} alt={cliente.nome} className="w-full h-full object-cover" />
-                          ) : (
-                            <i className="ri-user-line text-base text-gray-400"></i>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div onClick={() => openDetail(cliente)} className="text-sm lg:text-base font-semibold text-gray-900 truncate cursor-pointer">{cliente.nome}</div>
-                          {cliente.cpf && <div className="text-xs text-gray-500">{cliente.cpf}</div>}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 align-top text-sm text-gray-700">{cliente.telefone || '-'}</td>
-                    <td className="py-3 px-3 align-top text-sm font-semibold text-rose-600">R$ {(Number(cliente.totalGasto) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="py-3 px-3 align-top text-sm text-gray-900">{cliente.servicosRealizados || 0}x</td>
-                    <td className="py-3 px-3 align-top text-sm">
-                      <div className="flex gap-2">
-                        <button onClick={() => handleEdit(cliente)} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 text-xs font-medium">Editar</button>
-                        <button onClick={() => handleDelete(cliente)} className="px-3 py-1 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 text-xs font-medium">Excluir</button>
-                      </div>
-                    </td>
+                <thead>
+                  <tr className="text-left text-xs lg:text-sm text-gray-600">
+                    <th className="py-2 px-3">Cliente</th>
+                    <th className="py-2 px-3">Telefone</th>
+                    <th className="py-2 px-3">Total Gasto</th>
+                    <th className="py-2 px-3">Serviços</th>
+                    <th className="py-2 px-3">Ações</th>
                   </tr>
-                ))}
-                {filteredClientes.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="py-6 px-3 text-center text-sm text-gray-500">Nenhum cliente encontrado.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filteredClientes.map((cliente) => (
+                    <tr key={cliente.id} className="border-t last:border-b hover:bg-gray-50">
+                      <td className="py-3 px-3 align-top">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                            {cliente.foto ? (
+                              <img src={cliente.foto} alt={cliente.nome} className="w-full h-full object-cover" />
+                            ) : (
+                              <i className="ri-user-line text-base text-gray-400"></i>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div onClick={() => openDetail(cliente)} className="text-sm lg:text-base font-semibold text-gray-900 truncate cursor-pointer">{cliente.nome}</div>
+                            {cliente.cpf && <div className="text-xs text-gray-500">{cliente.cpf}</div>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 align-top text-sm text-gray-700">{cliente.telefone || '-'}</td>
+                      <td className="py-3 px-3 align-top text-sm font-semibold text-rose-600">R$ {(Number(cliente.totalGasto) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="py-3 px-3 align-top text-sm text-gray-900">{cliente.servicosRealizados || 0}x</td>
+                      <td className="py-3 px-3 align-top text-sm">
+                        <div className="flex gap-2">
+                          <button onClick={() => handleEdit(cliente)} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 text-xs font-medium">Editar</button>
+                          <button onClick={() => handleDelete(cliente)} className="px-3 py-1 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 text-xs font-medium">Excluir</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredClientes.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-6 px-3 text-center text-sm text-gray-500">Nenhum cliente encontrado.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
+
         </div>
 
         {/* Modal Cliente */}
