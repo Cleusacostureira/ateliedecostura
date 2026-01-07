@@ -42,6 +42,8 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   const [lastCreatedOrder, setLastCreatedOrder] = useState<any | null>(null);
   const [showServiceAddedToast, setShowServiceAddedToast] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [fidelizacaoMessage, setFidelizacaoMessage] = useState('');
+  const [showCopied, setShowCopied] = useState(false);
 
   const formatDate = (d?: string | null) => {
     if (!d) return '';
@@ -513,6 +515,13 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
     if (onCreated) onCreated(finalOrder);
     // keep wizard open and show post-confirm modal so user can send fidelização and print
     setLastCreatedOrder(finalOrder);
+    // build default fidelizacao message for user review
+    try {
+      const servicesText = (finalOrder.pieces || []).flatMap((p:any) => (p.services||[]).map((s:any) => s.name || s.titulo || s.title || '')).join(', ');
+      const msg = `Olá ${finalOrder.cliente || selectedClient?.nome || ''}! Obrigado pela preferência. Sua OS ${finalOrder.numero} foi confirmada. Serviço(s): ${servicesText || '-'}.
+Total: R$ ${Number(finalOrder.total||0).toFixed(2)}.`;
+      setFidelizacaoMessage(msg);
+    } catch (e) { setFidelizacaoMessage(''); }
     setShowPostConfirm(true);
     setIsSubmitting(false);
   };
@@ -520,9 +529,12 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   const sendFidelizacaoAndDontAutoPrint = (order:any) => {
     try {
       const phone = (selectedClient?.telefone || selectedClient?.phone || order?.phone || '').toString().replace(/\D/g,'');
-      const servicesText = (order.pieces || []).flatMap((p:any) => (p.services||[]).map((s:any) => s.name || s.titulo || s.title || '')).join(', ');
-      const message = `Olá ${order.cliente || selectedClient?.nome || ''}! Obrigado pela preferência. Sua OS ${order.numero} foi confirmada. Serviço(s): ${servicesText}. Total: R$ ${Number(order.total||0).toFixed(2)}.`;
-      if (phone) window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(message)}`, '_blank');
+      const messageToSend = fidelizacaoMessage && fidelizacaoMessage.trim() ? fidelizacaoMessage : (() => {
+        const servicesText = (order.pieces || []).flatMap((p:any) => (p.services||[]).map((s:any) => s.name || s.titulo || s.title || '')).join(', ');
+        return `Olá ${order.cliente || selectedClient?.nome || ''}! Obrigado pela preferência. Sua OS ${order.numero} foi confirmada. Serviço(s): ${servicesText || '-'}.
+Total: R$ ${Number(order.total||0).toFixed(2)}.`;
+      })();
+      if (phone) window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(messageToSend)}`, '_blank');
     } catch (e) { console.warn('fidelizacao send failed', e); }
     setPostConfirmSentMessage(true);
     // do not open print preview automatically; ask user on close
@@ -877,11 +889,16 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/40" onClick={()=>{ setShowPostConfirm(false); }}></div>
             <div className="bg-white rounded-lg p-4 z-10 w-full max-w-md">
-              <div className="text-lg font-medium mb-2">Ordem criada — #{lastCreatedOrder.numero}</div>
-              <div className="text-sm text-gray-600 mb-4">Deseja enviar a mensagem de fidelização agora?</div>
-              <div className="flex gap-2 justify-end">
+              <div className="text-lg font-medium mb-2">Mensagem de Fidelização</div>
+              <div className="text-sm text-gray-600 mb-2">Ordem criada — #{lastCreatedOrder.numero}</div>
+              <textarea value={fidelizacaoMessage} onChange={e=>setFidelizacaoMessage(e.target.value)} className="w-full border p-2 rounded h-40 mb-3 font-mono text-sm" />
+              <div className="flex gap-2 justify-end items-center">
                 {!postConfirmSentMessage && (
-                  <button onClick={()=>{ sendFidelizacaoAndDontAutoPrint(lastCreatedOrder); }} className="px-4 py-2 bg-green-600 text-white rounded">Enviar WhatsApp</button>
+                  <>
+                    <button onClick={()=>{ sendFidelizacaoAndDontAutoPrint(lastCreatedOrder); }} className="px-4 py-2 bg-green-600 text-white rounded">Enviar WhatsApp</button>
+                    <button onClick={async ()=>{ try { await navigator.clipboard.writeText(fidelizacaoMessage || ''); setShowCopied(true); setTimeout(()=>setShowCopied(false),1500); } catch(_){} }} className="px-4 py-2 border rounded">Copiar</button>
+                    {showCopied && <div className="text-sm text-green-600 ml-2">Copiado!</div>}
+                  </>
                 )}
                 {postConfirmSentMessage && (
                   <div className="flex items-center gap-2">
@@ -889,7 +906,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                     <button onClick={()=>{ setShowPrintPreview(true); setShowPostConfirm(false); }} className="px-3 py-1 bg-blue-600 text-white rounded">Imprimir</button>
                   </div>
                 )}
-                <button onClick={()=>{ setShowPrintConfirm(true); }} className="px-4 py-2 border rounded">Fechar</button>
+                <button onClick={()=>{ setShowPostConfirm(false); setShowPrintConfirm(true); }} className="px-4 py-2 border rounded">Fechar</button>
               </div>
             </div>
           </div>
@@ -918,7 +935,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
         {showPrintPreview && lastCreatedOrder && (
           <div className="fixed inset-0 z-60 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/40" onClick={()=>setShowPrintPreview(false)}></div>
-            <div className="bg-white w-full max-w-md rounded-lg p-4 z-10 overflow-auto relative">
+            <div className="bg-white w-full max-w-md rounded-lg p-4 z-10 overflow-auto relative max-h-[80vh]">
               <button onClick={()=>setShowPrintPreview(false)} className="absolute right-3 top-3 text-gray-600 text-lg">×</button>
               {
                 (() => {
