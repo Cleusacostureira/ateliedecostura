@@ -5,21 +5,36 @@ import { supabase } from '../../lib/supabaseClient';
 export default function RelatoriosPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
   const [orders, setOrders] = useState<any[]>([]);
+  const [clientsList, setClientsList] = useState<any[]>([]);
 
   useEffect(() => {
     let mounted = true;
     async function fetchOrders() {
+      // fetch orders and clients in sequence but ensure both attempts run
       try {
         if (supabase && typeof supabase.from === 'function') {
           const res = await supabase.from('ordens').select('*');
           if (!(res as any).error && Array.isArray((res as any).data)) {
             if (mounted) setOrders((res as any).data);
-            return;
+            // do not return here: continue to attempt loading clients
           }
         }
       } catch (e) {
         console.warn('relatorios fetch ordens error', e);
       }
+
+      // also try to load clients for better name resolution (always attempt)
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          const cRes = await supabase.from('clientes').select('*');
+          if (!(cRes as any).error && Array.isArray((cRes as any).data) && mounted) {
+            try {
+              const sorted = (cRes as any).data.slice().sort((a:any,b:any) => String((a.nome||'')).localeCompare(String((b.nome||''))));
+              setClientsList(sorted);
+            } catch (ee) { setClientsList((cRes as any).data); }
+          }
+        }
+      } catch (e) { console.warn('relatorios fetch clients error', e); }
 
       // fallback to localStorage
       try {
@@ -42,39 +57,153 @@ export default function RelatoriosPage() {
     return () => { mounted = false; };
   }, []);
 
-  // Derived aggregations from orders
+  // Derived aggregations from orders (deduped by id/numero)
   const servicesCountMap: Record<string, number> = {};
   const clientsCountMap: Record<string, number> = {};
-  const monthsCount = Array.from({ length: 12 }).map(() => 0);
+  const revenueByMonth = Array.from({ length: 12 }).map(() => 0);
 
-  (orders || []).forEach((o) => {
-    // services/items
-    const items = (o.itens || o.ordem_itens || o.items || []).map((it: any) => (it.nome || it.name || it.servico || it.title || '').toString()).filter(Boolean);
-    if (items.length === 0) {
-      const svc = (o.service || o.servico || '').toString();
-      if (svc) items.push(svc);
-    }
+  // build unique orders map (prefer server rows with id/numero)
+  const uniqOrdersMap: Record<string, any> = {};
+  (orders || []).forEach((o:any) => {
+    try {
+      const key = String(o.id || o.numero || '');
+      if (!key) return;
+      if (!uniqOrdersMap[key] || (o.created_at && (!uniqOrdersMap[key].created_at || String(o.created_at) > String(uniqOrdersMap[key].created_at)))) uniqOrdersMap[key] = o;
+    } catch (e) {}
+  });
+  const uniqOrders = Object.values(uniqOrdersMap || {});
+
+  uniqOrders.forEach((o:any) => {
+    // services/items: try multiple sources (itens array, ordem_itens, notas.services/servicos, top-level fields)
+    let items: string[] = [];
+    try {
+      const arr = (o.itens || o.ordem_itens || o.items || o.pecas || []);
+      if (Array.isArray(arr) && arr.length > 0) {
+        items = items.concat(arr.map((it: any) => (it && (it.nome || it.name || it.servico || it.title || it.titulo || it.servico_nome || '')).toString()).filter(Boolean));
+      }
+    } catch (e) {}
+    try {
+      const notas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : null;
+      const fromNotas = (notas && (notas.services || notas.servicos || [])) || [];
+      if (Array.isArray(fromNotas) && fromNotas.length > 0) {
+        items = items.concat(fromNotas.map((s:any) => ((s && (s.name || s.titulo || s.nome || s.servico || s.title)) || '').toString()).filter(Boolean));
+      }
+    } catch(e) {}
+    try {
+      const svcTop = (o.service || o.servico || '').toString();
+      if (svcTop) items.push(svcTop);
+    } catch(e) {}
+    // dedupe items
+    items = Array.from(new Set((items || []).map((s:any)=>String(s).trim()).filter(Boolean)));
     items.forEach((s: string) => {
       const key = s.trim();
       if (!key) return;
       servicesCountMap[key] = (servicesCountMap[key] || 0) + 1;
     });
 
-    // clients
-    const client = (o.client || o.cliente || o.client_name || o.nome_cliente || '').toString().trim() || 'Sem nome';
-    clientsCountMap[client] = (clientsCountMap[client] || 0) + 1;
-
-    // months
-    const d = new Date(o.data_entrega || o.data || o.created_at || o.createdAt || Date.now());
-    if (!isNaN(d.getTime())) {
-      monthsCount[d.getMonth()] = (monthsCount[d.getMonth()] || 0) + 1;
+    // clients (resolve by cliente_id via clientsList when possible)
+    let clientName = '';
+    try {
+      if (o.cliente_id) {
+        const c = clientsList.find((c:any) => String(c.id) === String(o.cliente_id));
+        if (c && c.nome) clientName = String(c.nome).trim();
+      }
+    } catch(e) {}
+    if (!clientName) {
+      // handle object-shaped client fields
+      try {
+        if (o.client && typeof o.client === 'object') {
+          clientName = String(o.client.nome || o.client.name || '').trim();
+        }
+      } catch(e) {}
     }
+    if (!clientName) clientName = (o.client || o.cliente || o.client_name || o.nome_cliente || '').toString().trim() || '';
+    if (!clientName && o.cliente_id) {
+      // try fetching from clientsList by id as last attempt
+      try {
+        const c2 = clientsList.find((c:any) => String(c.id) === String(o.cliente_id));
+        if (c2 && c2.nome) clientName = String(c2.nome).trim();
+      } catch(e){}
+    }
+    clientName = clientName || 'Sem nome';
+    clientsCountMap[clientName] = (clientsCountMap[clientName] || 0) + 1;
+
+    // months (robust parsing: accept dd/mm/yyyy strings or ISO dates)
+    try {
+      // parse order value
+      let rawVal: any = o.total ?? o.valor ?? o.value ?? (o.notas && typeof o.notas === 'object' && o.notas.total) ?? o.value;
+      let orderVal = 0;
+      try {
+        const s = String(rawVal || '').replace(/[^0-9,.-]/g, '').replace(',', '.');
+        orderVal = parseFloat(s) || 0;
+      } catch(e) { orderVal = 0; }
+
+      const candidates = [o.data_entrega, o.dataEntrega, o.data, o.created_at, o.createdAt, o.dateOut, o.dateOutAt, o.date_in, o.dateIn];
+      let d: Date | null = null;
+      for (const rawDate of candidates) {
+        if (!rawDate) continue;
+        try {
+          if (typeof rawDate === 'string' && rawDate.includes('/')) {
+            const parts = rawDate.split('/').map((p: string) => p.trim());
+            if (parts.length === 3) {
+              const day = parseInt(parts[0]);
+              const month = parseInt(parts[1]) - 1;
+              const year = parseInt(parts[2]);
+              if (!isNaN(day) && !isNaN(month) && !isNaN(year)) { d = new Date(year, month, day); }
+            }
+          }
+          if (!d) {
+            const maybe = new Date(rawDate as any);
+            if (maybe && !isNaN(maybe.getTime())) { d = maybe; }
+          }
+        } catch(e) { continue; }
+        if (d) break;
+      }
+      if (d && !isNaN(d.getTime())) {
+        const m = d.getMonth();
+        revenueByMonth[m] = (revenueByMonth[m] || 0) + (Number(orderVal) || 0);
+      }
+    } catch (e) { /* ignore date parse errors */ }
   });
+
+  // distribution by piece
+  const pieceCountMap: Record<string, number> = {};
+  uniqOrders.forEach((o:any) => {
+    try {
+      const notas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : null;
+      const pieces = notas?.pieces || notas?.pecas || [];
+      (pieces || []).forEach((p:any) => {
+        const name = (p.tipo || p.nome || p.name || p.title || '').toString() || 'Peça';
+        pieceCountMap[name] = (pieceCountMap[name] || 0) + 1;
+      });
+    } catch (e) {}
+  });
+  const distributionByPiece = Object.keys(pieceCountMap).map(k => ({ label: k, count: pieceCountMap[k] }));
+
+  // Derived summary metrics
+  const totalOrdersCount = uniqOrders.length;
+  const totalRevenue = uniqOrders.reduce((sum:any, o:any) => {
+    try {
+      const raw = o.total ?? o.valor ?? o.value ?? (o.notas && typeof o.notas === 'object' && o.notas.total) ?? o.value;
+      const s = String(raw || '').replace(/[^0-9,.-]/g, '').replace(',', '.');
+      const n = parseFloat(s) || 0;
+      return sum + n;
+    } catch (e) { return sum; }
+  }, 0);
+  const activeClientsCount = new Set(uniqOrders.map((o:any) => {
+    try {
+      if (o.cliente_id) return String(o.cliente_id);
+      if (o.client) return String(o.client).trim();
+      if (o.cliente) return String(o.cliente).trim();
+      return null;
+    } catch(e){return null}
+  }).filter(Boolean)).size;
+  const ticketAverage = totalOrdersCount > 0 ? Number((totalRevenue / totalOrdersCount).toFixed(2)) : 0;
 
   const servicesMost = Object.entries(servicesCountMap).sort((a,b)=>b[1]-a[1]).map(([name,count])=>({name,count})).slice(0,8);
   const clientsMost = Object.entries(clientsCountMap).sort((a,b)=>b[1]-a[1]).map(([name,count])=>({name,count})).slice(0,8);
   const distribution = servicesMost.map((s, i) => ({ label: s.name, count: s.count, color: ['bg-rose-500','bg-purple-500','bg-blue-500','bg-green-500','bg-amber-500','bg-indigo-500','bg-teal-500','bg-pink-500'][i % 8] }));
-  const evolutionMonthly = monthsCount;
+  const evolutionMonthly = revenueByMonth;
   const maxEvo = Math.max(...evolutionMonthly, 1);
 
   return (
@@ -130,7 +259,7 @@ export default function RelatoriosPage() {
                 </div>
                 <div>
                   <p className="text-xs lg:text-sm text-gray-600 mb-1">Total de Ordens</p>
-                  <p className="text-lg lg:text-2xl font-bold text-gray-900">{orders.length}</p>
+                  <p className="text-lg lg:text-2xl font-bold text-gray-900">{totalOrdersCount}</p>
                 </div>
               </div>
             </div>
@@ -142,12 +271,7 @@ export default function RelatoriosPage() {
                 </div>
                 <div>
                   <p className="text-xs lg:text-sm text-gray-600 mb-1">Faturamento</p>
-                  <p className="text-lg lg:text-2xl font-bold text-gray-900">R$ {orders.reduce((sum, o) => {
-                    try {
-                      const v = (o.value || '').toString().replace(/[^0-9,\.]/g, '').replace(',', '.');
-                      return sum + (parseFloat(v) || 0);
-                    } catch (e) { return sum; }
-                  }, 0).toFixed(2)}</p>
+                  <p className="text-lg lg:text-2xl font-bold text-gray-900">R$ {totalRevenue.toFixed(2)}</p>
                 </div>
               </div>
             </div>
@@ -159,7 +283,7 @@ export default function RelatoriosPage() {
                 </div>
                 <div>
                   <p className="text-xs lg:text-sm text-gray-600 mb-1">Clientes Ativos</p>
-                  <p className="text-lg lg:text-2xl font-bold text-gray-900">{Array.from(new Set(orders.map(o => (o.client || '').toString()))).filter(Boolean).length}</p>
+                  <p className="text-lg lg:text-2xl font-bold text-gray-900">{String(activeClientsCount)}</p>
                 </div>
               </div>
             </div>
@@ -171,9 +295,7 @@ export default function RelatoriosPage() {
                 </div>
                 <div>
                   <p className="text-xs lg:text-sm text-gray-600 mb-1">Ticket Médio</p>
-                  <p className="text-lg lg:text-2xl font-bold text-gray-900">R$ {(orders.length > 0 ? (orders.reduce((sum, o) => {
-                    try { const v = (o.value || '').toString().replace(/[^0-9,\.]/g, '').replace(',', '.'); return sum + (parseFloat(v) || 0); } catch (e) { return sum; }
-                  }, 0) / orders.length) : 0).toFixed(2)}</p>
+                  <p className="text-lg lg:text-2xl font-bold text-gray-900">R$ {ticketAverage.toFixed(2)}</p>
                 </div>
               </div>
             </div>
@@ -227,23 +349,26 @@ export default function RelatoriosPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 mb-4 lg:mb-6">
-            <div className="p-4 lg:p-6 border-b border-gray-200">
-              <h2 className="text-base lg:text-lg font-bold text-gray-900">Distribuição por Categoria</h2>
-            </div>
-            <div className="p-4 lg:p-6">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
-                {(distribution && distribution.length > 0) ? distribution.map((item, index) => (
-                  <div key={index} className="p-4 bg-gray-50 rounded-lg">
-                    <div className={`w-10 h-10 lg:w-12 lg:h-12 ${item.color} rounded-lg flex items-center justify-center mb-2 lg:mb-3`}>
-                      <span className="text-xl lg:text-2xl">{(item.label || '').slice(0,1)}</span>
+          <div className="mb-4 lg:mb-6">
+            <div className="bg-white rounded-lg border border-gray-200">
+              <div className="p-4 lg:p-6 border-b border-gray-200">
+                <h2 className="text-base lg:text-lg font-bold text-gray-900">Distribuição por Peça</h2>
+              </div>
+              <div className="p-4 lg:p-6">
+                <div className="grid grid-cols-1 gap-3">
+                  {(distributionByPiece && distributionByPiece.length > 0) ? distributionByPiece.map((item, index) => (
+                    <div key={index} className="p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{item.label}</p>
+                        </div>
+                        <div className="text-sm font-bold text-gray-900">{item.count}</div>
+                      </div>
                     </div>
-                    <p className="text-xs text-gray-600 mb-1 truncate">{item.label}</p>
-                    <p className="text-lg lg:text-xl font-bold text-gray-900">{item.count}</p>
-                  </div>
-                )) : (
-                  <div className="text-sm text-gray-600">Sem distribuição</div>
-                )}
+                  )) : (
+                    <div className="text-sm text-gray-600">Sem peças registradas</div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -261,7 +386,7 @@ export default function RelatoriosPage() {
                     const pct = Math.round((value / maxEvo) * 100);
                     return (
                       <div key={index} className="flex-1 flex flex-col items-center gap-1">
-                        <div className="w-full bg-rose-500 rounded-t transition-colors" style={{ height: `${pct}%` }} title={`${m}: ${value} ordens`}></div>
+                        <div className="w-full bg-rose-500 rounded-t transition-colors" style={{ height: `${pct}%` }} title={`${m}: R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}></div>
                         <span className="text-xs text-gray-600 mt-2">{m}</span>
                       </div>
                     );
@@ -278,7 +403,7 @@ export default function RelatoriosPage() {
                       const pct = Math.round((value / maxEvo) * 100);
                       return (
                         <div key={index} className="flex-1 flex flex-col items-center gap-1">
-                          <div className="w-full bg-rose-500 rounded-t hover:bg-rose-600 transition-colors cursor-pointer" style={{ height: `${pct}%` }} title={`${m}: ${value} ordens`}></div>
+                          <div className="w-full bg-rose-500 rounded-t hover:bg-rose-600 transition-colors cursor-pointer" style={{ height: `${pct}%` }} title={`${m}: R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}></div>
                           <span className="text-xs text-gray-600 mt-2">{m}</span>
                         </div>
                       );
@@ -287,6 +412,16 @@ export default function RelatoriosPage() {
                 </div>
               </div>
             </div>
+            {/* debug panel (visible with ?debug=1) */}
+            {typeof window !== 'undefined' && window.location.search.includes('debug=1') && (
+              <div className="mt-4 p-4 bg-white border rounded-lg">
+                <h3 className="text-sm font-bold mb-2">Debug — Relatórios</h3>
+                <div className="text-xs text-gray-700 mb-2">orders.length: {String((orders||[]).length)} — uniqOrders: {String((uniqOrders||[]).length)}</div>
+                <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto" style={{maxHeight: 240}}>
+{JSON.stringify({ revenueByMonth, sampleOrders: (uniqOrders||[]).slice(0,6).map(o=>({id:o.id, numero:o.numero, data_entrega:o.data_entrega||o.dateOut||o.created_at, total:o.total||o.valor||o.value, notas:o.notas})) }, null, 2)}
+                </pre>
+              </div>
+            )}
           </div>
         </div>
       </main>

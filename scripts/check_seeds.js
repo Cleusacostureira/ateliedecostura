@@ -1,3 +1,5 @@
+/* eslint-env node */
+/* global process, console */
 // scripts/check_seeds.js (ESM)
 // Uso: instalar dependências e rodar: node scripts/check_seeds.js
 

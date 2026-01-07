@@ -28,6 +28,12 @@ export default function DashboardPage() {
   const [monthlyData, setMonthlyData] = useState<Array<{month:string;value:number}>>([]);
   const [topServices, setTopServices] = useState<any[]>([]);
   const [upcomingDeliveries, setUpcomingDeliveries] = useState<any[]>([]);
+  const [nextDeliveryName, setNextDeliveryName] = useState<string>('');
+  const [totalRevenueAll, setTotalRevenueAll] = useState<number>(0);
+  const [totalActiveClients, setTotalActiveClients] = useState<number>(0);
+  const [ticketAverage, setTicketAverage] = useState<number>(0);
+  const [distributionByCategory, setDistributionByCategory] = useState<any[]>([]);
+  const [distributionByPiece, setDistributionByPiece] = useState<any[]>([]);
   const [revenueThisMonth, setRevenueThisMonth] = useState<number>(0);
   const [totalOrdersAll, setTotalOrdersAll] = useState<number>(0);
 
@@ -70,17 +76,18 @@ export default function DashboardPage() {
       setUrgentCount(urgentCountCalc);
       // compute top clients from orders and clients table
       const clientMap: Record<string,string> = {};
-      (clients || []).forEach(c => { clientMap[c.id] = c.nome || c.nome; });
+      (clients || []).forEach(c => { clientMap[String(c.id)] = c.nome || c.nome; });
       const counts: Record<string, { orders: number; total: number }> = {};
       list.forEach(o => {
         const cid = o.cliente_id || o.clienteId || o.clientId || null;
-        const name = cid ? (clientMap[cid] || cid) : (o.client || o.cliente || 'Cliente desconhecido');
+        const name = cid ? (clientMap[String(cid)] || String(cid)) : (o.client || o.cliente || 'Cliente desconhecido');
         const v = parseFloat((o.total || o.valor || o.value || 0).toString()) || 0;
         counts[name] = counts[name] || { orders: 0, total: 0 };
         counts[name].orders += 1;
         counts[name].total += v;
       });
-      const top = Object.keys(counts).map(k => ({ name: k, orders: counts[k].orders, total: counts[k].total })).sort((a,b) => b.orders - a.orders).slice(0,5);
+      // sort top clients by faturamento (total) desc
+      const top = Object.keys(counts).map(k => ({ name: k, orders: counts[k].orders, total: counts[k].total })).sort((a,b) => b.total - a.total).slice(0,5);
       setTopClients(top);
     } catch (e) { setTopClients([]); setTodayCount(0); setUrgentCount(0); }
   };
@@ -104,7 +111,11 @@ export default function DashboardPage() {
           const oiRes = await supabase.from('ordem_itens').select('*');
           const sRes = await supabase.from('servicos').select('*');
           if (!(cRes as any).error && Array.isArray((cRes as any).data) && mounted) {
-            setClients((cRes as any).data);
+            // ensure alphabetical order by client name
+            try {
+              const sortedClients = (cRes as any).data.slice().sort((a:any,b:any) => (String(a.nome||'').localeCompare(String(b.nome||''))));
+              setClients(sortedClients);
+            } catch (e) { setClients((cRes as any).data); }
           }
           if (!(oiRes as any).error && Array.isArray((oiRes as any).data) && mounted) {
             setOrdemItens((oiRes as any).data);
@@ -139,7 +150,17 @@ export default function DashboardPage() {
       const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
       const vals = new Array(12).fill(0);
       const now = new Date();
+      // dedupe orders by id/numero to avoid double-counting local+server entries
+      const uniq: Record<string, any> = {};
       orders.forEach(o => {
+        try {
+          const key = String(o.id || o.numero || '');
+          if (!key) return;
+          // prefer server-like rows (with created_at) by overwriting, otherwise keep first
+          if (!uniq[key] || (o.created_at && (!uniq[key].created_at || String(o.created_at) > String(uniq[key].created_at)))) uniq[key] = o;
+        } catch (e) {}
+      });
+      Object.values(uniq).forEach(o => {
         const dateStr = o.dateIn || o.data_criacao || o.created_at || o.dataCriacao || '';
         const dt = dateStr && typeof dateStr === 'string' && dateStr.includes('/') ?
           ((): Date => { const p = dateStr.split('/'); return new Date(parseInt(p[2]), parseInt(p[1]) - 1, parseInt(p[0])); })()
@@ -149,7 +170,8 @@ export default function DashboardPage() {
         const v = parseFloat((o.total || o.valor || o.value || 0).toString()) || 0;
         vals[m] += v;
       });
-      setMonthlyData(months.map((m, i) => ({ month: m, value: Number((vals[i] || 0).toFixed(2)) })));
+      const monthly = months.map((m, i) => ({ month: m, value: Number((vals[i] || 0).toFixed(2)) }));
+      setMonthlyData(monthly);
       // revenue this month (exact with cents)
       const currentMonth = now.getMonth();
       const rev = vals[currentMonth] || 0;
@@ -157,6 +179,66 @@ export default function DashboardPage() {
       // total of all orders (sum)
       const totalAll = vals.reduce((acc, v) => acc + v, 0);
       setTotalOrdersAll(Number(totalAll.toFixed(2)));
+
+      // deduped orders array for further metrics
+      const dedupedOrders = Object.values(uniq || {});
+      const totalOrdersCount = dedupedOrders.length || 0;
+      // compute total revenue using parsed numeric fields where possible
+      const totalRevenue = dedupedOrders.reduce((acc:any, o:any) => {
+        try {
+          const v = parseFloat((o.total || o.valor || o.value || 0).toString()) || 0;
+          return acc + v;
+        } catch (e) { return acc; }
+      }, 0);
+      setTotalRevenueAll(Number(totalRevenue.toFixed(2)));
+      setTicketAverage(totalOrdersCount > 0 ? Number((totalRevenue / totalOrdersCount).toFixed(2)) : 0);
+
+      // active clients: unique cliente_id or client name (exclude unknown/canceled)
+      try {
+        const clientSet = new Set<string>();
+        dedupedOrders.forEach((o:any) => {
+          try {
+            if (['Retirado','Cancelado'].includes((o.status||'').toString())) return;
+            if (o.cliente_id) clientSet.add(String(o.cliente_id));
+            else if (o.client || o.cliente) clientSet.add(String(o.client || o.cliente));
+          } catch(e){}
+        });
+        setTotalActiveClients(clientSet.size);
+      } catch (e) { setTotalActiveClients(0); }
+
+      // distribution by category (from order.category or items)
+      try {
+        const catMap: Record<string, {count:number; total:number}> = {};
+        dedupedOrders.forEach((o:any) => {
+          try {
+            const cat = o.category || o.categoria || (Array.isArray(o.itens) && o.itens[0] && (o.itens[0].categoria || o.itens[0].category)) || 'Sem categoria';
+            const v = parseFloat((o.total || o.valor || o.value || 0).toString()) || 0;
+            const key = String(cat || 'Sem categoria');
+            catMap[key] = catMap[key] || { count: 0, total: 0 };
+            catMap[key].count += 1;
+            catMap[key].total += v;
+          } catch(e){}
+        });
+        const catArr = Object.keys(catMap).map(k => ({ name: k, count: catMap[k].count, total: Number(catMap[k].total.toFixed(2)) }));
+        setDistributionByCategory(catArr.sort((a,b)=>b.count - a.count));
+      } catch(e) { setDistributionByCategory([]); }
+
+      // distribution by piece (from ordens.notas.pieces)
+      try {
+        const pieceMap: Record<string, number> = {};
+        dedupedOrders.forEach((o:any) => {
+          try {
+            const notas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : null;
+            const pieces = notas?.pieces || notas?.pecas || [];
+            (pieces || []).forEach((p:any) => {
+              const name = p.tipo || p.nome || p.name || p.title || 'Peça';
+              pieceMap[String(name)] = (pieceMap[String(name)] || 0) + 1;
+            });
+          } catch(e){}
+        });
+        const pieceArr = Object.keys(pieceMap).map(k => ({ name: k, count: pieceMap[k] }));
+        setDistributionByPiece(pieceArr.sort((a,b)=>b.count - a.count));
+      } catch(e) { setDistributionByPiece([]); }
 
       // top services from ordem_itens joined with servicos
       const svcCounts: Record<string, {count:number, total:number, servicoId?:string}> = {};
@@ -182,15 +264,35 @@ export default function DashboardPage() {
           orderSvcCounts[name].count += qty;
           orderSvcCounts[name].total += qty * price;
         });
+        // also parse notas.services / notas.servicos if present to capture services stored in notas
+        try {
+          const notas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : null;
+          const servicesFromNotas = notas && (notas.services || notas.servicos || []);
+          (servicesFromNotas || []).forEach((s:any) => {
+            const nm = (s.name || s.titulo || s.nome || s.servico || s.title || '').toString();
+            if (!nm) return;
+            orderSvcCounts[nm] = orderSvcCounts[nm] || { count: 0, total: 0 };
+            const qty = parseInt(s.quantidade || s.qty || 1) || 1;
+            const price = parseFloat((s.preco_unitario || s.preco || s.price || s.valor || 0).toString()) || 0;
+            orderSvcCounts[nm].count += qty;
+            orderSvcCounts[nm].total += qty * price;
+          });
+        } catch(e) {}
       });
 
-      const svcArr = Object.keys(svcCounts).map(k => ({ servicoId: svcCounts[k].servicoId, name: (servicosList.find(s=>s.id===svcCounts[k].servicoId)?.titulo) || k, count: svcCounts[k].count, total: svcCounts[k].total }));
+      const svcArr = Object.keys(svcCounts).map(k => {
+        const sid = svcCounts[k].servicoId;
+        const svc = servicosList.find(s => String(s.id) === String(sid) || String(s.id) === String(k));
+        const svcName = svc ? (svc.titulo || svc.nome || svc.name || svc.title) : k;
+        return { servicoId: sid, name: svcName || k, count: svcCounts[k].count, total: svcCounts[k].total };
+      });
       // merge with order-level items
       Object.keys(orderSvcCounts).forEach(k => {
         const existing = svcArr.find(s => s.name === k);
         if (existing) { existing.count += orderSvcCounts[k].count; existing.total += orderSvcCounts[k].total; }
         else svcArr.push({ servicoId: undefined, name: k, count: orderSvcCounts[k].count, total: orderSvcCounts[k].total });
       });
+      // mergedSvc already contains ordem_itens + order-level items (merged above), avoid merging twice
       setTopServices(svcArr.sort((a,b)=>b.count - a.count).slice(0,5));
 
       // upcoming deliveries (next 5)
@@ -207,7 +309,18 @@ export default function DashboardPage() {
         })
         .map(o => {
           const dateStr = o.dateOut || o.data_entrega || o.dataEntrega || '';
-          return { id: o.id, client: (clients.find(c=>c.id===o.cliente_id)?.nome) || o.cliente || 'Cliente desconhecido', service: '', date: dateStr, urgent: (o.priority||'')==='urgente' };
+          // try to resolve service name from ordem_itens or notas
+          let svcName = '';
+          try {
+            if (Array.isArray(o.itens) && o.itens.length > 0) svcName = (o.itens[0].nome || o.itens[0].name || o.itens[0].servico || o.itens[0].titulo || '').toString();
+            if (!svcName && o.notas) {
+              const notas = typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas;
+              const firstService = (notas && (notas.services || notas.servicos || []) && (notas.services || notas.servicos)[0]) || null;
+              if (firstService) svcName = firstService.name || firstService.titulo || firstService.nome || firstService.servico || '';
+            }
+          } catch (e) { svcName = '' }
+          const clientName = (clients.find(c=>String(c.id)===String(o.cliente_id))?.nome) || o.cliente || o.client || 'Cliente desconhecido';
+          return { id: o.id, client: clientName, service: svcName || '', date: dateStr, urgent: (o.priority||'')==='urgente' };
         })
         .sort((a,b) => {
           const pa = a.date.split('/'); const pb = b.date.split('/');
@@ -217,11 +330,41 @@ export default function DashboardPage() {
         })
         .slice(0,5);
       setUpcomingDeliveries(upcoming);
+      // set next delivery display name (first upcoming)
+      try {
+        if ((upcoming || []).length > 0) {
+          const first = upcoming[0];
+          setNextDeliveryName(`${first.client}${first.service ? ' — ' + first.service : ''}`);
+        } else setNextDeliveryName('—');
+      } catch (e) { setNextDeliveryName('—'); }
     } catch (e) {
       console.warn('compute metrics failed', e);
       setMonthlyData([]); setTopServices([]); setUpcomingDeliveries([]); setRevenueThisMonth(0);
     }
   }, [orders, clients, ordemItens, servicosList, selectedPeriod]);
+
+  // compute small-card helpers (today / urgent)
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayOrdersList = (orders || []).filter((o:any) => {
+    try {
+      const dateOut = o.dateOut || o.data_entrega || o.dataEntrega || '';
+      if (!dateOut) return false;
+      if (['Retirado','Cancelado'].includes((o.status || '').toString())) return false;
+      const dStr = formatDate(dateOut);
+      if (!dStr) return false;
+      const parts = dStr.split('/');
+      if (parts.length !== 3) return false;
+      const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+      d.setHours(0,0,0,0);
+      return d.getTime() === today.getTime();
+    } catch (e) { return false; }
+  });
+  const totalToday = todayOrdersList.reduce((acc:any, o:any) => acc + (parseFloat((o.total || o.valor || o.value || 0).toString()) || 0), 0);
+  const todayClients = Array.from(new Set(todayOrdersList.map((o:any) => (clients.find((c:any)=>String(c.id)===String(o.cliente_id))?.nome) || o.cliente || o.client || 'Cliente desconhecido'))).slice(0,2).join(', ');
+  const clientPrimaryToday = todayOrdersList[0] ? ((clients.find((c:any)=>String(c.id)===String(todayOrdersList[0].cliente_id))?.nome) || todayOrdersList[0].cliente || todayOrdersList[0].client || '') : '';
+
+  const urgentOrdersList = (orders || []).filter((o:any) => ((o.priority || '').toString() === 'urgente') && !(['Retirado','Cancelado'].includes((o.status || '').toString())));
+  const urgentClient = (urgentOrdersList[0] && ((clients.find((c:any)=>String(c.id)===String(urgentOrdersList[0].cliente_id))?.nome) || urgentOrdersList[0].cliente || urgentOrdersList[0].client)) || '';
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -234,41 +377,80 @@ export default function DashboardPage() {
             <p className="text-xs lg:text-sm text-gray-600">Visão geral do seu ateliê</p>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6 mb-4 lg:mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 lg:gap-6 mb-4 lg:mb-6">
             <div>
-              <StatCard icon="ri-money-dollar-circle-line" label="Faturamento do Mês" value={`R$ ${revenueThisMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} trend="" trendUp={true} color="bg-rose-400" />
+              <StatCard icon="ri-money-dollar-circle-line" label="Faturamento do Mês" value={`R$ ${revenueThisMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} trend="" trendUp={true} color="bg-rose-400" />
             </div>
             <div>
-              <StatCard icon="ri-file-list-3-line" label="OS em costura" value={String(inProgress)} trend="" trendUp={false} color="bg-amber-400" />
+              <StatCard icon="ri-bank-card-line" label="Faturamento Total" value={`R$ ${totalRevenueAll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} trend="" trendUp={true} color="bg-indigo-400" />
             </div>
             <div>
-              <StatCard icon="ri-alarm-warning-line" label="OS atrasadas" value={String(lateCount)} trend="" trendUp={false} color="bg-red-400" />
+              <StatCard icon="ri-user-3-line" label="Clientes Ativos" value={String(totalActiveClients)} trend="" trendUp={true} color="bg-sky-400" />
             </div>
             <div>
-              <StatCard icon="ri-checkbox-circle-line" label="OS prontas para retirada" value={String(readyCount)} trend="" trendUp={true} color="bg-green-400" />
+              <StatCard icon="ri-pulse-line" label="Ticket Médio" value={`R$ ${ticketAverage.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} trend="" trendUp={true} color="bg-emerald-400" />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-6">
-            <div className="bg-white rounded-lg p-4 border border-gray-200">
-              <a href="/agenda" className="no-underline text-inherit">
-                <div className="text-sm font-semibold">OS para hoje</div>
-                <div className="text-2xl font-bold text-rose-600">{String(todayCount || 0)}</div>
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-6">
+            <div className="bg-white rounded-lg p-2 lg:p-3 border border-gray-200">
+              <a href="/ordens" className="no-underline text-inherit">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 flex items-center justify-center rounded-full bg-rose-100 text-rose-600">
+                    <i className="ri-calendar-line text-lg"></i>
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold">OS para hoje</div>
+                    <div className="text-lg font-bold text-sky-600 mt-1">{clientPrimaryToday || todayClients || '—'}</div>
+                    <div className="text-sm font-semibold text-emerald-600 mt-1">R$ {Number(totalToday || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} • {String(todayOrdersList.length || 0)}</div>
+                  </div>
+                </div>
               </a>
             </div>
-            <div className="bg-white rounded-lg p-4 border border-gray-200">
-              <a href="/agenda" className="no-underline text-inherit">
-                <div className="text-sm font-semibold">OS urgentes</div>
-                <div className="text-2xl font-bold text-red-600">{String(urgentCount || 0)}</div>
+
+            <div className="bg-white rounded-lg p-2 lg:p-3 border border-gray-200">
+              <a href="/ordens" className="no-underline text-inherit">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 flex items-center justify-center rounded-full bg-yellow-100 text-yellow-600">
+                    <i className="ri-alert-line text-lg"></i>
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold">OS urgentes</div>
+                    <div className="text-sm font-medium text-gray-900 mt-1">{String(urgentOrdersList.length || 0)}</div>
+                    <div className="text-xs text-gray-600 mt-1">{urgentClient || '—'}</div>
+                  </div>
+                </div>
               </a>
             </div>
-            <div className="bg-white rounded-lg p-4 border border-gray-200">
-              <a href="/agenda" className="no-underline text-inherit">
-                <div className="text-sm font-semibold">Próxima entrega</div>
-                <div className="text-2xl font-bold text-green-600">{/* compute next */ '-'} </div>
-              </a>
+
+            <div className="bg-white rounded-lg p-2 lg:p-3 border border-gray-200">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 flex items-center justify-center rounded-full bg-green-100 text-green-600">
+                  <i className="ri-scissors-line text-lg"></i>
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs font-semibold text-green-600">Em costura</div>
+                  <div className="text-sm font-medium text-green-600 mt-1">{(orders || []).filter(o => ((o.status||'').toString()==='Em costura')).slice(0,3).map(o => (clients.find(c=>String(c.id)===String(o.cliente_id))?.nome) || o.cliente || o.client || 'Cliente desconhecido').join(', ') || '—'}</div>
+                </div>
+              </div>
+              <div className="mt-2"><a href="/ordens" className="text-xs text-rose-500">Ver todas</a></div>
+            </div>
+
+            <div className="bg-white rounded-lg p-2 lg:p-3 border border-gray-200">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 flex items-center justify-center rounded-full bg-purple-100 text-purple-600">
+                  <i className="ri-hand-heart-line text-lg"></i>
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs font-semibold text-green-600">Aguardando retirada</div>
+                  <div className="text-sm font-medium text-green-600 mt-1">{(orders || []).filter(o => ((o.status||'').toString()==='Pronto')).slice(0,3).map(o => (clients.find(c=>String(c.id)===String(o.cliente_id))?.nome) || o.cliente || o.client || 'Cliente desconhecido').join(', ') || '—'}</div>
+                </div>
+              </div>
+              <div className="mt-2"><a href="/ordens" className="text-xs text-rose-500">Ver todas</a></div>
             </div>
           </div>
+
+          
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-4 lg:mb-6">
             <div className="bg-white rounded-lg p-4 lg:p-6 border border-gray-200">
@@ -320,6 +502,8 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
+
+          {/* Distribuição por Categoria e por Peça removidos per user request */}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
             <div className="bg-white rounded-lg p-4 lg:p-6 border border-gray-200">

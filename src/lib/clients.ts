@@ -113,8 +113,8 @@ export async function upsertClient(c: Cliente) {
   if (exists >= 0) {
     clients[exists] = { ...clients[exists], ...toSave };
   } else {
-    // assign an id
-    toSave.id = toSave.id || `local-${Date.now()}`;
+    // assign a reasonably-unique local id
+    toSave.id = toSave.id || `local-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
     clients.push(toSave);
   }
   localSaveClients(clients);

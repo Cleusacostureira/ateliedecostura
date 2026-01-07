@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import NewOsWizard from './NewOsWizard';
 import { addPointsForOrder, loadClients, upsertClient } from '../../lib/clients';
 import { formatMessageForStatus } from '../../lib/messages';
 import { supabase } from '../../lib/supabaseClient';
@@ -10,11 +11,26 @@ export default function OrdensPage() {
   const markFluxoMissing = () => { (window as any).__fluxoCaixaMissing = true; console.info('fluxo_caixa table missing — falling back to localStorage'); };
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
+  const [showAdvancePaymentModal, setShowAdvancePaymentModal] = useState(false);
+  // backward-compatible aliases: some parts of the code use `showModal`/`setShowModal`
+  const showModal = showNewOrderModal;
+  const setShowModal = setShowNewOrderModal;
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [showMaterialsModal, setShowMaterialsModal] = useState(false);
   const [showDeliverModal, setShowDeliverModal] = useState(false);
+  const [showPecasModal, setShowPecasModal] = useState(false);
+  const [pecasSearch, setPecasSearch] = useState('');
+  const [showCorModal, setShowCorModal] = useState(false);
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showFidelizacaoModal, setShowFidelizacaoModal] = useState(false);
+  const [showPrintOptions, setShowPrintOptions] = useState(false);
+  const [showSavedSummary, setShowSavedSummary] = useState(false);
+  const [showConfirmDeliverPrompt, setShowConfirmDeliverPrompt] = useState(false);
+  const [showStatusMessageOptions, setShowStatusMessageOptions] = useState(false);
+  const [showInlineServiceForm, setShowInlineServiceForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('Todos');
   const [clientFilter, setClientFilter] = useState('');
@@ -24,220 +40,155 @@ export default function OrdensPage() {
   const [showStatusOnlyModal, setShowStatusOnlyModal] = useState(false);
   const [statusSelection, setStatusSelection] = useState('');
   const [statusChangeMessage, setStatusChangeMessage] = useState('');
-  const [showStatusMessageOptions, setShowStatusMessageOptions] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [selectedMaterialId, setSelectedMaterialId] = useState('');
-  const [materialQuantity, setMaterialQuantity] = useState('1');
-  const [materialPrice, setMaterialPrice] = useState('');
-  const [orderMaterials, setOrderMaterials] = useState<any[]>([]);
-  const [showFidelizacaoModal, setShowFidelizacaoModal] = useState(false);
-  const [fidelizacaoMessage, setFidelizacaoMessage] = useState('');
-  const [clientePhone, setClientePhone] = useState('');
-  const [showNewClientModal, setShowNewClientModal] = useState(false);
-  const [quickClientName, setQuickClientName] = useState('');
-  const [quickClientPhone, setQuickClientPhone] = useState('');
-  const [orderServices, setOrderServices] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const ordersRef = useRef<any[]>([]);
   const [clientes, setClientes] = useState<any[]>([]);
-  const [newOrderClientId, setNewOrderClientId] = useState<string | null>(null);
-  const [newOrderObservacoes, setNewOrderObservacoes] = useState<string>('');
-  // Pieces and per-piece services
-  const [pieces, setPieces] = useState<any[]>([]);
-  const [pieceTipo, setPieceTipo] = useState('');
-  const [pieceCor, setPieceCor] = useState('');
-  const [pieceModelo, setPieceModelo] = useState('');
-  const [selectedPieceForService, setSelectedPieceForService] = useState<string | null>(null);
-  const [showPrintOptions, setShowPrintOptions] = useState(false);
-  const [showSavedSummary, setShowSavedSummary] = useState(false);
   const [availablePieces, setAvailablePieces] = useState<any[]>([]);
-  const [showPecasModal, setShowPecasModal] = useState(false);
-  const [showCorModal, setShowCorModal] = useState(false);
-  const [showAddPecaModal, setShowAddPecaModal] = useState(false);
-    const [pecasSearch, setPecasSearch] = useState('');
-  const [newPecaCategory, setNewPecaCategory] = useState('');
-  const [newPecaIcon, setNewPecaIcon] = useState('');
+  // debug panel state (visible when URL contains ?debug=1)
+  const [debugOpen, setDebugOpen] = useState<boolean>(false);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  // New Order form state
+  const [newOrderClientId, setNewOrderClientId] = useState<string | null>(null);
+  const [newOrderDate, setNewOrderDate] = useState<string>('');
+  const [newOrderStatus, setNewOrderStatus] = useState<string>('Recebido');
+  const [newOrderPaymentStatus, setNewOrderPaymentStatus] = useState<string | null>(null);
+  const [newOrderObservacoes, setNewOrderObservacoes] = useState<string>('');
+  const [orderServices, setOrderServices] = useState<any[]>([]);
+  const [pieces, setPieces] = useState<any[]>([]);
+  const [selectedPieceForService, setSelectedPieceForService] = useState<any>(null);
+  const [selectedServiceId, setSelectedServiceId] = useState<any>('');
+  const [serviceValue, setServiceValue] = useState<string>('');
+  const [serviceObservation, setServiceObservation] = useState<string>('');
+  const [fidelizacaoMessage, setFidelizacaoMessage] = useState<string>('');
+  const [clientePhone, setClientePhone] = useState<string>('');
+  // pieces form helpers (declared here to avoid ReferenceErrors in the modal)
+  const [pieceTipo, setPieceTipo] = useState<string>('');
+  const [pieceCor, setPieceCor] = useState<string>('');
+  const [pieceModelo, setPieceModelo] = useState<string>('');
+  const [newServiceCategoryFilter, setNewServiceCategoryFilter] = useState<string>('');
+  const [inlineServiceCategory, setInlineServiceCategory] = useState<string>('');
+  const [inlineServiceName, setInlineServiceName] = useState<string>('');
+  const [inlineServicePrice, setInlineServicePrice] = useState<string>('');
+  const [quickClientName, setQuickClientName] = useState<string>('');
+  const [quickClientPhone, setQuickClientPhone] = useState<string>('');
+  const [orderMaterials, setOrderMaterials] = useState<any[]>([]);
+  const [selectedMaterialId, setSelectedMaterialId] = useState<any>('');
+  const [materialQuantity, setMaterialQuantity] = useState<string>('1');
+  const [materialPrice, setMaterialPrice] = useState<string>('');
 
-  // helper to parse currency-like inputs into a number (supports "R$ 1.234,56", "1234.56", integers)
-  function parseCurrency(raw: any) {
+  // edit modal state placeholders
+  const [editClient, setEditClient] = useState<string>('');
+  const [editCategory, setEditCategory] = useState<string>('');
+  const [editServiceName, setEditServiceName] = useState<string>('');
+  const [editValue, setEditValue] = useState<string>('');
+  const [editStatus, setEditStatus] = useState<string>('');
+  const [editDateIn, setEditDateIn] = useState<string>('');
+  const [editDateOut, setEditDateOut] = useState<string>('');
+  const [editObservation, setEditObservation] = useState<string>('');
+  const defaultSampleOrders: any[] = [];
+  // small constants used by the piece/color pickers when DB lists are missing
+  const COLORS = ['Preta','Branca','Azul','Vermelha','Verde','Amarela','Rosa','Bege','Cinza','Marrom'];
+  const DEFAULT_PECAS = [
+    { id: 'calca', nome: 'Calça', icone: '👖', categoria: 'calcas' },
+    { id: 'camisa', nome: 'Camisa', icone: '👕', categoria: 'camisas' },
+    { id: 'vestido', nome: 'Vestido', icone: '👗', categoria: 'vestidos' },
+  ];
+
+  // small utility for printing tickets during development
+  const printTicket = (order: any) => {
+    try {
+      const w = window.open('', '_blank');
+      if (!w) return;
+      w.document.write('<pre>' + JSON.stringify(order, null, 2) + '</pre>');
+      w.document.close();
+    } catch (e) { console.info('printTicket error', e); }
+  };
+  useEffect(() => { ordersRef.current = orders; }, [orders]);
+// helper: build a map of cashFlowDetails by order id/numero, ignoring locally deleted tombstones
+const getCashMap = () => {
+  try {
+    const raw = localStorage.getItem('cashFlowDetails');
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return {};
+
+    let deletedSet = new Set<string>();
+    try {
+      const deletedRaw = localStorage.getItem('deletedOrders');
+      const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
+      deletedSet = new Set(Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : []);
+    } catch (e) { /* ignore */ }
+
+    const map: Record<string, any> = {};
+    parsed.forEach((c: any) => {
+      try {
+        const oid = c.orderId || c.orderid;
+        const num = c.numero;
+        if (oid && deletedSet.has(String(oid))) return;
+        if (num && deletedSet.has(String(num))) return;
+        if (oid) map[String(oid)] = c;
+        if (num) map[String(num)] = c;
+      } catch (e) { /* ignore entry */ }
+    });
+    return map;
+  } catch (e) { return {}; }
+};
+
+  // helper: ensure local cashFlowDetails only contains entries for currently active orders
+  const reconcileLocalCashForOrders = (activeOrders: any[]) => {
+    try {
+      const activeSet = new Set<string>();
+      (activeOrders || []).forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
+      const raw = localStorage.getItem('cashFlowDetails');
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) {
+        localStorage.setItem('cashFlowDetails', JSON.stringify([]));
+        return;
+      }
+      if (activeSet.size === 0) {
+        // no active orders -> clear local financial entries
+        localStorage.setItem('cashFlowDetails', JSON.stringify([]));
+        try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(e){}
+        return;
+      }
+      const filtered = (parsed || []).filter((c:any) => {
+        try {
+          const oid = c.orderId || c.orderid;
+          const num = c.numero;
+          if (oid && activeSet.has(String(oid))) return true;
+          if (num && activeSet.has(String(num))) return true;
+          return false;
+        } catch (e) { return false; }
+      });
+      localStorage.setItem('cashFlowDetails', JSON.stringify(filtered));
+      try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(e){}
+    } catch (e) { /* ignore */ }
+  };
+
+  // small helper to parse currency-ish strings into numbers
+  const parseCurrency = (raw: any) => {
     try {
       if (raw === null || raw === undefined) return 0;
       if (typeof raw === 'number') return raw;
-      let s = String(raw).trim();
-      s = s.replace(/R\$/g, '').replace(/\s/g, '');
-      if (s.indexOf('.') !== -1 && s.indexOf(',') !== -1) {
-        s = s.replace(/\./g, '').replace(/,/g, '.');
-      } else if (s.indexOf(',') !== -1 && s.indexOf('.') === -1) {
-        s = s.replace(/,/g, '.');
-      }
-      let n = parseFloat(s);
-      if (isNaN(n)) {
-        const digits = String(raw).replace(/\D/g, '');
-        if (!digits) return 0;
-        if (digits.length <= 2) return parseFloat(digits) / 100;
-        const reais = digits.slice(0, -2);
-        const cents = digits.slice(-2);
-        n = parseFloat(reais + '.' + cents);
-      }
+      const s = String(raw).replace(/[^0-9,.-]/g, '').replace(',', '.');
+      const n = Number(s);
       return isNaN(n) ? 0 : n;
     } catch (e) { return 0; }
-  }
-
-  const DEFAULT_PECAS = [
-    { nome: 'Camiseta', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
-    { nome: 'Camisa social', categoria: 'ROUPAS SUPERIORES', icone: '👔' },
-    { nome: 'Camisa polo', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
-    { nome: 'Blusa', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
-    { nome: 'Cropped', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
-    { nome: 'Regata', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
-    { nome: 'Bata', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
-    { nome: 'Top', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
-    { nome: 'Moletom', categoria: 'ROUPAS SUPERIORES', icone: '👕' },
-    { nome: 'Casaco', categoria: 'ROUPAS SUPERIORES', icone: '🧥' },
-    { nome: 'Jaqueta', categoria: 'ROUPAS SUPERIORES', icone: '🧥' },
-    { nome: 'Blazer', categoria: 'ROUPAS SUPERIORES', icone: '🧥' },
-    { nome: 'Colete', categoria: 'ROUPAS SUPERIORES', icone: '🧥' },
-    { nome: 'Calça jeans', categoria: 'ROUPAS INFERIORES', icone: '👖' },
-    { nome: 'Calça social', categoria: 'ROUPAS INFERIORES', icone: '👖' },
-    { nome: 'Calça de alfaiataria', categoria: 'ROUPAS INFERIORES', icone: '👖' },
-    { nome: 'Calça legging', categoria: 'ROUPAS INFERIORES', icone: '👖' },
-    { nome: 'Calça moletom', categoria: 'ROUPAS INFERIORES', icone: '👖' },
-    { nome: 'Bermuda', categoria: 'ROUPAS INFERIORES', icone: '🩳' },
-    { nome: 'Short', categoria: 'ROUPAS INFERIORES', icone: '🩳' },
-    { nome: 'Saia curta', categoria: 'ROUPAS INFERIORES', icone: '👗' },
-    { nome: 'Saia média', categoria: 'ROUPAS INFERIORES', icone: '👗' },
-    { nome: 'Saia longa', categoria: 'ROUPAS INFERIORES', icone: '👗' },
-    { nome: 'Vestido curto', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
-    { nome: 'Vestido médio', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
-    { nome: 'Vestido longo', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
-    { nome: 'Vestido de festa', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
-    { nome: 'Vestido social', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
-    { nome: 'Macacão', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
-    { nome: 'Macaquinho', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
-    { nome: 'Jardineira', categoria: 'VESTIDOS E PEÇAS ÚNICAS', icone: '👗' },
-    { nome: 'Casaco pesado', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
-    { nome: 'Sobretudo', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
-    { nome: 'Jaqueta jeans', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
-    { nome: 'Jaqueta de couro', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
-    { nome: 'Parka', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
-    { nome: 'Capa', categoria: 'ROUPAS DE FRIO / EXTERNAS', icone: '🧥' },
-    { nome: 'Lingerie', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🩲' },
-    { nome: 'Sutiã', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🩲' },
-    { nome: 'Calcinha', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🩲' },
-    { nome: 'Cueca', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🩲' },
-    { nome: 'Pijama', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🛌' },
-    { nome: 'Camisola', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🛌' },
-    { nome: 'Baby doll', categoria: 'ROUPAS ÍNTIMAS / LEVES', icone: '🛌' },
-    { nome: 'Body infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
-    { nome: 'Conjunto infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
-    { nome: 'Camiseta infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
-    { nome: 'Calça infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
-    { nome: 'Vestido infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
-    { nome: 'Short infantil', categoria: 'ROUPAS INFANTIS', icone: '👶' },
-    { nome: 'Uniforme escolar', categoria: 'ROUPAS ESPECIAIS', icone: '🎓' },
-    { nome: 'Uniforme profissional', categoria: 'ROUPAS ESPECIAIS', icone: '🎓' },
-    { nome: 'Roupa hospitalar', categoria: 'ROUPAS ESPECIAIS', icone: '🎓' },
-    { nome: 'Jaleco', categoria: 'ROUPAS ESPECIAIS', icone: '🎓' },
-    { nome: 'Avental', categoria: 'ROUPAS ESPECIAIS', icone: '🎓' },
-    { nome: 'Roupa esportiva', categoria: 'ROUPAS ESPECIAIS', icone: '🏃' },
-    { nome: 'Roupa de academia', categoria: 'ROUPAS ESPECIAIS', icone: '🏃' },
-    { nome: 'Barra de cortina', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🧵' },
-    { nome: 'Cortina', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🧵' },
-    { nome: 'Capa de almofada', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🧵' },
-    { nome: 'Fronha', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🧵' },
-    { nome: 'Lençol', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🛏️' },
-    { nome: 'Colcha', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🛏️' },
-    { nome: 'Toalha', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🧺' },
-    { nome: 'Guardanapo de tecido', categoria: 'ACESSÓRIOS EM TECIDO', icone: '🍽️' }
-  ];
-
-  const COLORS = [
-    'Preto', 'Branco', 'Cinza', 'Azul', 'Vermelho', 'Verde', 'Amarelo', 'Rosa', 'Bege', 'Marrom', 'Vinho', 'Roxo', 'Laranja'
-  ];
-
-
-  const formatTicketText = (order: any) => {
-    const header = `================================\n  Cleusa Ateliê de Costura\n   AJUSTES E CONSERTOS EM GERAL\n================================\n`;
-    const date = order.dateIn || new Date().toLocaleDateString('pt-BR');
-    const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    let body = `OS Nº: ${order.numero || order.id}\nData: ${date}\nHora: ${time}\n\nCliente:\n${(order.client || '').toUpperCase()}\n--------------------------------\nITENS RECEBIDOS\n--------------------------------\n`;
-    (order.pieces || []).forEach((p:any, idx:number) => {
-      const icon = (() => {
-        try {
-          const found = availablePieces.find((x:any) => String(x.nome).toLowerCase() === String(p.tipo).toLowerCase());
-          return found?.icone || '🧵';
-        } catch (e) { return '🧵'; }
-      })();
-      const servicesList = (p.services||[]).map((s:any)=>s.name).join('; ');
-      const cor = p.cor || p.color || '—';
-      const modelo = p.modelo || p.model || '—';
-      body += `${idx+1}) ${icon} ${String(p.tipo)} (${cor} / ${modelo}) — ${servicesList || '—'}\n`;
-    });
-    body += `\n--------------------------------\nQtd. Total de Peças: ${(order.pieces||[]).length}\n\n--------------------------------\nVALOR TOTAL: ${order.value || 'R$ 0,00'}\n--------------------------------\n\nDeclaro que conferi as peças\ndescritas acima e autorizo\na execução dos serviços.\n\n--------------------------------\nAssinatura do Cliente:\n\n\n\n${(order.client||'').toUpperCase()}\n\n--------------------------------\nRetirada prevista:\n${order.dateOut || '__/__/____'}\n\nObrigado pela preferência!\n================================`;
-    return header + body;
   };
 
-  const printTicket = (order: any) => {
-    try {
-      const txt = formatTicketText(order);
-      const w = window.open('', '_blank', 'width=600,height=800');
-      if (!w) return alert('Bloqueador de janelas impediu a impressão.');
-      w.document.write(`<pre style="font-family: monospace; white-space: pre-wrap;">${txt}</pre>`);
-      w.document.close();
-      w.focus();
-      setTimeout(() => { w.print(); }, 500);
-    } catch (e) { console.warn('print failed', e); }
-  };
-  const [selectedServiceId, setSelectedServiceId] = useState('');
-  const [serviceValue, setServiceValue] = useState('');
-  const [serviceObservation, setServiceObservation] = useState('');
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [showConfirmDeliverPrompt, setShowConfirmDeliverPrompt] = useState(false);
-  const [showAdvancePaymentModal, setShowAdvancePaymentModal] = useState(false);
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
-
-  // Edit modal controlled fields
-  const [editClient, setEditClient] = useState('');
-  const [editCategory, setEditCategory] = useState('');
-  const [editServiceName, setEditServiceName] = useState('');
-  const [editValue, setEditValue] = useState('');
-  const [editStatus, setEditStatus] = useState('');
-  const [editDateIn, setEditDateIn] = useState('');
-  const [editDateOut, setEditDateOut] = useState('');
-  const [editObservation, setEditObservation] = useState('');
-
-  // New order modal: filter services by selected category
-  const [newServiceCategoryFilter, setNewServiceCategoryFilter] = useState('');
-  const [newOrderDate, setNewOrderDate] = useState('');
-  const [newOrderStatus, setNewOrderStatus] = useState('Recebido');
-  const [newOrderPaymentStatus, setNewOrderPaymentStatus] = useState<string | null>(null);
-  const [showInlineServiceForm, setShowInlineServiceForm] = useState(false);
-  const [inlineServiceName, setInlineServiceName] = useState('');
-  const [inlineServicePrice, setInlineServicePrice] = useState('');
-  const [inlineServiceCategory, setInlineServiceCategory] = useState('');
-
-  const defaultSampleOrders: any[] = [];
-
-  const [orders, setOrders] = useState<any[]>([]);
-
-  // ref to hold latest orders for cross-window/event handlers and to avoid update loops
-  const ordersRef = useRef<any[]>([]);
-  useEffect(() => { ordersRef.current = orders; }, [orders]);
-
-  // helper: read cashFlowDetails from localStorage and return map by orderId/numero
-  const getCashMap = () => {
-    try {
-      const raw = localStorage.getItem('cashFlowDetails');
-      const parsed = raw ? JSON.parse(raw) : [];
-      if (!Array.isArray(parsed)) return {};
-      const map: Record<string, any> = {};
-      parsed.forEach((c: any) => {
-        try {
-          if (c.orderId) map[String(c.orderId)] = c;
-          if (c.orderid) map[String(c.orderid)] = c;
-          if (c.numero) map[String(c.numero)] = c;
-        } catch (e) {}
-      });
-      return map;
-    } catch (e) { return {}; }
+  // normalize various status representations into the canonical display strings used by the app
+  const normalizeStatus = (s: any) => {
+    if (s === null || s === undefined) return 'Recebido';
+    const str = String(s).trim().toLowerCase();
+    if (!str) return 'Recebido';
+    if (str === 'draft' || str === 'r' || str === 'recebido') return 'Recebido';
+    if (str.includes('costura')) return 'Em costura';
+    if (str.includes('prova')) return 'Aguardando prova';
+    if (str.includes('ajuste')) return 'Ajuste final';
+    if (str.includes('pronto')) return 'Pronto';
+    if (str.includes('retir')) return 'Retirado';
+    if (str.includes('cancel')) return 'Cancelado';
+    // fallback: Title Case the incoming string
+    return String(s).split(/\s+/).map((w:any) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
 
   // Load orders from Supabase on mount; fallback to localStorage or empty list
@@ -245,113 +196,203 @@ export default function OrdensPage() {
     let mounted = true;
     async function fetchOrders() {
       try {
+        // attempt Supabase fetch first
         if (supabase && typeof supabase.from === 'function') {
           const res = await supabase.from('ordens').select('*');
           if (!(res as any).error && Array.isArray((res as any).data)) {
             let raw = (res as any).data as any[];
-            // remover ordens que foram excluídas localmente (tombstones)
+
+            // filter out locally deleted tombstones (by id or numero)
             try {
               const deletedRaw = localStorage.getItem('deletedOrders');
               const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
-              if (Array.isArray(deletedList) && deletedList.length > 0) {
-                const deletedSet = new Set(deletedList.map((x:any) => String(x)));
-                raw = raw.filter((o:any) => !deletedSet.has(String(o.id)));
+              const deletedArr = Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : [];
+
+              // Build sets of server ids/numeros so we can clean tombstones that refer to real server rows
+              const serverIdSet = new Set<string>(raw.map((r:any) => String(r.id)).filter(Boolean));
+              const serverNumSet = new Set<string>(raw.map((r:any) => String(r.numero || '').replace(/\D/g,'')).filter(Boolean));
+
+              // Remove tombstones that actually refer to server rows (prevent accidental suppression)
+              const cleaned = deletedArr.filter((d: string) => {
+                const dClean = String(d || '');
+                if (serverIdSet.has(dClean)) return false;
+                if (serverNumSet.has(dClean.replace(/\D/g,''))) return false;
+                return true;
+              });
+              if (cleaned.length !== deletedArr.length) {
+                const removed = deletedArr.filter(d => !cleaned.includes(d));
+                try { localStorage.setItem('deletedOrders', JSON.stringify(cleaned)); } catch(e) {}
+                try { console.info('Removed tombstones that match server rows:', removed); } catch(e){}
+                try { setDebugInfo((prev:any) => ({ ...(prev||{}), removedTombstones: removed })); } catch(e){}
               }
-            } catch (e) { /* ignore */ }
-            // attempt to enrich with client info if available
+
+              const deletedSet = new Set<string>(cleaned);
+              if (deletedSet.size > 0) {
+                raw = raw.filter((o:any) => !deletedSet.has(String(o.id)) && !deletedSet.has(String(o.numero)));
+              }
+            } catch (e) { /* ignore parsing tombstones */ }
+
+            // enrich with clients and cash data
+            let clientsMap: Record<string, any> = {};
             try {
               const clientsList = await loadClients();
-              const clientsMap: Record<string, any> = {};
-              (clientsList || []).forEach(c => { if (c && c.id) clientsMap[String(c.id)] = c; });
-              const formatIso = (iso?: string|null) => {
+              (clientsList || []).forEach((c:any) => { if (c && c.id) clientsMap[String(c.id)] = c; });
+            } catch (e) { /* ignore client load failures */ }
+
+            const cashMap = getCashMap();
+
+            // map raw orders into display-friendly objects
+            let data = raw.map((o: any) => {
+              const client = o.cliente_id ? clientsMap[String(o.cliente_id)] : null;
+              let parsedNotas: any = {};
+              try { parsedNotas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : {}; } catch (e) { parsedNotas = {}; }
+              const pieces = parsedNotas.pieces || parsedNotas.pecas || [];
+              const services = parsedNotas.services || parsedNotas.servicos || [];
+              const servicesText = (services || []).flatMap((s:any) => [s.name || s.titulo || s.title || s.nome || String(s)]).join(', ').trim();
+              const formatIsoToBR = (iso:any) => {
                 try {
                   if (!iso) return '';
-                  const d = new Date(iso);
-                  if (isNaN(d.getTime())) return '';
-                  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-                } catch (e) { return ''; }
+                  const s = String(iso);
+                  // if already in dd/mm/yyyy form, return as-is
+                  if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(s)) return s;
+                  // if ISO-like (YYYY-MM-DD) parse and format
+                  if (/\d{4}-\d{2}-\d{2}/.test(s)) {
+                    const d = new Date(s);
+                    if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+                  }
+                  // fallback: try Date parsing
+                  const d2 = new Date(s);
+                  if (!isNaN(d2.getTime())) return d2.toLocaleDateString('pt-BR');
+                  return s;
+                } catch (e) { return String(iso||''); }
               };
 
-              let data = raw.map((o: any) => {
-                const client = o.cliente_id ? clientsMap[String(o.cliente_id)] : null;
-                // parse notas JSON if present (contains pieces/services)
-                let parsedNotas: any = {};
-                try { parsedNotas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : {}; } catch (e) { parsedNotas = {}; }
-                const pieces = parsedNotas.pieces || parsedNotas.pecas || [];
-                const services = parsedNotas.services || parsedNotas.servicos || [];
-                const valueFromNotas = (() => {
-                  if (parsedNotas && parsedNotas.services) {
-                    try { return parsedNotas.services.reduce((s:any, it:any) => s + (Number(it.value || it.price || 0) || 0), 0); } catch(e){return 0}
-                  }
-                  return Number(o.total || o.total_valor || 0) || 0;
-                })();
-                const paymentStatus = o.paymentStatus || o.pagamento || o.payment_status || null;
-                return {
-                  ...o,
-                  status: o.status || 'Recebido',
-                  client: client?.nome || o.client || '',
-                  phone: client?.telefone || o.phone || '',
-                  client_foto: client?.foto || o.client_foto || null,
-                  pieces,
-                  services,
-                  value: `R$ ${(valueFromNotas || 0).toFixed(2)}`,
-                  paymentStatus: paymentStatus || null,
-                  dateOut: o.data_entrega ? formatIso(o.data_entrega) : (o.dateOut || o.dataEntrega || ''),
-                };
-              });
-              // tentar mesclar status locais (ex: paymentStatus) salvos no localStorage
-              try {
-                const rawLocal = localStorage.getItem('orders');
-                if (rawLocal) {
-                  const parsedLocal = JSON.parse(rawLocal);
-                  if (Array.isArray(parsedLocal)) {
-                    const localMap: Record<string, any> = {};
-                    parsedLocal.forEach((lo: any) => { if (lo && lo.id) localMap[String(lo.id)] = lo; });
-                    data = data.map((o: any) => {
-                      const local = localMap[String(o.id)] || {};
-                      return {
-                        ...o,
-                        // prefer locally changed paymentStatus/status/sentMessages when present
-                        paymentStatus: (local.paymentStatus !== undefined ? local.paymentStatus : o.paymentStatus),
-                        status: (local.status !== undefined ? local.status : o.status),
-                        sentMessages: (local.sentMessages !== undefined ? local.sentMessages : o.sentMessages),
-                      };
-                    });
-                    // also merge financial entries (cashFlowDetails) so paymentStatus/value reflect financeiro
+              const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
+              const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
+              const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
+              const finalPaid = currentPaid || cashPaid;
+
+              const rawValue = o.value ?? o.total ?? o.total_valor ?? (cash && (cash.value || cash.valor)) ?? null;
+              const numericVal = Number(String(rawValue).replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
+              const displayValue = numericVal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+              return {
+                ...o,
+                status: normalizeStatus(o.status),
+                client: client?.nome || o.client || '',
+                phone: client?.telefone || o.phone || '',
+                client_foto: client?.foto || o.client_foto || null,
+                pieces,
+                services,
+                service: servicesText || o.service || o.servico || '',
+                dateOut: formatIsoToBR(o.data_entrega || o.dateOut || o.date_out || o.previsao) || o.dateOut || '',
+                paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
+                value: displayValue,
+              };
+            });
+
+            // merge local overrides (local edits should take precedence)
+            try {
+              const rawLocal = localStorage.getItem('orders');
+              if (rawLocal) {
+                const parsedLocal = JSON.parse(rawLocal);
+                if (Array.isArray(parsedLocal)) {
+                  // ignore locally deleted orders when merging
+                  const parsedLocalFiltered = parsedLocal.filter((lo:any) => !(deletedSet && (deletedSet.has(String(lo.id)) || deletedSet.has(String(lo.numero)))));
+                  const localMap: Record<string, any> = {};
+                  parsedLocalFiltered.forEach((lo: any) => { if (lo && lo.id) localMap[String(lo.id)] = lo; });
+                  const formatLocalValue = (v:any, serverVal:any) => {
                     try {
-                      const cashMap = getCashMap();
-                      data = data.map((o:any) => {
-                        const byId = cashMap[String(o.id)];
-                        const byNum = cashMap[String(o.numero)];
-                        const cash = byId || byNum;
-                        if (cash) {
-                          try {
-                            const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
-                            const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
-                            const finalPaid = currentPaid || cashPaid;
-                            return {
-                              ...o,
-                              paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
-                              value: o.value && String(o.value).startsWith('R$') ? o.value : `R$ ${Number(cash.value || cash.valor || 0).toFixed(2)}`
-                            };
-                          } catch (_inner) {
-                            return o;
-                          }
-                        }
-                        return o;
-                      });
-                    } catch (ee) {}
-                  }
+                      if (v === undefined || v === null) return serverVal || '';
+                      const s = String(v).trim();
+                      if (!s) return serverVal || '';
+                      // if already contains currency symbol or decimal separators, keep formatted
+                      if (/R\$|\$|BRL|,\d{2}/i.test(s)) return s;
+                      // numeric fallback
+                      const n = Number(s.replace(/[^0-9.-]/g, '').replace(',', '.'));
+                      if (!isNaN(n)) return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                      return s;
+                    } catch (e) { return serverVal || ''; }
+                  };
+
+                  data = data.map((o: any) => {
+                    const local = localMap[String(o.id)] || {};
+                    const serverService = o.service || '';
+                    const serverDateOut = o.dateOut || '';
+                    const serverValue = o.value || '';
+                    const chosenService = (local.service && String(local.service).trim()) ? local.service : serverService;
+                    const chosenDateOut = (local.dateOut && String(local.dateOut).trim()) ? local.dateOut : serverDateOut;
+                    const chosenValue = formatLocalValue(local.value !== undefined ? local.value : serverValue, serverValue);
+                    return {
+                      ...o,
+                      paymentStatus: (local.paymentStatus !== undefined ? local.paymentStatus : o.paymentStatus),
+                      status: (local.status !== undefined ? normalizeStatus(local.status) : o.status),
+                      sentMessages: (local.sentMessages !== undefined ? local.sentMessages : o.sentMessages),
+                      service: chosenService,
+                      dateOut: chosenDateOut,
+                      value: chosenValue,
+                    };
+                  });
                 }
-              } catch (e) { }
-              if (mounted) setOrders(data);
-              return;
-            } catch (e) {
-              // fallback: set raw
-              const data = raw.map((o: any) => ({ ...o, status: o.status || 'Recebido' }));
-              if (mounted) setOrders(data);
-              return;
+              }
+            } catch (e) { /* ignore local merge errors */ }
+
+            if (mounted) {
+              try { reconcileLocalCashForOrders(data); } catch (e) {}
+              setOrders(data);
+              try {
+                // clean up localStorage orders so they strictly reflect server state
+                // Keep only rows that exist on the server (by id or numero). This removes local temp/unsynced duplicates.
+                try {
+                  const rawLocal = localStorage.getItem('orders');
+                  const parsedLocal = rawLocal ? JSON.parse(rawLocal) : [];
+                  if (Array.isArray(parsedLocal)) {
+                    const serverIds = new Set<string>(data.map((x:any) => String(x.id)).filter(Boolean));
+                    const serverNumeros = new Set<string>(data.map((x:any) => String(x.numero || '').replace(/\D/g,'')).filter(n=>n));
+                    const removed: string[] = [];
+                    const filteredLocal = parsedLocal.filter((lo:any) => {
+                      try {
+                        if (!lo) return false;
+                        const loId = String(lo.id || '');
+                        const loNum = String(lo.numero || '').replace(/\D/g,'');
+                        const keep = (loId && serverIds.has(loId)) || (loNum && serverNumeros.has(loNum));
+                        if (!keep) removed.push(loId || lo.numero || String(lo));
+                        return keep;
+                      } catch (ee) { return false; }
+                    });
+                    // persist filtered list (server-canonical) — force overwrite
+                    try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: filteredLocal })); } catch(e){}
+
+                    // write tombstones for removed local ids/numeros so they won't resurface
+                    try {
+                      const rawDeleted = localStorage.getItem('deletedOrders');
+                      const deletedList = rawDeleted ? JSON.parse(rawDeleted) : [];
+                      const set = new Set(Array.isArray(deletedList) ? deletedList.map((x:any)=>String(x)) : []);
+                      removed.forEach(r => { if (r) set.add(String(r)); });
+                      localStorage.setItem('deletedOrders', JSON.stringify(Array.from(set)));
+                    } catch (ee) { /* ignore tombstone write errors */ }
+
+                    // also remove any cashFlowDetails that are not associated with server orders
+                    try {
+                      const rawC = localStorage.getItem('cashFlowDetails');
+                      const parsedC = rawC ? JSON.parse(rawC) : [];
+                      const filteredC = (parsedC || []).filter((c:any) => {
+                        try {
+                          const oid = String(c.orderId || c.orderid || '');
+                          const num = String(c.numero || '').replace(/\D/g,'');
+                          if (oid && serverIds.has(oid)) return true;
+                          if (num && serverNumeros.has(num)) return true;
+                          return false;
+                        } catch (e) { return false; }
+                      });
+                      localStorage.setItem('cashFlowDetails', JSON.stringify(filteredC));
+                      try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(e){}
+                    } catch (ee) { /* ignore cash cleanup errors */ }
+                  }
+                } catch (e) { /* ignore cleanup parsing errors */ }
+              } catch (e) { /* ignore cleanup errors */ }
             }
+            return;
           } else {
             console.warn('Supabase fetch ordens error', (res as any).error);
           }
@@ -360,16 +401,24 @@ export default function OrdensPage() {
         console.warn('fetchOrders error', e);
       }
 
-      // fallback to localStorage
+      // fallback to localStorage-only when Supabase unavailable or on error
       try {
         const raw = localStorage.getItem('orders');
         if (raw) {
-          const parsed = JSON.parse(raw);
+          let parsed = JSON.parse(raw);
+          // filter out deleted tombstones from local fallback as well
+          try {
+            const deletedRaw = localStorage.getItem('deletedOrders');
+            const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
+            const deletedSetLocal = new Set(Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : []);
+            if (Array.isArray(parsed) && deletedSetLocal.size > 0) {
+              parsed = parsed.filter((o:any) => !deletedSetLocal.has(String(o.id)) && !deletedSetLocal.has(String(o.numero)));
+            }
+          } catch (ee) { /* ignore */ }
           if (Array.isArray(parsed) && mounted) {
-            // merge with cashFlowDetails so paymentStatus/value reflect financeiro
-              try {
+            try {
               const cashMap = getCashMap();
-              setOrders(parsed.map((o: any) => {
+              const merged = parsed.map((o: any) => {
                 const cash = (cashMap[String(o.id)] || cashMap[String(o.numero)]) || {};
                 const amount = (cash && (cash.value || cash.valor)) ? Number(cash.value || cash.valor) : 0;
                 const displayValue = o.value && String(o.value).trim() !== '' ? String(o.value) : `R$ ${amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
@@ -377,21 +426,236 @@ export default function OrdensPage() {
                   const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
                   const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
                   const finalPaid = currentPaid || cashPaid;
-                  return { ...o, status: o.status || 'Recebido', paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null), value: displayValue };
-                } catch (_inner) { return { ...o, status: o.status || 'Recebido', paymentStatus: (o.paymentStatus || null), value: displayValue }; }
-              }));
-            } catch (ee) { setOrders(parsed.map((o: any) => ({ ...o, status: o.status || 'Recebido' }))); }
-            return;
+                  return { ...o, status: normalizeStatus(o.status), paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null), value: displayValue };
+                } catch (_inner) { return { ...o, status: normalizeStatus(o.status), paymentStatus: (o.paymentStatus || null), value: displayValue }; }
+              });
+              if (mounted) {
+                try { reconcileLocalCashForOrders(merged); } catch (e) {}
+                setOrders(merged);
+              }
+              return;
+            } catch (ee) { if (mounted) setOrders(parsed.map((o: any) => ({ ...o, status: normalizeStatus(o.status) }))); return; }
           }
         }
-      } catch (e) {
-        console.warn('localStorage parse orders failed', e);
-      }
+      } catch (e) { console.warn('localStorage parse orders failed', e); }
 
-      if (mounted) setOrders(defaultSampleOrders);
+      if (mounted) { try { reconcileLocalCashForOrders(defaultSampleOrders); } catch(e){}; setOrders(defaultSampleOrders); }
     }
     fetchOrders();
     return () => { mounted = false; };
+  }, []);
+
+  // helper to fetch server/local/tombstone status for debug UI
+  const fetchDebugInfo = async () => {
+    try {
+      const localRaw = localStorage.getItem('orders') || '[]';
+      const local = JSON.parse(localRaw || '[]');
+      const deletedRaw = localStorage.getItem('deletedOrders') || '[]';
+      const deleted = JSON.parse(deletedRaw || '[]');
+      let server: any[] = [];
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          const res = await supabase.from('ordens').select('*');
+          if (!(res as any).error && Array.isArray((res as any).data)) server = (res as any).data;
+        }
+      } catch (e) { /* ignore */ }
+      setDebugInfo({ serverCount: server.length, serverSample: server.slice(0,6), localCount: (Array.isArray(local)?local.length:0), localSample: (Array.isArray(local)?local.slice(0,6):[]), deleted: Array.isArray(deleted)?deleted:[] });
+    } catch (e) { setDebugInfo({ error: String(e) }); }
+  };
+
+  // allow other parts of the app to request a server refresh of orders
+  useEffect(() => {
+    const handler = async (e?: Event) => {
+      try {
+        if (!(supabase && typeof supabase.from === 'function')) return;
+        const res = await supabase.from('ordens').select('*');
+        if ((res as any).error) return;
+        let raw = (res as any).data || [];
+
+        // filter out locally deleted tombstones (by id or numero)
+        try {
+          const deletedRaw = localStorage.getItem('deletedOrders');
+          const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
+          const deletedArr = Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : [];
+
+          // Build sets of server ids/numeros so we can clean tombstones that refer to real server rows
+          const serverIdSet = new Set<string>(raw.map((r:any) => String(r.id)).filter(Boolean));
+          const serverNumSet = new Set<string>(raw.map((r:any) => String(r.numero || '').replace(/\D/g,'')).filter(Boolean));
+
+          // Remove tombstones that actually refer to server rows (prevent accidental suppression)
+          const cleaned = deletedArr.filter((d: string) => {
+            const dClean = String(d || '');
+            if (serverIdSet.has(dClean)) return false;
+            if (serverNumSet.has(dClean.replace(/\D/g,''))) return false;
+            return true;
+          });
+          if (cleaned.length !== deletedArr.length) {
+            const removed = deletedArr.filter(d => !cleaned.includes(d));
+            try { localStorage.setItem('deletedOrders', JSON.stringify(cleaned)); } catch(e) {}
+            try { console.info('Removed tombstones that match server rows:', removed); } catch(e){}
+            try { setDebugInfo((prev:any) => ({ ...(prev||{}), removedTombstones: removed })); } catch(e){}
+          }
+
+          const deletedSet = new Set<string>(cleaned);
+          if (deletedSet.size > 0) {
+            raw = raw.filter((o:any) => !deletedSet.has(String(o.id)) && !deletedSet.has(String(o.numero)));
+          }
+        } catch (e) { /* ignore */ }
+
+        // persist server-canonical orders to localStorage and notify
+        try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: raw })); } catch(e){}
+        try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
+      } catch (e) { console.warn('refetchOrdersFromServer failed', e); }
+    };
+    window.addEventListener('refetchOrdersFromServer', handler as any);
+    return () => { window.removeEventListener('refetchOrdersFromServer', handler as any); };
+  }, []);
+
+  // Debug helper: reconcile a single order from server into localStorage (useful when console is blocked)
+  const reconcileOrderFromServer = async (numeroPattern: string) => {
+    try {
+      if (!(supabase && typeof supabase.from === 'function')) { alert('Supabase não disponível'); return; }
+      const norm = String(numeroPattern || '').replace(/\D/g,'');
+      // try multiple strategies: by numeric numero, by raw match, by local client name
+      let server: any = null;
+      let attemptMsg = '';
+      if (norm) {
+        attemptMsg = 'busca por numero numerico';
+        const q = await supabase.from('ordens').select('*').eq('numero', norm).limit(1).maybeSingle();
+        if (!(q as any).error && (q as any).data) server = (q as any).data;
+      }
+      if (!server) {
+        attemptMsg = 'busca por numero parcial';
+        const q2 = await supabase.from('ordens').select('*').ilike('numero', `%${numeroPattern}%`).limit(1).maybeSingle();
+        if (!(q2 as any).error && (q2 as any).data) server = (q2 as any).data;
+      }
+      if (!server) {
+        // try to find local order to extract client name and try searching by client
+        try {
+          const raw = localStorage.getItem('orders') || '[]';
+          const arr = JSON.parse(raw || '[]');
+          const local = (arr||[]).find((o:any) => String(o.numero||'').replace(/\D/g,'') === norm || String(o.numero||'').toUpperCase().includes(String(numeroPattern||'').toUpperCase()));
+          if (local && (local.client || local.cliente)) {
+            const clientName = local.client || local.cliente;
+            attemptMsg = `busca por cliente '${clientName}'`;
+            const q3 = await supabase.from('ordens').select('*').ilike('client', `%${clientName}%`).limit(1).maybeSingle();
+            if (!(q3 as any).error && (q3 as any).data) server = (q3 as any).data;
+          }
+        } catch (e) { /* ignore */ }
+      }
+
+      if (!server) {
+        alert('Registro não encontrado no servidor (tentativa: ' + attemptMsg + ')');
+        return;
+      }
+      const raw = localStorage.getItem('orders') || '[]';
+      const arr = JSON.parse(raw || '[]');
+      const serverNum = String(server.numero || '').replace(/\D/g,'');
+      const idx = arr.findIndex((o:any) => String(o.id) === String(server.id) || String(o.numero || '').replace(/\D/g,'') === serverNum);
+      const existing = idx >= 0 ? arr[idx] : {};
+      // determine numeric value from server or existing cash
+      const valCandidate = server.value ?? server.total ?? existing.value ?? existing.total ?? 0;
+      const valNum = Number(String(valCandidate).replace(/[^0-9.-]/g,'').replace(',', '.')) || 0;
+      const merged = { ...existing, ...server, _local: false, _unsynced: false, value: valNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) };
+      if (idx >= 0) arr[idx] = merged; else arr.unshift(merged);
+      localStorage.setItem('orders', JSON.stringify({ __force: true, payload: arr }));
+      window.dispatchEvent(new CustomEvent('ordersUpdated'));
+      window.dispatchEvent(new CustomEvent('financeUpdated'));
+      alert('Ordem reconciliada: ' + (server.numero || server.id));
+    } catch (e) { console.warn('reconcileOrderFromServer error', e); alert('Erro: ' + String(e)); }
+  };
+
+  // Force reconciliation: compare local orders' ids/numeros against server and remove local-only test records
+  useEffect(() => {
+    let cancelled = false;
+    const reconcile = async () => {
+      try {
+        const raw = localStorage.getItem('orders');
+        if (!raw) return;
+        const parsedLocal = JSON.parse(raw || '[]');
+        if (!Array.isArray(parsedLocal) || parsedLocal.length === 0) return;
+
+        // collect candidate ids and numeros from local storage
+        const ids: string[] = [];
+        const numeros: string[] = [];
+        parsedLocal.forEach((o:any) => {
+          try {
+            if (!o) return;
+            if (o.id && !String(o.id).startsWith('local-')) ids.push(String(o.id));
+            const num = String(o.numero || '').replace(/\D/g, '');
+            if (num) numeros.push(num);
+          } catch (e) {}
+        });
+
+        if ((!ids || ids.length === 0) && (!numeros || numeros.length === 0)) return;
+        if (!(supabase && typeof supabase.from === 'function')) return;
+
+        const serverRows: any[] = [];
+        try {
+          if (ids.length > 0) {
+            const r = await supabase.from('ordens').select('id,numero').in('id', ids);
+            if (!(r as any).error && Array.isArray((r as any).data)) serverRows.push(...(r as any).data);
+          }
+        } catch (e) { /* ignore */ }
+        try {
+          if (numeros.length > 0) {
+            // query by numeric numero values
+            const r2 = await supabase.from('ordens').select('id,numero').in('numero', numeros);
+            if (!(r2 as any).error && Array.isArray((r2 as any).data)) serverRows.push(...(r2 as any).data);
+          }
+        } catch (e) { /* ignore */ }
+
+        if (cancelled) return;
+
+        const serverIdSet = new Set<string>((serverRows || []).map((s:any) => String(s.id)).filter(Boolean));
+        const serverNumSet = new Set<string>((serverRows || []).map((s:any) => String(s.numero || '').replace(/\D/g,'')).filter(Boolean));
+
+        const toRemove: string[] = [];
+        const filtered = (parsedLocal || []).filter((o:any) => {
+          try {
+            if (!o) return false;
+            const oid = String(o.id || '');
+            const onum = String(o.numero || '').replace(/\D/g,'');
+            const keep = (oid && serverIdSet.has(oid)) || (onum && serverNumSet.has(onum));
+            if (!keep) toRemove.push(oid || o.numero || String(o));
+            return keep;
+          } catch (e) { return false; }
+        });
+
+        if (toRemove.length > 0) {
+          try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: filtered })); } catch (e) {}
+          try {
+            const rawDeleted = localStorage.getItem('deletedOrders');
+            const deletedList = rawDeleted ? JSON.parse(rawDeleted) : [];
+            const set = new Set(Array.isArray(deletedList) ? deletedList.map((x:any)=>String(x)) : []);
+            toRemove.forEach(r => { if (r) set.add(String(r)); });
+            localStorage.setItem('deletedOrders', JSON.stringify(Array.from(set)));
+          } catch (e) {}
+
+          // clean cashFlowDetails unrelated to server
+          try {
+            const rawC = localStorage.getItem('cashFlowDetails');
+            const parsedC = rawC ? JSON.parse(rawC) : [];
+            const filteredC = (parsedC || []).filter((c:any) => {
+              try {
+                const oid = String(c.orderId || c.orderid || '');
+                const num = String(c.numero || '').replace(/\D/g,'');
+                if (oid && serverIdSet.has(oid)) return true;
+                if (num && serverNumSet.has(num)) return true;
+                return false;
+              } catch (e) { return false; }
+            });
+            localStorage.setItem('cashFlowDetails', JSON.stringify(filteredC));
+            try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(e){}
+          } catch (e) {}
+        }
+      } catch (e) {
+        console.warn('reconcile with server failed', e);
+      }
+    };
+    // run shortly after mount to allow initial fetch to complete
+    const t = setTimeout(() => { reconcile(); }, 1200);
+    return () => { cancelled = true; clearTimeout(t); };
   }, []);
 
   useEffect(() => {
@@ -495,21 +759,42 @@ export default function OrdensPage() {
   const confirmDelete = () => {
     const idToDelete = selectedOrder?.id;
     const numeroToDelete = selectedOrder?.numero || orderRef(selectedOrder) || null;
-    const next = orders.filter(o => o.id !== idToDelete);
+    // remove any local entries that match by id or numero to avoid duplicates remaining
+    const next = (orders || []).filter(o => {
+      try {
+        if (!o) return false;
+        if (idToDelete && String(o.id) === String(idToDelete)) return false;
+        if (numeroToDelete && String(o.numero) === String(numeroToDelete)) return false;
+        return true;
+      } catch (e) { return true; }
+    });
     setOrders(next);
     try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
     setShowDeleteModal(false);
     setSelectedOrder(null);
+    const isLocalId = (id: any) => {
+      try {
+        if (!id && id !== 0) return true;
+        const s = String(id);
+        return s.startsWith('local-') || s.startsWith('OS-') || s.startsWith('_local');
+      } catch (e) { return true; }
+    };
+    const isUuid = (s: any) => {
+      try { return typeof s === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s); } catch (e) { return false; }
+    };
+    const isNumeric = (s: any) => { try { return /^[0-9]+$/.test(String(s)); } catch (e) { return false; } };
+
     (async () => {
       try {
-        if (supabase && typeof supabase.from === 'function' && idToDelete) {
+        // Only attempt server deletion for IDs that look like server-generated (numeric or UUID).
+        if (supabase && typeof supabase.from === 'function' && idToDelete && !isLocalId(idToDelete) && (isNumeric(idToDelete) || isUuid(idToDelete))) {
           const res = await supabase.from('ordens').delete().eq('id', idToDelete);
           if ((res as any).error) throw (res as any).error;
-          // if deleted on server, also remove any tombstone locally
+          // if deleted on server, also remove any tombstone locally for id/numero
           try {
             const raw = localStorage.getItem('deletedOrders');
             const list = raw ? JSON.parse(raw) : [];
-            const filtered = (list || []).filter((x:any) => String(x) !== String(idToDelete));
+            const filtered = (list || []).filter((x:any) => String(x) !== String(idToDelete) && String(x) !== String(numeroToDelete));
             localStorage.setItem('deletedOrders', JSON.stringify(filtered));
           } catch (e) {}
           // tentar remover lançamentos financeiros relacionados (por orderId e por numero)
@@ -533,14 +818,21 @@ export default function OrdensPage() {
           const raw = localStorage.getItem('deletedOrders');
           const list = raw ? JSON.parse(raw) : [];
           const set = new Set(Array.isArray(list) ? list.map((x:any)=>String(x)) : []);
-          set.add(String(idToDelete));
+          if (idToDelete) set.add(String(idToDelete));
+          if (numeroToDelete) set.add(String(numeroToDelete));
           localStorage.setItem('deletedOrders', JSON.stringify(Array.from(set)));
         } catch (ee) { }
         // also remove local cash entries related to this OS
         try {
           const rawC = localStorage.getItem('cashFlowDetails');
           const parsed = rawC ? JSON.parse(rawC) : [];
-          const filtered = (parsed || []).filter((c:any) => String(c.orderId || c.orderid) !== String(idToDelete) && String(c.numero || '') !== String(numeroToDelete || ''));
+          const filtered = (parsed || []).filter((c:any) => {
+            try {
+              if (idToDelete && String(c.orderId || c.orderid) === String(idToDelete)) return false;
+              if (numeroToDelete && String(c.numero || '') === String(numeroToDelete)) return false;
+              return true;
+            } catch (e) { return true; }
+          });
           localStorage.setItem('cashFlowDetails', JSON.stringify(filtered));
           window.dispatchEvent(new CustomEvent('financeUpdated'));
         } catch (eee) {}
@@ -695,6 +987,9 @@ export default function OrdensPage() {
         }
       } catch (e) { console.warn('ensure fluxo_caixa payment sync failed', e); }
     })();
+
+    // trigger a server refetch so other pages (and this list) pick up canonical server rows
+    try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e) {}
 
     setShowAdvancePaymentModal(false);
     setSelectedOrder(null);
@@ -882,6 +1177,16 @@ export default function OrdensPage() {
     today.setHours(0,0,0,0);
     const diffMs = d.getTime() - today.getTime();
     return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  };
+
+  const serviceDisplayFor = (order: any) => {
+    try {
+      const notasPieces = order.pieces || order.pecas || [];
+      const servicesWithPiece = (notasPieces || []).flatMap((p:any) => (p.services || []).map((s:any) => ({ ...s, pieceTipo: p.tipo })));
+      return (servicesWithPiece && servicesWithPiece.length > 0)
+        ? servicesWithPiece.map((s:any) => `${s.name || s.nome || s.title || ''}${s.pieceTipo ? ` (${s.pieceTipo})` : ''}`).join(', ')
+        : (order.service || '');
+    } catch (e) { return order.service || ''; }
   };
 
   const createNewOrder = async () => {
@@ -1524,7 +1829,9 @@ export default function OrdensPage() {
   useEffect(() => {
     try {
       localStorage.setItem('orders', JSON.stringify(orders));
-      window.dispatchEvent(new CustomEvent('ordersUpdated'));
+      // `localStorage.setItem` is wrapped in `src/main.tsx` which already
+      // dispatches the `ordersUpdated` event. Do not re-dispatch here to
+      // avoid update loops between components.
     } catch (e) {}
   }, [orders]);
 
@@ -1546,17 +1853,17 @@ export default function OrdensPage() {
                   const finalPaid = currentPaid || cashPaid;
                   return {
                     ...o,
-                    status: o.status || 'Recebido',
+                    status: normalizeStatus(o.status),
                     paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
                     value: o.value || (cash ? `R$ ${Number(cash.value || cash.valor || 0).toFixed(2)}` : o.value)
                   };
-                } catch (_inner) { return { ...o, status: o.status || 'Recebido', paymentStatus: (o.paymentStatus || null), value: o.value }; }
+                } catch (_inner) { return { ...o, status: normalizeStatus(o.status), paymentStatus: (o.paymentStatus || null), value: o.value }; }
               });
               const currJson = JSON.stringify(ordersRef.current || []);
               const newJson = JSON.stringify(normalized || []);
               if (currJson !== newJson) setOrders(normalized);
             } catch (ee) {
-              try { const normalized = parsed.map((o:any) => ({ ...o, status: o.status || 'Recebido' })); setOrders(normalized); } catch(_){}
+              try { const normalized = parsed.map((o:any) => ({ ...o, status: normalizeStatus(o.status) })); setOrders(normalized); } catch(_){ }
             }
           }
         }
@@ -1770,6 +2077,37 @@ export default function OrdensPage() {
             {/* Lista: tabela responsiva com filtros rápidos */}
             <div className="p-4">
               <div className="mb-2" />
+              {/* Debug button removed in production */}
+
+              {/* Debug panel (visible when ?debug=1 is present in URL) */}
+              {typeof window !== 'undefined' && window.location.search.includes('debug') && (
+                <div className="p-3 bg-yellow-50 rounded-lg mb-4 border border-yellow-200">
+                  <div className="flex items-center gap-3 mb-2">
+                    <button onClick={() => { fetchDebugInfo(); setDebugOpen(true); }} className="px-3 py-1 bg-yellow-400 text-white rounded">Fetch Server/Local</button>
+                    <button onClick={() => { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); setTimeout(fetchDebugInfo, 800); }} className="px-3 py-1 bg-amber-500 text-white rounded">Force Refetch</button>
+                    <button onClick={() => { setDebugOpen(d => !d); }} className="px-3 py-1 border rounded">Toggle</button>
+                  </div>
+                  {debugOpen && debugInfo && (
+                    <div className="text-xs text-gray-700">
+                      <div className="mb-2">Server count: <strong>{debugInfo.serverCount}</strong></div>
+                      <div className="mb-2">Local count: <strong>{debugInfo.localCount}</strong></div>
+                      <div className="mb-2">Deleted tombstones: <strong>{(debugInfo.deleted||[]).length}</strong></div>
+                      <div className="mb-2">Server sample:</div>
+                      <div className="space-y-1 mb-2">
+                        {(debugInfo.serverSample||[]).map((s:any,i:number) => (
+                          <div key={i} className="text-[11px] text-gray-800">#{String(s.numero||s.id)} — {String(s.client||s.client_name||s.client||s.cliente||'—')}</div>
+                        ))}
+                      </div>
+                      <div className="mb-2">Local sample:</div>
+                      <div className="space-y-1">
+                        {(debugInfo.localSample||[]).map((s:any,i:number) => (
+                          <div key={i} className="text-[11px] text-gray-800">#{String(s.numero||s.id)} — {String(s.client||s.client_name||s.cliente||'—')}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Mobile stacked list */}
               <div className="sm:hidden space-y-3">
@@ -1786,7 +2124,7 @@ export default function OrdensPage() {
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${statusOptions.find(s=>s.id===order.status)?.color || 'bg-gray-100 text-gray-800'}`}>{order.status}</span>
                           </div>
                         </div>
-                        <div className="text-xs text-gray-500 break-words">{orderRef(order)} · {order.service}</div>
+                        <div className="text-xs text-gray-500 break-words">{orderRef(order)} · {serviceDisplayFor(order)}</div>
                         <div className="text-xs text-gray-600 mt-1">Prazo: {order.dateOut || '—'}</div>
                       </div>
                       <div className="text-right ml-3">
@@ -1818,7 +2156,7 @@ export default function OrdensPage() {
                 ))}
               </div>
 
-              <div className="hidden sm:block w-full">
+                <div className="hidden sm:block w-full">
                 <table className="w-full table-auto border-collapse">
                   <thead className="bg-gray-50">
                     <tr>
@@ -1832,6 +2170,8 @@ export default function OrdensPage() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-100">
                     {sortedOrders.map(order => {
+                      const serviceDisplay = serviceDisplayFor(order);
+
                       const due = deliveryIndicator(order.dateOut);
                       const isLate = due === 'late';
                       return (
@@ -1842,9 +2182,9 @@ export default function OrdensPage() {
                               <div className="font-medium">{order.client}</div>
                             </div>
                             <div className="text-xs text-gray-500">{orderRef(order)}</div>
-                            <div className="sm:hidden mt-1 text-xs text-gray-600">{order.service} · {order.dateOut || '—'}</div>
+                            <div className="sm:hidden mt-1 text-xs text-gray-600">{serviceDisplay} · {order.dateOut || '—'}</div>
                           </td>
-                          <td className="hidden sm:table-cell px-3 py-3 align-top text-sm text-gray-700 break-words">{order.service}</td>
+                          <td className="hidden sm:table-cell px-3 py-3 align-top text-sm text-gray-700 break-words">{serviceDisplay}</td>
                           <td className="px-3 py-3 align-top text-sm">
                               <div className="flex items-center gap-2">
                                 <button
@@ -2016,306 +2356,50 @@ export default function OrdensPage() {
         </div>
       )}
 
-      {/* Modal Nova Ordem */}
+      {/* Modal Nova Ordem (dynamic wizard) */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-4 lg:p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
-              <h2 className="text-lg lg:text-xl font-bold text-gray-900">Nova Ordem de Serviço</h2>
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  setOrderServices([]);
-                }}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all cursor-pointer"
-              >
-                <i className="ri-close-line text-2xl w-6 h-6 flex items-center justify-center"></i>
-              </button>
-            </div>
-
-            <div className="p-4 lg:p-6 space-y-4">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Cliente</label>
-                  <div className="flex gap-2">
-                    <select value={newOrderClientId || ''} onChange={(e) => setNewOrderClientId(e.target.value || null)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm">
-                      <option value="">Selecione um cliente</option>
-                      {clientes.map((cliente) => (
-                        <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => setShowNewClientModal(true)}
-                      className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all whitespace-nowrap cursor-pointer font-medium text-sm"
-                      title="Novo Cliente"
-                    >
-                      <i className="ri-add-line text-lg"></i>
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Prioridade</label>
-                  <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm">
-                    <option>Normal</option>
-                    <option>Urgente</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-                  <select value={newOrderStatus} onChange={(e) => setNewOrderStatus(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm">
-                    {statusOptions.map(s => (
-                      <option key={s.id} value={s.id}>{s.label}</option>
-                    ))}
-                  </select>
-                  <div className="mt-2 flex items-center gap-2">
-                    <i className="ri-money-dollar-circle-line text-lg text-gray-700"></i>
-                    <select value={newOrderPaymentStatus || ''} onChange={(e) => setNewOrderPaymentStatus(e.target.value || null)} className="px-2 py-1 border rounded text-sm">
-                      <option value="">Falta Pagar</option>
-                      <option value="Pago">Pago</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Data de Entrada</label>
-                  <input
-                    type="date"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Prazo de Entrega</label>
-                  <input
-                    type="date"
-                    value={newOrderDate}
-                    onChange={(e) => setNewOrderDate(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Lista de Serviços Adicionados */}
-              {orderServices.length > 0 && (
-                <div className="border-t border-gray-200 pt-4">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Serviços Adicionados</h3>
-                  <div className="space-y-2">
-                    {orderServices.map((service) => (
-                      <div key={service.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900">{service.name}</p>
-                          <p className="text-xs text-gray-600">{service.category}</p>
-                          {service.observation && (
-                            <p className="text-xs text-gray-500 italic mt-1">{service.observation}</p>
-                          )}
-                        </div>
-                        <p className="text-sm font-semibold text-gray-900">R$ {service.value.toFixed(2)}</p>
-                        <button 
-                          onClick={() => removeService(service.id)}
-                          className="text-red-600 hover:text-red-700 cursor-pointer"
-                        >
-                          <i className="ri-delete-bin-line text-lg"></i>
-                        </button>
-                      </div>
-                    ))}
-                    <div className="flex justify-between items-center pt-2 border-t border-gray-200">
-                      <span className="text-sm font-medium text-gray-700">Total:</span>
-                      <span className="text-lg font-bold text-rose-600">R$ {getTotalServices().toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Adicionar Peças (obrigatório primeiro) */}
-              <div className="border-t border-gray-200 pt-4">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Peças (cadastre antes dos serviços)</h3>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Tipo da Peça</label>
-                      <div className="flex gap-2">
-                        <input value={pieceTipo} onChange={(e) => setPieceTipo(e.target.value)} onFocus={() => setShowPecasModal(true)} onClick={() => setShowPecasModal(true)} placeholder="ex: Calça (clique para escolher)" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm cursor-pointer" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Cor</label>
-                      <div className="flex gap-2">
-                        <input value={pieceCor} onChange={(e) => setPieceCor(e.target.value)} onFocus={() => setShowCorModal(true)} onClick={() => setShowCorModal(true)} placeholder="ex: Preta (clique para escolher)" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm cursor-pointer" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Modelo</label>
-                      <input value={pieceModelo} onChange={(e) => setPieceModelo(e.target.value)} placeholder="ex: Jeans" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                    </div>
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => { setPieceTipo(''); setPieceCor(''); setPieceModelo(''); }} className="px-3 py-2 border rounded text-sm">Limpar</button>
-                    <button onClick={() => {
-                      if (!pieceTipo) return alert('Informe o tipo da peça');
-                      const id = `P-${Date.now()}`;
-                      const newPiece = { id, tipo: pieceTipo, cor: pieceCor || '', modelo: pieceModelo || '', services: [] };
-                      setPieces([...pieces, newPiece]);
-                      setPieceTipo(''); setPieceCor(''); setPieceModelo('');
-                    }} className="px-3 py-2 bg-green-600 text-white rounded text-sm">Adicionar Peça</button>
-                  </div>
-
-                  {pieces.length > 0 && (
-                    <div className="mt-2 space-y-2">
-                      <div className="text-xs text-gray-600">Peças Cadastradas:</div>
-                      {pieces.map(p => (
-                        <div key={p.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                          <div>
-                            <div className="font-medium">{`${(availablePieces.find(x=>x.nome===p.tipo)?.icone||'🧵')} ${p.tipo}`}</div>
-                            <div className="text-xs text-gray-500">Cor: {p.cor || '—'} · Modelo: {p.modelo || '—'}</div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => { setPieces(pieces.filter(x => x.id !== p.id)); setOrderServices(orderServices.filter(s => s.pieceId !== p.id)); }} className="text-red-600">Remover</button>
-                            <button onClick={() => setSelectedPieceForService(p.id)} className="text-rose-600">Selecionar</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Adicionar Serviço */}
-              <div className="border-t border-gray-200 pt-4">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Adicionar Serviço</h3>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Vincular serviço à peça</label>
-                    <select value={selectedPieceForService || ''} onChange={(e) => setSelectedPieceForService(e.target.value || null)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2">
-                      <option value="">Selecione a peça...</option>
-                      {pieces.map(p => <option key={p.id} value={p.id}>{p.tipo} · {p.cor || '—'}</option>)}
-                    </select>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Categoria do Serviço</label>
-                    <select value={newServiceCategoryFilter} onChange={(e) => setNewServiceCategoryFilter(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-500 cursor-pointer mb-2">
-                      <option value="">Todas as categorias</option>
-                      {serviceCategories.map(cat => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                      ))}
-                    </select>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Serviço</label>
-                    <div className="flex gap-2 items-center">
-                      <select 
-                        value={selectedServiceId}
-                        onChange={handleServiceSelect}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-500 cursor-pointer"
-                      >
-                        <option value="">Selecione um serviço...</option>
-                        {servicosDisponiveisState.filter(s => !newServiceCategoryFilter || s.category === newServiceCategoryFilter).map((service) => (
-                          <option key={service.id} value={service.id}>
-                            {serviceCategories.find(c => c.id === service.category)?.name || service.category} - {service.name} (R$ {service.price.toFixed(2)})
-                          </option>
-                        ))}
-                      </select>
-                      <button title="Adicionar serviço" onClick={() => { setShowInlineServiceForm(!showInlineServiceForm); setInlineServiceCategory(newServiceCategoryFilter || serviceCategories[0]?.id || ''); }} className="w-9 h-9 bg-rose-50 text-rose-600 rounded flex items-center justify-center hover:bg-rose-100">
-                        <i className="ri-add-line"></i>
-                      </button>
-                    </div>
-
-                    {showInlineServiceForm && (
-                      <div className="mt-3 p-3 border border-dashed rounded bg-gray-50">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Categoria</label>
-                            <select value={inlineServiceCategory} onChange={(e) => setInlineServiceCategory(e.target.value)} className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
-                              {serviceCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Nome do Serviço</label>
-                            <input value={inlineServiceName} onChange={(e) => setInlineServiceName(e.target.value)} className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm" />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Valor (R$)</label>
-                            <input value={inlineServicePrice} onChange={(e) => setInlineServicePrice(e.target.value)} type="number" step="0.01" className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm" />
-                          </div>
-                        </div>
-                        <div className="flex gap-2 justify-end mt-3">
-                          <button onClick={() => { setShowInlineServiceForm(false); setInlineServiceName(''); setInlineServicePrice(''); }} className="px-3 py-2 border rounded text-sm">Cancelar</button>
-                          <button onClick={() => {
-                            if (!inlineServiceName || !inlineServicePrice) return alert('Preencha nome e valor do serviço');
-                            const id = Date.now();
-                            const newSvc = { id, name: inlineServiceName, category: inlineServiceCategory, price: parseFloat(inlineServicePrice) };
-                            setServicosDisponiveisState([...servicosDisponiveisState, newSvc]);
-                            setSelectedServiceId(String(id));
-                            setServiceValue(parseFloat(inlineServicePrice).toFixed(2));
-                            setInlineServiceName(''); setInlineServicePrice(''); setShowInlineServiceForm(false);
-                          }} className="px-3 py-2 bg-green-600 text-white rounded text-sm">Salvar serviço</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Valor (R$)</label>
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        value={serviceValue}
-                        onChange={(e) => setServiceValue(e.target.value)}
-                        placeholder="0,00" 
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-500" 
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Observação</label>
-                      <input 
-                        type="text" 
-                        value={serviceObservation}
-                        onChange={(e) => setServiceObservation(e.target.value)}
-                        placeholder="Opcional" 
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-500" 
-                      />
-                    </div>
-                  </div>
-                  <button 
-                    onClick={addService}
-                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm font-medium whitespace-nowrap cursor-pointer"
-                  >
-                    <i className="ri-add-line mr-2"></i>
-                    Adicionar Serviço
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Observações Gerais</label>
-                <textarea
-                  rows={4}
-                  value={newOrderObservacoes}
-                  onChange={(e) => setNewOrderObservacoes(e.target.value)}
-                  placeholder="Detalhes adicionais sobre a ordem..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm resize-none"
-                  maxLength={500}
-                ></textarea>
-              </div>
-            </div>
-
-            <div className="p-4 lg:p-6 border-t border-gray-200 flex items-center justify-end gap-3 sticky bottom-0 bg-white">
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  setOrderServices([]);
-                }}
-                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all whitespace-nowrap cursor-pointer font-medium text-sm"
-              >
-                Cancelar
-              </button>
-              <button 
-                onClick={createNewOrder}
-                className="px-6 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600 transition-all whitespace-nowrap cursor-pointer font-medium text-sm"
-              >
-                Criar Ordem
-              </button>
-            </div>
-          </div>
-        </div>
+        <NewOsWizard
+          onClose={() => { setShowModal(false); }}
+          onCreated={(order:any) => {
+            try {
+              // helper: extract only digits from numero for stable comparison
+              const numeroDigits = (n: any) => {
+                try { return String(n || '').replace(/\D/g, ''); } catch (e) { return String(n || ''); }
+              };
+              // reload canonical orders from localStorage (NewOsWizard already persisted there)
+              const raw = localStorage.getItem('orders');
+              const parsed = raw ? JSON.parse(raw) : [];
+              if (Array.isArray(parsed)) {
+                // dedupe by id (server/local) or normalized numero (digits)
+                const seen = new Set<string>();
+                const deduped: any[] = [];
+                for (let i = 0; i < parsed.length; i++) {
+                  const o = parsed[i];
+                  try {
+                    const key = o && o.id ? `id:${String(o.id)}` : (o && o.numero ? `num:${numeroDigits(o.numero)}` : `raw:${JSON.stringify(o)}`);
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    deduped.push(o);
+                  } catch (e) { deduped.push(o); }
+                }
+                // persist cleaned list back to localStorage
+                try { localStorage.setItem('orders', JSON.stringify(deduped)); } catch (e) {}
+                setOrders(deduped);
+                // try to find the freshly created order by id or numero digits
+                const saved = deduped.find((o:any) => (order && order.id && String(o.id) === String(order.id)) || (order && order.numero && numeroDigits(o.numero) === numeroDigits(order.numero))) || deduped[0] || order;
+                setSelectedOrder(saved);
+                setShowSavedSummary(true);
+              } else {
+                // fallback: use provided object
+                setSelectedOrder(order);
+                setOrders((prev) => [...(prev||[]), order]);
+                setShowSavedSummary(true);
+              }
+            } catch (e) {
+              try { setSelectedOrder(order); setShowSavedSummary(true); } catch (_) {}
+            }
+          }}
+        />
       )}
 
       {/* Modal Novo Cliente Rápido */}

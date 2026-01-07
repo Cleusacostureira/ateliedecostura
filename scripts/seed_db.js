@@ -1,3 +1,5 @@
+/* eslint-env node */
+/* global process, console */
 // scripts/seed_db.js
 // Uso: defina DATABASE_URL e rode: node scripts/seed_db.js
 

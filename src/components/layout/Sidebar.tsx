@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { useCompanyLogo } from '../../lib/useCompanyLogo';
+import OfflineBanner from '../OfflineBanner';
 
 export default function Sidebar() {
   const location = useLocation();
@@ -42,7 +43,12 @@ export default function Sidebar() {
         isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
         <div className="p-6 border-b border-gray-200 flex items-center justify-center">
-          <SidebarLogo />
+          <div className="w-full">
+            <SidebarLogo />
+            <div className="mt-2">
+              <OfflineBanner />
+            </div>
+          </div>
         </div>
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">

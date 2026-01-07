@@ -45,6 +45,34 @@ export default function FinanceiroPage() {
           }
           if (!(res as any).error && Array.isArray((res as any).data) && mounted) {
             let data = (res as any).data as any[];
+            // build set of active orders (ids and numeros) to filter fluxo_caixa
+            let activeSet = new Set<string>();
+            try {
+              const ordRes = await supabase.from('ordens').select('id,numero');
+              if (!(ordRes as any).error && Array.isArray((ordRes as any).data)) {
+                (ordRes as any).data.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
+              }
+            } catch (e) {
+              try {
+                const rawOrders = localStorage.getItem('orders');
+                const parsedOrders = rawOrders ? JSON.parse(rawOrders) : [];
+                if (Array.isArray(parsedOrders)) parsedOrders.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
+              } catch (ee) { /* ignore */ }
+            }
+            if (activeSet.size > 0) {
+              data = data.filter((d:any) => {
+                try {
+                  const oid = d.orderId || d.orderid;
+                  const num = d.numero || d.id;
+                  if (oid && activeSet.has(String(oid))) return true;
+                  if (num && activeSet.has(String(num))) return true;
+                  return false;
+                } catch (e) { return false; }
+              });
+            } else {
+              // no active orders -> clear any server fluxo entries to show zero
+              data = [];
+            }
             try { data = data.filter((d:any) => { const num = String(d.numero || '').toLowerCase(); const digits = String(d.numero || '').replace(/\D/g, ''); if (num === 'n000002') return false; if (digits === '2') return false; return true; }); } catch (e) {}
             try {
               const rawDel = localStorage.getItem('deletedOrders');
@@ -77,10 +105,16 @@ export default function FinanceiroPage() {
           if (Array.isArray(parsed) && mounted) {
             try { parsed = parsed.filter((d:any) => { const num = String(d.numero||'').toLowerCase(); const digits = String(d.numero||'').replace(/\D/g,''); if (num === 'n000002') return false; if (digits === '2') return false; return true; }); } catch (e) {}
             try {
+              // also ensure cash entries correspond to existing orders (local fallback)
+              const rawOrders = localStorage.getItem('orders');
+              const parsedOrders = rawOrders ? JSON.parse(rawOrders) : [];
+              const activeSetLocal = new Set<string>();
+              if (Array.isArray(parsedOrders)) parsedOrders.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSetLocal.add(String(o.id)); if (o.numero) activeSetLocal.add(String(o.numero)); } });
               const rawDel = localStorage.getItem('deletedOrders');
               const dels = rawDel ? JSON.parse(rawDel) : [];
               const filtered = Array.isArray(dels) && dels.length > 0 ? parsed.filter((p:any) => !dels.includes(String(p.orderId) || String(p.numero) || String(p.id))) : parsed;
-              const normalized = normalizeEntries(filtered);
+              const finalFiltered = activeSetLocal.size > 0 ? filtered.filter((p:any) => activeSetLocal.has(String(p.orderId) || String(p.orderid) || String(p.numero) || String(p.id))) : [];
+              const normalized = normalizeEntries(finalFiltered);
               setCashFlowDetails(normalized);
               setPendingPayments(normalized.filter((d:any) => d.status === 'Pendente'));
               try { setLocalEntriesPreview((normalized || []).slice(0,50)); } catch (e) {}
@@ -313,27 +347,10 @@ export default function FinanceiroPage() {
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-lg lg:text-2xl font-bold text-gray-900 mb-0.5 lg:mb-1">Financeiro</h1>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => { try { window.dispatchEvent(new Event('retryFluxo')); } catch (e) {} }}
-                    className="text-xs px-2 py-1 bg-rose-50 border border-rose-200 text-rose-600 rounded-lg hover:bg-rose-100 transition-all"
-                  >Re-tentar fluxo</button>
-                  <span className="text-xs text-gray-500">{fluxoStatus}</span>
-                </div>
+                {/* fluxoStatus hidden near title per UX request */}
               </div>
               <p className="text-xs lg:text-sm text-gray-600">Controle suas receitas e despesas</p>
-              <div className="mt-2 flex items-start gap-3">
-                <button
-                  onClick={() => setShowLocalEntries(!showLocalEntries)}
-                  className="text-xs px-2 py-1 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-all"
-                >{showLocalEntries ? 'Ocultar local' : 'Mostrar local'}</button>
-                <div className="text-xs text-gray-500 mt-1">Local entries: {localEntriesPreview.length}</div>
-              </div>
-              {showLocalEntries && (
-                <div className="mt-2 p-2 bg-white border border-gray-100 rounded text-xs overflow-auto max-h-60">
-                  <pre className="whitespace-pre-wrap text-[11px]">{JSON.stringify(localEntriesPreview, null, 2)}</pre>
-                </div>
-              )}
+              
             </div>
             <div className="flex gap-1.5 lg:gap-2">
               <button

@@ -180,12 +180,83 @@ export default function ServicosPage() {
   };
 
   const confirmDelete = () => {
-    setServices(services.filter(s => s.id !== selectedService.id));
+    const updated = services.filter(s => s.id !== selectedService.id);
+    setServices(updated);
+    try { localStorage.setItem('services', JSON.stringify(updated)); localStorage.setItem('servicesOrder', JSON.stringify(updated.map(s=>s.id))); } catch(e){}
     setShowDeleteModal(false);
     setSelectedService(null);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async (e?: React.FormEvent<HTMLFormElement>) => {
+    if (e) e.preventDefault();
+    try {
+      // read values from modal form if provided
+      let name = selectedService?.name || '';
+      let category = selectedService?.category || '';
+      let price = Number(selectedService?.price || 0) || 0;
+      let time = selectedService?.time || '';
+      if (e && e.currentTarget) {
+        const form = new FormData(e.currentTarget as HTMLFormElement);
+        name = (form.get('name') as string) || name;
+        category = (form.get('category') as string) || category;
+        const rawPrice = (form.get('price') as string) || String(price);
+        price = Number(String(rawPrice).replace(/[^0-9,\.]/g, '').replace(',', '.')) || 0;
+        time = (form.get('time') as string) || time;
+      }
+
+      const updated = { ...selectedService, name, category, price, time };
+      const newServices = services.map(s => s.id === selectedService.id ? updated : s);
+      setServices(newServices);
+      try { localStorage.setItem('services', JSON.stringify(newServices)); localStorage.setItem('servicesOrder', JSON.stringify(newServices.map(s=>s.id))); } catch(e){}
+
+      // persist to supabase when possible
+      try {
+        if (supabase && (selectedService?.__raw?.id || selectedService?.id)) {
+          const idToUpdate = selectedService.__raw?.id || selectedService.id;
+          // only update columns that actually exist in DB: titulo, preco, duracao_minutos
+          const payload: any = { titulo: name, preco: price };
+          const minutes = parseInt(String(time || '').replace(/[^0-9]/g, '')) || null;
+          if (minutes) payload.duracao_minutos = minutes;
+          // perform update then fetch the updated row explicitly
+          const updRes = await supabase.from('servicos').update(payload).eq('id', idToUpdate);
+          if ((updRes as any).error) {
+            console.warn('supabase update error', (updRes as any).error);
+          }
+          const sel = await supabase.from('servicos').select('*').eq('id', idToUpdate).maybeSingle();
+          if (!(sel as any).error && (sel as any).data) {
+            const row = (sel as any).data;
+            // map server row to UI shape
+            const mappedRow = {
+              id: row.id,
+              category: row.categoria || row.category || category || 'outros',
+              name: row.titulo || row.nome || name,
+              price: Number(row.preco ?? row.price ?? price) || 0,
+              time: row.duracao_minutos ? `${row.duracao_minutos} min` : (row.time || time),
+              count: Number(row.popularidade || row.count || 0) || 0,
+              __raw: row,
+            };
+            setServices(services.map(s => s.id === updated.id ? mappedRow : s));
+            // persist to localStorage
+            try {
+              const raw = localStorage.getItem('services');
+              const arr = raw ? JSON.parse(raw) : services;
+              const newArr = Array.isArray(arr) ? arr.map((s:any) => s.id === mappedRow.id ? mappedRow : s) : services;
+              localStorage.setItem('services', JSON.stringify(newArr));
+            } catch (err) { /* ignore */ }
+          } else {
+            // no server row returned; nothing else to do (we already optimistically updated local state)
+          }
+        }
+      } catch (err) { console.warn('failed to persist service edit to supabase', err); }
+
+      // persist to localStorage fallback
+      try {
+        const raw = localStorage.getItem('services');
+        const arr = raw ? JSON.parse(raw) : services;
+        const newArr = Array.isArray(arr) ? arr.map((s:any) => s.id === updated.id ? updated : s) : services;
+        localStorage.setItem('services', JSON.stringify(newArr));
+      } catch (err) { /* ignore */ }
+    } catch (err) { console.warn('save edit service failed', err); }
     setShowEditModal(false);
     setSelectedService(null);
   };
@@ -222,17 +293,63 @@ export default function ServicosPage() {
               } catch (e) { console.warn('failed to seed servicos', e); setServices(defaultServices); }
             } else {
               // map DB fields to UI shape
-              const mapped = svcData.map((s: any) => ({
-                id: s.id,
-                category: s.categoria || s.category || (s.descricao && s.descricao.categoria) || 'outros',
-                name: s.titulo || s.nome || s.title || '',
-                price: Number(s.preco ?? s.price ?? 0) || 0,
-                time: s.duracao_minutos ? `${s.duracao_minutos} min` : (s.time || ''),
-                count: Number(s.popularidade || s.count || 0) || 0,
-                // keep raw
-                __raw: s,
-              }));
-              setServices(mapped);
+              const normalize = (str: any) => (str || '').toString().toLowerCase().replace(/[^a-z0-9áàâãäéèêëíìîïóòôõöúùûüç ]/g,'').trim();
+              const mapped = svcData.map((s: any) => {
+                const name = s.titulo || s.nome || s.title || '';
+                let category = s.categoria || s.category || (s.descricao && s.descricao.categoria) || '';
+                if (!category) {
+                  // try infer from defaultServices by name match
+                  const n = normalize(name);
+                  const found = defaultServices.find(d => normalize(d.name) === n);
+                  if (found) category = found.category || found.categoria || '';
+                }
+                if (!category) category = 'outros';
+                return {
+                  id: s.id,
+                  category,
+                  name,
+                  price: Number(s.preco ?? s.price ?? 0) || 0,
+                  time: s.duracao_minutos ? `${s.duracao_minutos} min` : (s.time || ''),
+                  count: Number(s.popularidade || s.count || 0) || 0,
+                  __raw: s,
+                };
+              });
+              // prefer persisted order from localStorage, else preserve current UI order, else use server order
+              setServices((prev:any[]) => {
+                try {
+                  const stored = (() => { try { return JSON.parse(localStorage.getItem('servicesOrder') || 'null'); } catch(e){return null} })();
+                  let ordered: any[] = [];
+                  if (Array.isArray(stored) && stored.length > 0) {
+                    const ids: string[] = stored;
+                    ordered = ids.map(id => mapped.find(m => m.id === id)).filter(x => !!x).concat(mapped.filter(m => !ids.includes(m.id)));
+                  } else if (prev && prev.length > 0) {
+                    const prevIds = prev.map(p => p.id);
+                    ordered = prevIds.map(id => mapped.find(m => m.id === id)).filter(x => !!x).concat(mapped.filter(m => !prevIds.includes(m.id)));
+                  } else {
+                    ordered = mapped;
+                  }
+                  // prioritize specific services within their category (move to top of category)
+                  try {
+                    const prioritized = ['barra italiana','barra simples de calça'];
+                    const byCategory: Record<string, any[]> = {};
+                    ordered.forEach(item => { byCategory[item.category] = byCategory[item.category] || []; byCategory[item.category].push(item); });
+                    Object.keys(byCategory).forEach(cat => {
+                      const list = byCategory[cat];
+                      const pri = prioritized.map(p => list.find(l => (l.name || '').toString().toLowerCase() === p)).filter(Boolean);
+                      const rest = list.filter(l => !pri.includes(l));
+                      byCategory[cat] = [...pri, ...rest];
+                    });
+                    const finalOrdered = Object.keys(byCategory).flatMap(cat => byCategory[cat]);
+                    ordered = finalOrdered;
+                    localStorage.setItem('services', JSON.stringify(ordered));
+                    localStorage.setItem('servicesOrder', JSON.stringify(ordered.map(s=>s.id)));
+                  } catch(e){}
+                  return ordered as any[];
+                } catch (e) {
+                  try { localStorage.setItem('services', JSON.stringify(mapped)); localStorage.setItem('servicesOrder', JSON.stringify(mapped.map(s=>s.id))); } catch(_){ }
+                  return mapped;
+                }
+              });
             }
           }
           const matRes = await supabase.from('materiais').select('*');
@@ -307,6 +424,16 @@ export default function ServicosPage() {
     setAvailableMaterials(availableMaterials.map(m => 
       m.id === selectedMaterial.id ? updatedMaterial : m
     ));
+    // persist material to supabase when possible
+    (async () => {
+      try {
+        if (supabase && selectedMaterial?.__raw && selectedMaterial.__raw.id) {
+          await supabase.from('materiais').update({ nome: updatedMaterial.name, unidade: updatedMaterial.unit, preco: updatedMaterial.price }).eq('id', selectedMaterial.__raw.id);
+        } else if (supabase && selectedMaterial?.id) {
+          await supabase.from('materiais').update({ nome: updatedMaterial.name, unidade: updatedMaterial.unit, preco: updatedMaterial.price }).eq('id', selectedMaterial.id);
+        }
+      } catch (err) { console.warn('failed to persist material edit to supabase', err); }
+    })();
     setShowEditMaterialModal(false);
     setSelectedMaterial(null);
   };
@@ -321,6 +448,14 @@ export default function ServicosPage() {
       price: parseFloat(formData.get('price') as string),
     };
     setAvailableMaterials([...availableMaterials, newMaterial]);
+    // try to persist new material to supabase
+    (async () => {
+      try {
+        if (supabase) {
+          await supabase.from('materiais').insert({ nome: newMaterial.name, unidade: newMaterial.unit, preco: newMaterial.price });
+        }
+      } catch (err) { console.warn('failed to persist new material', err); }
+    })();
     setShowNewMaterialModal(false);
   };
 
@@ -700,10 +835,11 @@ export default function ServicosPage() {
               </button>
             </div>
 
-            <div className="p-3 lg:p-6 space-y-3 lg:space-y-4">
+              <form id="editServiceForm" onSubmit={handleSaveEdit} className="p-3 lg:p-6 space-y-3 lg:space-y-4">
               <div>
                 <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1.5 lg:mb-2">Nome do Serviço</label>
                 <input
+                  name="name"
                   type="text"
                   defaultValue={selectedService.name}
                   className="w-full px-3 lg:px-4 py-1.5 lg:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs lg:text-sm"
@@ -713,6 +849,7 @@ export default function ServicosPage() {
               <div>
                 <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1.5 lg:mb-2">Categoria</label>
                 <select 
+                  name="category"
                   defaultValue={selectedService.category}
                   className="w-full px-3 lg:px-4 py-1.5 lg:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs lg:text-sm cursor-pointer"
                 >
@@ -726,8 +863,9 @@ export default function ServicosPage() {
                 <div>
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1.5 lg:mb-2">Valor Padrão</label>
                   <input
+                    name="price"
                     type="text"
-                    defaultValue={`R$ ${(Number(selectedService.price) || 0).toFixed(2)}`}
+                    defaultValue={`${(Number(selectedService.price) || 0).toFixed(2)}`}
                     className="w-full px-3 lg:px-4 py-1.5 lg:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs lg:text-sm"
                   />
                 </div>
@@ -735,13 +873,13 @@ export default function ServicosPage() {
                 <div>
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1.5 lg:mb-2">Tempo Médio</label>
                   <input
+                    name="time"
                     type="text"
                     defaultValue={selectedService.time}
                     className="w-full px-3 lg:px-4 py-1.5 lg:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs lg:text-sm"
                   />
                 </div>
               </div>
-            </div>
 
             <div className="p-3 lg:p-6 border-t border-gray-200 flex items-center justify-end gap-2 lg:gap-3 sticky bottom-0 bg-white">
               <button
@@ -751,12 +889,14 @@ export default function ServicosPage() {
                 Cancelar
               </button>
               <button 
-                onClick={handleSaveEdit}
+                type="submit"
+                form="editServiceForm"
                 className="px-3 lg:px-6 py-1.5 lg:py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600 transition-all whitespace-nowrap cursor-pointer font-medium text-xs lg:text-sm"
               >
                 Salvar Alterações
               </button>
             </div>
+            </form>
           </div>
         </div>
       )}
