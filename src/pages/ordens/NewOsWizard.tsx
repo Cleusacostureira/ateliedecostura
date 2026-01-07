@@ -39,6 +39,8 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   const [showPostConfirm, setShowPostConfirm] = useState(false);
   const [postConfirmSentMessage, setPostConfirmSentMessage] = useState(false);
   const [lastCreatedOrder, setLastCreatedOrder] = useState<any | null>(null);
+  const [showServiceAddedToast, setShowServiceAddedToast] = useState(false);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
 
   const formatDate = (d?: string | null) => {
     if (!d) return '';
@@ -238,6 +240,8 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   const addServiceToPiece = (pieceId: string, svc: any) => {
     const price = Number(svc.preco || svc.price || 0) || 0;
     setPieces(prev => prev.map(p => p.id === pieceId ? { ...p, services: [...p.services, { id: svc.id, name: svc.titulo || svc.name || svc.title, price: Number(price) }] } : p));
+    // show success toast
+    try { setShowServiceAddedToast(true); setTimeout(()=>setShowServiceAddedToast(false), 2000); } catch(e){}
   };
 
   const createServiceInline = async () => {
@@ -513,6 +517,18 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
     setIsSubmitting(false);
   };
 
+  const sendFidelizacaoAndOpenPrint = (order:any) => {
+    try {
+      const phone = (selectedClient?.telefone || selectedClient?.phone || order?.phone || '').toString().replace(/\D/g,'');
+      const servicesText = (order.pieces || []).flatMap((p:any) => (p.services||[]).map((s:any) => s.name || s.titulo || s.title || '')).join(', ');
+      const message = `Olá ${order.cliente || selectedClient?.nome || ''}! Obrigado pela preferência. Sua OS ${order.numero} foi confirmada. Serviço(s): ${servicesText}. Total: R$ ${Number(order.total||0).toFixed(2)}.`;
+      if (phone) window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(message)}`, '_blank');
+    } catch (e) { console.warn('fidelizacao send failed', e); }
+    setPostConfirmSentMessage(true);
+    // open print preview modal after sending
+    setShowPrintPreview(true);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose}></div>
@@ -521,7 +537,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
           <div className="px-3 py-2 bg-yellow-300 text-black rounded">DEBUG: showAddAnotherModal = true</div>
         </div>
       )}
-      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full p-6 z-10">
+      <div className="bg-white shadow-xl w-full h-full sm:h-auto sm:max-w-3xl sm:rounded-lg p-4 sm:p-6 z-10 overflow-auto">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold">Nova Ordem de Serviço — Passo {step} de 10</h3>
           <button onClick={onClose} className="text-gray-500">Fechar</button>
@@ -558,8 +574,12 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                     <div className="text-lg font-medium mb-2">Ordem criada — #{lastCreatedOrder.numero}</div>
                     <div className="text-sm text-gray-600 mb-4">Deseja enviar a mensagem de fidelização agora?</div>
                     <div className="flex gap-2 justify-end">
-                      {!postConfirmSentMessage && <button onClick={()=>{ console.debug('send message', lastCreatedOrder); setPostConfirmSentMessage(true); }} className="px-4 py-2 bg-rose-500 text-white rounded">Enviar mensagem</button>}
-                      {postConfirmSentMessage && <button onClick={()=>{ window.print(); }} className="px-4 py-2 bg-blue-600 text-white rounded">Imprimir</button>}
+                      {!postConfirmSentMessage && (
+                        <button onClick={()=>{ sendFidelizacaoAndOpenPrint(lastCreatedOrder); }} className="px-4 py-2 bg-rose-500 text-white rounded">Enviar mensagem</button>
+                      )}
+                      {postConfirmSentMessage && (
+                        <button onClick={()=>{ setShowPrintPreview(true); }} className="px-4 py-2 bg-blue-600 text-white rounded">Imprimir</button>
+                      )}
                       <button onClick={()=>{ setShowPostConfirm(false); onClose(); }} className="px-4 py-2 border rounded">Fechar</button>
                     </div>
                   </div>
@@ -581,9 +601,9 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
           {step === 2 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Prioridade</label>
-              <div className="flex gap-2">
-                <button onClick={()=>setPriority('Normal')} className={`px-4 py-3 rounded ${priority==='Normal' ? 'bg-rose-500 text-white' : 'border'}`}>Normal</button>
-                <button onClick={()=>setPriority('Urgente')} className={`px-4 py-3 rounded ${priority==='Urgente' ? 'bg-red-600 text-white' : 'border'}`}>Urgente</button>
+              <div className="flex items-center justify-center gap-4">
+                <button onClick={()=>setPriority('Normal')} className={`px-6 py-4 text-base rounded ${priority==='Normal' ? 'bg-rose-500 text-white' : 'border'}`}>Normal</button>
+                <button onClick={()=>setPriority('Urgente')} className={`px-8 py-5 text-lg rounded ${priority==='Urgente' ? 'bg-red-600 text-white' : 'border'}`}>Urgente</button>
               </div>
             </div>
           )}
@@ -591,7 +611,10 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
           {step === 3 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Data de Entrada</label>
-              <input type="date" value={dateIn} onChange={e=>setDateIn(e.target.value)} className="border p-2 rounded w-full" />
+              <div className="border rounded p-4 text-center">
+                <div className="text-sm text-gray-500 mb-2">Clique para adicionar a data</div>
+                <input type="date" value={dateIn} onChange={e=>setDateIn(e.target.value)} className="mx-auto border p-3 rounded text-base" />
+              </div>
             </div>
           )}
 
@@ -660,6 +683,16 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                       <div className="font-medium flex items-center gap-2">{p.icone || '🧵'} <span>{p.tipo}</span> <span className="text-xs text-gray-500">{p.cor}</span></div>
                       <div className="text-sm text-gray-500">Serviços: {(p.services||[]).length}</div>
                     </div>
+                    {(p.services||[]).length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {(p.services||[]).map((s:any, idx:number) => (
+                          <div key={idx} className="flex justify-between items-center">
+                            <div className="font-semibold">{s.name}</div>
+                            <div className="text-sm text-gray-700">R$ {Number(s.price||0).toFixed(2)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -747,7 +780,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                             </div>
                           </div>
                           <div>
-                            <button onClick={()=>addServiceToPiece(selectedPieceForService, s)} className="px-3 py-1 bg-rose-500 text-white rounded">Adicionar</button>
+                            <button onClick={()=>{ addServiceToPiece(selectedPieceForService, s); alert('Servico adicionado com sucesso!'); }} className="px-3 py-1 bg-rose-500 text-white rounded">Adicionar</button>
                           </div>
                         </div>
                       );
@@ -759,7 +792,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                     <div className="space-y-2 max-h-40 overflow-auto">
                       {pieces.find(p=>p.id===selectedPieceForService)?.services.map((sv:any, idx:number) => (
                         <div key={idx} className="p-2 border rounded flex justify-between items-center">
-                          <div>{sv.name}</div>
+                          <div className="font-semibold">{sv.name}</div>
                           <div className="flex items-center gap-2">
                             {editingAddedService && editingAddedService.pieceId === selectedPieceForService && editingAddedService.idx === idx ? (
                               <>
@@ -867,6 +900,42 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
               <div className="flex justify-end gap-2">
                 <button onClick={()=>{ setShowAddAnotherModal(false); /* stay on step 5 */ }} className="px-4 py-2 bg-rose-500 text-white rounded">Sim</button>
                 <button onClick={()=>{ setShowAddAnotherModal(false); setStep(6); }} className="px-4 py-2 border rounded">Não</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Service added toast */}
+        {showServiceAddedToast && (
+          <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
+            <div className="bg-green-600 text-white px-4 py-2 rounded shadow">Serviço adicionado com sucesso!</div>
+          </div>
+        )}
+
+        {/* Print preview modal */}
+        {showPrintPreview && lastCreatedOrder && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={()=>setShowPrintPreview(false)}></div>
+            <div className="bg-white w-full max-w-md rounded-lg p-4 z-10 overflow-auto relative">
+              <button onClick={()=>setShowPrintPreview(false)} className="absolute right-3 top-3 text-gray-600 text-lg">×</button>
+              <div className="text-lg font-bold mb-2">Impressão — OS {lastCreatedOrder.numero}</div>
+              <div className="text-sm text-gray-700 mb-2">Cliente: {lastCreatedOrder.cliente || lastCreatedOrder.client}</div>
+              <div className="mb-2">
+                {(lastCreatedOrder.pieces||[]).map((p:any, i:number) => (
+                  <div key={i} className="border-b py-2">
+                    <div className="font-medium">{p.tipo}</div>
+                    {(p.services||[]).map((s:any,si:number) => (
+                      <div key={si} className="flex justify-between">
+                        <div className="font-semibold">{s.name}</div>
+                        <div>R$ {Number(s.price||s.value||0).toFixed(2)}</div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div className="font-bold text-right">Total: R$ {Number(lastCreatedOrder.total||0).toFixed(2)}</div>
+              <div className="mt-4 flex gap-2 justify-end">
+                <button onClick={()=>{ window.print(); }} className="px-4 py-2 bg-blue-600 text-white rounded">Imprimir</button>
+                <button onClick={()=>setShowPrintPreview(false)} className="px-4 py-2 border rounded">Fechar</button>
               </div>
             </div>
           </div>
