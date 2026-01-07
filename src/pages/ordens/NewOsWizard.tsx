@@ -532,11 +532,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose}></div>
-      {showAddAnotherModal && (
-        <div className="fixed top-4 right-4 z-[9999]">
-          <div className="px-3 py-2 bg-yellow-300 text-black rounded">DEBUG: showAddAnotherModal = true</div>
-        </div>
-      )}
+      {/* remove debug banner for add-another flow */}
       <div className="bg-white shadow-xl w-full h-full sm:h-auto sm:max-w-3xl sm:rounded-lg p-4 sm:p-6 z-10 overflow-auto">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold">Nova Ordem de Serviço — Passo {step} de 10</h3>
@@ -585,7 +581,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                   </div>
                 </div>
               )}
-              <div className="max-h-40 overflow-auto border rounded p-2">
+              <div className="border rounded p-2 max-h-[60vh] sm:max-h-40 overflow-auto">
                 {(clients||[]).filter(c => String(c.nome || c.name || '').toLowerCase().includes(searchClient.toLowerCase())).map(c => (
                   <div key={c.id || c.nome} onClick={()=>setSelectedClient(c)} className={`p-2 rounded cursor-pointer ${selectedClient?.id===c.id ? 'bg-rose-50 border border-rose-200' : ''}`}>
                     <div className="flex items-center justify-between">
@@ -602,8 +598,8 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Prioridade</label>
               <div className="flex items-center justify-center gap-4">
-                <button onClick={()=>setPriority('Normal')} className={`px-6 py-4 text-base rounded ${priority==='Normal' ? 'bg-rose-500 text-white' : 'border'}`}>Normal</button>
-                <button onClick={()=>setPriority('Urgente')} className={`px-8 py-5 text-lg rounded ${priority==='Urgente' ? 'bg-red-600 text-white' : 'border'}`}>Urgente</button>
+                <button onClick={()=>setPriority('Normal')} className={`px-8 py-4 text-lg rounded ${priority==='Normal' ? 'bg-rose-500 text-white' : 'border'}`}>Normal</button>
+                <button onClick={()=>setPriority('Urgente')} className={`px-8 py-4 text-lg rounded ${priority==='Urgente' ? 'bg-red-600 text-white' : 'border'}`}>Urgente</button>
               </div>
             </div>
           )}
@@ -621,7 +617,10 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
           {step === 4 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Previsão de Entrega</label>
-              <input type="date" value={dateOut} onChange={e=>setDateOut(e.target.value)} className="border p-2 rounded w-full" />
+              <div className="border rounded p-4 text-center">
+                <div className="text-sm text-gray-500 mb-2">Clique para adicionar a data</div>
+                <input type="date" value={dateOut} onChange={e=>setDateOut(e.target.value)} className="mx-auto border p-3 rounded text-base" />
+              </div>
             </div>
           )}
 
@@ -696,73 +695,16 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                   </div>
                 ))}
               </div>
-              {/* Inline fallback prompt in case overlay modal is not visible due to stacking/z-index issues */}
-              {showAddAnotherModal && (
-                <div className="mt-3 p-3 border rounded bg-yellow-50">
-                  <div className="font-medium">Peça adicionada</div>
-                  <div className="text-sm text-gray-600 mb-2">Deseja adicionar outra peça?</div>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={()=>{ setShowAddAnotherModal(false); }} className="px-3 py-1 bg-rose-500 text-white rounded">Sim</button>
-                    <button onClick={()=>{ setShowAddAnotherModal(false); setStep(6); }} className="px-3 py-1 border rounded">Não</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {step === 6 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Serviços da Peça</label>
-              <div className="mb-2">Selecione a peça:</div>
-              <div className="mb-3">
-                {selectedPieceForService ? (
-                  (() => {
-                    const p = pieces.find(x=>x.id===selectedPieceForService);
-                    if (!p) return null;
-                    return (
-                      <div className="flex items-center justify-between p-3 border rounded bg-rose-50">
-                        <div className="flex items-center gap-3">
-                          <div className="text-2xl">{p.icone || '🧵'}</div>
-                          <div>
-                            <div className="font-medium">{p.tipo}</div>
-                            <div className="text-xs text-gray-500">{p.cor || ''}</div>
-                          </div>
-                        </div>
-                        <div>
-                          <button onClick={()=>setSelectedPieceForService(null)} className="px-3 py-1 border rounded text-sm">Trocar</button>
-                        </div>
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <div className="flex gap-2 mb-3">
-                    {pieces.map(p => (
-                      <button key={p.id} onClick={()=>setSelectedPieceForService(p.id)} className={`flex items-center gap-2 px-3 py-2 border rounded ${selectedPieceForService===p.id ? 'bg-rose-50 border-rose-200' : 'bg-white'}`}>
-                        <span className="text-lg">{p.icone || '🧵'}</span>
-                        <span className="text-sm">{p.tipo}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
               {selectedPieceForService ? (
                 <div>
-                  <div className="mb-2 flex items-center gap-2">
-                    <input placeholder="Pesquisar serviços" value={serviceSearch} onChange={e=>setServiceSearch(e.target.value)} className="flex-1 border p-2 rounded" />
-                    <button onClick={()=>{ setNewServiceName(serviceSearch); }} className="px-3 py-2 border rounded text-sm">Cadastrar</button>
-                  </div>
-                  {/* if nothing matches, show quick create */}
-                  {serviceSearch && (servicesList||[]).filter(s=> (s.titulo||s.name||s.title||'').toLowerCase().includes(serviceSearch.toLowerCase())).length === 0 && (
-                    <div className="p-3 border rounded mb-3">
-                      <div className="text-sm font-medium mb-1">Serviço não encontrado — cadastrar</div>
-                      <input placeholder="Nome do serviço" value={newServiceName} onChange={e=>setNewServiceName(e.target.value)} className="w-full border p-2 rounded mb-2" />
-                      <input type="number" placeholder="Preço" value={newServicePrice as any} onChange={e=>setNewServicePrice(e.target.value ? Number(e.target.value) : '')} className="w-full border p-2 rounded mb-2" />
-                      <div className="flex justify-end">
-                        <button onClick={createServiceInline} className="px-3 py-2 bg-rose-500 text-white rounded">Criar serviço</button>
-                      </div>
+                  <div className="mt-3">
+                    <input placeholder="Nome do serviço" value={newServiceName} onChange={e=>setNewServiceName(e.target.value)} className="w-full border p-2 rounded mb-2" />
+                    <input type="number" placeholder="Preço" value={newServicePrice as any} onChange={e=>setNewServicePrice(e.target.value ? Number(e.target.value) : '')} className="w-full border p-2 rounded mb-2" />
+                    <div className="flex justify-end mb-3">
+                      <button onClick={createServiceInline} className="px-3 py-2 bg-rose-500 text-white rounded">Criar serviço</button>
                     </div>
-                  )}
+                  </div>
+
                   <div className="mb-2 font-medium">Serviços disponíveis</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-auto">
                     {((servicesList||[]).slice().sort((a:any,b:any) => (String(a.titulo||a.name||a.title||'')).localeCompare(String(b.titulo||b.name||b.title||''), 'pt-BR', { sensitivity: 'base' })).filter((s:any)=> !serviceSearch || (String(s.titulo||s.name||s.title||'')).toLowerCase().includes(serviceSearch.toLowerCase()))) .map((s:any) => {
@@ -780,7 +722,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
                             </div>
                           </div>
                           <div>
-                            <button onClick={()=>{ addServiceToPiece(selectedPieceForService, s); alert('Servico adicionado com sucesso!'); }} className="px-3 py-1 bg-rose-500 text-white rounded">Adicionar</button>
+                            <button onClick={()=>{ addServiceToPiece(selectedPieceForService || pieces[0]?.id, s); }} className="px-3 py-1 bg-rose-500 text-white rounded">Adicionar</button>
                           </div>
                         </div>
                       );
@@ -894,12 +836,12 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
         {showAddAnotherModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/40" onClick={()=>setShowAddAnotherModal(false)}></div>
-            <div className="bg-white rounded-lg p-4 z-10 w-full max-w-sm">
-              <div className="text-base font-medium mb-2">Peça adicionada</div>
-              <div className="text-sm text-gray-600 mb-4">Deseja adicionar outra peça?</div>
-              <div className="flex justify-end gap-2">
-                <button onClick={()=>{ setShowAddAnotherModal(false); /* stay on step 5 */ }} className="px-4 py-2 bg-rose-500 text-white rounded">Sim</button>
-                <button onClick={()=>{ setShowAddAnotherModal(false); setStep(6); }} className="px-4 py-2 border rounded">Não</button>
+            <div className="bg-white rounded-lg p-4 z-10 w-full h-full sm:h-auto sm:max-w-md flex flex-col justify-center">
+              <div className="text-base font-medium mb-4 text-center">Peça adicionada</div>
+              <div className="text-sm text-gray-600 mb-6 text-center">Deseja adicionar outra peça?</div>
+              <div className="flex justify-center gap-4">
+                <button onClick={()=>{ setShowAddAnotherModal(false); /* stay on step 5 */ }} className="px-6 py-3 bg-rose-500 text-white rounded">Sim</button>
+                <button onClick={()=>{ setShowAddAnotherModal(false); setStep(6); }} className="px-6 py-3 border rounded">Não</button>
               </div>
             </div>
           </div>
@@ -917,22 +859,29 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
             <div className="absolute inset-0 bg-black/40" onClick={()=>setShowPrintPreview(false)}></div>
             <div className="bg-white w-full max-w-md rounded-lg p-4 z-10 overflow-auto relative">
               <button onClick={()=>setShowPrintPreview(false)} className="absolute right-3 top-3 text-gray-600 text-lg">×</button>
-              <div className="text-lg font-bold mb-2">Impressão — OS {lastCreatedOrder.numero}</div>
-              <div className="text-sm text-gray-700 mb-2">Cliente: {lastCreatedOrder.cliente || lastCreatedOrder.client}</div>
-              <div className="mb-2">
-                {(lastCreatedOrder.pieces||[]).map((p:any, i:number) => (
-                  <div key={i} className="border-b py-2">
-                    <div className="font-medium">{p.tipo}</div>
-                    {(p.services||[]).map((s:any,si:number) => (
-                      <div key={si} className="flex justify-between">
-                        <div className="font-semibold">{s.name}</div>
-                        <div>R$ {Number(s.price||s.value||0).toFixed(2)}</div>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-              <div className="font-bold text-right">Total: R$ {Number(lastCreatedOrder.total||0).toFixed(2)}</div>
+              {
+                (() => {
+                  const o = lastCreatedOrder;
+                  const header = '   ATELIÊ DE COSTUREIRA\n   Rua Exemplo, 123 - Cidade\n   Tel: (11) 99999-9999\n';
+                  const line = '-'.repeat(32) + '\n';
+                  const cliente = `Cliente: ${o?.cliente || o?.client || ''}` + '\n';
+                  const numero = `OS: ${o?.numero || ''}` + '  ' + (o?.dateIn ? `Entrada: ${formatDate(o.dateIn)}` : '') + '\n';
+                  let items = '';
+                  (o?.pieces || []).forEach((p:any) => {
+                    items += `${p.tipo}\n`;
+                    (p.services||[]).forEach((s:any) => {
+                      const name = (s.name || s.titulo || '').substring(0,22);
+                      const price = Number(s.price||s.preco||0).toFixed(2);
+                      const padded = name.padEnd(24,' ')+price.padStart(8,' ')+"\n";
+                      items += padded;
+                    });
+                  });
+                  const total = `\nTotal: R$ ${Number(o?.total||0).toFixed(2)}\n`;
+                  const footer = '\nObrigado pela preferência!\nRetirada prevista: ' + (o?.dateOut ? formatDate(o.dateOut) : '-') + '\n';
+                  const receipt = header + line + numero + cliente + line + items + line + total + footer + line;
+                  return (<pre className="font-mono text-sm whitespace-pre-wrap">{receipt}</pre>);
+                })()
+              }
               <div className="mt-4 flex gap-2 justify-end">
                 <button onClick={()=>{ window.print(); }} className="px-4 py-2 bg-blue-600 text-white rounded">Imprimir</button>
                 <button onClick={()=>setShowPrintPreview(false)} className="px-4 py-2 border rounded">Fechar</button>
