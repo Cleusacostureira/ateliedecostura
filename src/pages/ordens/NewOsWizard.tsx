@@ -38,6 +38,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   const [editingAddedService, setEditingAddedService] = useState<{ pieceId: string; idx: number; price: number | '' } | null>(null);
   const [showPostConfirm, setShowPostConfirm] = useState(false);
   const [postConfirmSentMessage, setPostConfirmSentMessage] = useState(false);
+  const [showPrintConfirm, setShowPrintConfirm] = useState(false);
   const [lastCreatedOrder, setLastCreatedOrder] = useState<any | null>(null);
   const [showServiceAddedToast, setShowServiceAddedToast] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
@@ -516,7 +517,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
     setIsSubmitting(false);
   };
 
-  const sendFidelizacaoAndOpenPrint = (order:any) => {
+  const sendFidelizacaoAndDontAutoPrint = (order:any) => {
     try {
       const phone = (selectedClient?.telefone || selectedClient?.phone || order?.phone || '').toString().replace(/\D/g,'');
       const servicesText = (order.pieces || []).flatMap((p:any) => (p.services||[]).map((s:any) => s.name || s.titulo || s.title || '')).join(', ');
@@ -524,8 +525,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
       if (phone) window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(message)}`, '_blank');
     } catch (e) { console.warn('fidelizacao send failed', e); }
     setPostConfirmSentMessage(true);
-    // open print preview modal after sending
-    setShowPrintPreview(true);
+    // do not open print preview automatically; ask user on close
   };
 
   return (
@@ -881,12 +881,28 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
               <div className="text-sm text-gray-600 mb-4">Deseja enviar a mensagem de fidelização agora?</div>
               <div className="flex gap-2 justify-end">
                 {!postConfirmSentMessage && (
-                  <button onClick={()=>{ sendFidelizacaoAndOpenPrint(lastCreatedOrder); }} className="px-4 py-2 bg-rose-500 text-white rounded">Enviar mensagem</button>
+                  <button onClick={()=>{ sendFidelizacaoAndDontAutoPrint(lastCreatedOrder); }} className="px-4 py-2 bg-green-600 text-white rounded">Enviar WhatsApp</button>
                 )}
                 {postConfirmSentMessage && (
-                  <button onClick={()=>{ setShowPrintPreview(true); }} className="px-4 py-2 bg-blue-600 text-white rounded">Imprimir</button>
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm text-green-700">Mensagem enviada</div>
+                    <button onClick={()=>{ setShowPrintPreview(true); setShowPostConfirm(false); }} className="px-3 py-1 bg-blue-600 text-white rounded">Imprimir</button>
+                  </div>
                 )}
-                <button onClick={()=>{ setShowPostConfirm(false); }} className="px-4 py-2 border rounded">Fechar</button>
+                <button onClick={()=>{ setShowPrintConfirm(true); }} className="px-4 py-2 border rounded">Fechar</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Print confirm dialog shown when user chooses to close the post-confirm modal */}
+        {showPrintConfirm && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={()=>setShowPrintConfirm(false)}></div>
+            <div className="bg-white rounded-lg p-4 z-10 w-full max-w-sm text-center">
+              <div className="mb-3">Deseja imprimir a OS agora?</div>
+              <div className="flex justify-center gap-3">
+                <button onClick={()=>{ setShowPrintConfirm(false); setShowPostConfirm(false); setShowPrintPreview(true); }} className="px-4 py-2 bg-rose-500 text-white rounded">Sim</button>
+                <button onClick={()=>{ setShowPrintConfirm(false); setShowPostConfirm(false); }} className="px-4 py-2 border rounded">Não</button>
               </div>
             </div>
           </div>
