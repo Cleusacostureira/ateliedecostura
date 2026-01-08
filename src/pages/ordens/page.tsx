@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import DebugCopyButton from '../../components/DebugCopyButton';
 import NewOsWizard from './NewOsWizard';
 import { addPointsForOrder, loadClients, upsertClient, getClientById } from '../../lib/clients';
 import { formatMessageForStatus } from '../../lib/messages';
 import { supabase } from '../../lib/supabaseClient';
+import { debugLog } from '../../lib/debugLogger';
 
 // small constants used by the piece/color pickers when DB lists are missing
 const COLORS = ['Preta','Branca','Azul','Vermelha','Verde','Amarela','Rosa','Bege','Cinza','Marrom'];
@@ -129,6 +131,16 @@ export default function OrdensPage() {
     const [pecasSearch, setPecasSearch] = useState('');
     const [pieceTipo, setPieceTipo] = useState('');
     const [pieceCor, setPieceCor] = useState('');
+
+    // edit modal inputs (added to fix non-opening Edit modal)
+    const [editClient, setEditClient] = useState('');
+    const [editCategory, setEditCategory] = useState('');
+    const [editServiceName, setEditServiceName] = useState('');
+    const [editValue, setEditValue] = useState('');
+    const [editStatus, setEditStatus] = useState('Recebido');
+    const [editDateIn, setEditDateIn] = useState('');
+    const [editDateOut, setEditDateOut] = useState('');
+    const [editObservation, setEditObservation] = useState('');
 
     // NOTE: removed temporary forced import data to avoid injecting fake records
     // (this block previously added sample orders N00024 and N00025).
@@ -575,6 +587,7 @@ export default function OrdensPage() {
 
 
   const handleEdit = (order: any) => {
+    try { debugLog('[handleEdit] called', { id: order && order.id }); } catch(_){}
     setSelectedOrder(order);
     // initialize edit fields
     setEditClient(order.client || '');
@@ -1500,6 +1513,7 @@ export default function OrdensPage() {
   };
 
   const applyQuickStatus = (order: any, newStatus: string) => {
+    try { debugLog('[applyQuickStatus] called', { id: order && order.id }, newStatus); } catch(_){ }
     // If marking as Retirado, handle payment confirmation and marking
       if (newStatus === 'Retirado') {
       if (order.paymentStatus === 'Pago') {
@@ -2073,6 +2087,7 @@ export default function OrdensPage() {
       
       <main className="flex-1 lg:ml-56 pt-14 lg:pt-0 min-w-0">
         <div className="p-4 lg:p-8 min-w-0">
+          <DebugCopyButton />
           <style>{`
             /* Blink only the "ATRASADO" badge as a slow alert */
             .late-blink { animation: lateBlink 2.0s ease-in-out infinite; }
@@ -2089,12 +2104,15 @@ export default function OrdensPage() {
             >
               <i className="ri-add-line text-xl w-5 h-5 flex items-center justify-center"></i>
               Nova Ordem
-            </button>
-            {/* Debug buttons removed for production */}
-          </div>
-
-          {/* Dev debug panel removed for production/deploy */}
-
+                                <button
+                                  type="button"
+                                  style={{ touchAction: 'manipulation' }}
+                                  onTouchEnd={(e) => { try{ console.debug('[MobileButton] Retirado touchend', order && order.id); }catch(_){} e.stopPropagation(); e.preventDefault(); applyQuickStatus(order, 'Retirado'); }}
+                                  onPointerUp={(e) => { try{ console.debug('[MobileButton] Retirado', order && order.id); }catch(_){} e.stopPropagation(); e.preventDefault(); applyQuickStatus(order, 'Retirado'); }}
+                                  onClick={(e) => { try{ console.debug('[MobileButton] Retirado click', order && order.id); }catch(_){} e.stopPropagation(); applyQuickStatus(order, 'Retirado'); }}
+                                  title="Retirado"
+                                  className="w-10 h-10 flex items-center justify-center text-white bg-purple-600 rounded text-lg"
+                                ><i className="ri-hand-heart-line"></i></button>
           <div className="flex flex-wrap gap-2 mb-6 items-center">
             {Object.entries(statusCounts).map(([status, count]) => {
               const icon = statusIcons[status] || 'ri-checkbox-blank-line';
