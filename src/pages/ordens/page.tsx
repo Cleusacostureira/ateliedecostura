@@ -2104,15 +2104,7 @@ export default function OrdensPage() {
             >
               <i className="ri-add-line text-xl w-5 h-5 flex items-center justify-center"></i>
               Nova Ordem
-                                <button
-                                  type="button"
-                                  style={{ touchAction: 'manipulation' }}
-                                  onTouchEnd={(e) => { try{ console.debug('[MobileButton] Retirado touchend', order && order.id); }catch(_){} e.stopPropagation(); e.preventDefault(); applyQuickStatus(order, 'Retirado'); }}
-                                  onPointerUp={(e) => { try{ console.debug('[MobileButton] Retirado', order && order.id); }catch(_){} e.stopPropagation(); e.preventDefault(); applyQuickStatus(order, 'Retirado'); }}
-                                  onClick={(e) => { try{ console.debug('[MobileButton] Retirado click', order && order.id); }catch(_){} e.stopPropagation(); applyQuickStatus(order, 'Retirado'); }}
-                                  title="Retirado"
-                                  className="w-10 h-10 flex items-center justify-center text-white bg-purple-600 rounded text-lg"
-                                ><i className="ri-hand-heart-line"></i></button>
+            </button>
           <div className="flex flex-wrap gap-2 mb-6 items-center">
             {Object.entries(statusCounts).map(([status, count]) => {
               const icon = statusIcons[status] || 'ri-checkbox-blank-line';
