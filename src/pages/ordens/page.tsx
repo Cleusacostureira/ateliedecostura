@@ -138,6 +138,26 @@ export default function OrdensPage() {
     const [editServiceName, setEditServiceName] = useState('');
     const [editValue, setEditValue] = useState('');
     const [editStatus, setEditStatus] = useState('Recebido');
+    // prevent duplicate quick-status changes while a previous change is in-flight
+    const pendingStatusRef = useRef<Set<string>>(new Set());
+    const [pendingIds, setPendingIds] = useState<string[]>([]);
+
+    const addPendingId = (id: string) => setPendingIds((p) => (p.includes(id) ? p : [...p, id]));
+    const removePendingId = (id: string) => setPendingIds((p) => p.filter(x => x !== id));
+
+    const handleQuickTap = async (order: any, newStatus: string, e?: React.MouseEvent) => {
+      try { if (e && e.stopPropagation) e.stopPropagation(); } catch(_){}
+      if (!order || !order.id) return;
+      if (pendingIds.includes(order.id) || pendingStatusRef.current.has(order.id)) return;
+      addPendingId(order.id);
+      try {
+        await applyQuickStatus(order, newStatus);
+      } catch (err) {
+        try { console.warn('handleQuickTap error', err); } catch(_){}
+      } finally {
+        removePendingId(order.id);
+      }
+    };
     const [editDateIn, setEditDateIn] = useState('');
     const [editDateOut, setEditDateOut] = useState('');
     const [editObservation, setEditObservation] = useState('');
@@ -1512,9 +1532,16 @@ export default function OrdensPage() {
     try { navigator.clipboard.writeText(message); alert('Mensagem copiada!'); } catch (e) { alert('Não foi possível copiar'); }
   };
 
-  const applyQuickStatus = (order: any, newStatus: string) => {
+  const applyQuickStatus = async (order: any, newStatus: string) => {
     try { debugLog('[applyQuickStatus] called', { id: order && order.id }, newStatus); } catch(_){ }
-    // If marking as Retirado, handle payment confirmation and marking
+    if (!order || !order.id) return;
+    if (pendingStatusRef.current.has(order.id)) {
+      try { debugLog('[applyQuickStatus] ignored duplicate', { id: order.id }, newStatus); } catch(_){}
+      return;
+    }
+    pendingStatusRef.current.add(order.id);
+    try {
+      // If marking as Retirado, handle payment confirmation and marking
       if (newStatus === 'Retirado') {
       if (order.paymentStatus === 'Pago') {
         const updatedOrder = { ...order, status: 'Retirado' };
@@ -1578,6 +1605,9 @@ export default function OrdensPage() {
         setClientePhone(updatedOrder.phone);
         setShowFidelizacaoModal(true);
       } catch (e) { console.warn('failed to build fidelizacao message for quick finalize', e); }
+    }
+    } finally {
+      try { pendingStatusRef.current.delete(order.id); } catch(_){}
     }
   };
 
@@ -2618,27 +2648,30 @@ export default function OrdensPage() {
                               {order.status !== 'Em costura' && order.status !== 'Pronto' && order.status !== 'Retirado' && (
                                 <button
                                   type="button"
-                                  onClick={(e) => { e.stopPropagation(); applyQuickStatus(order, 'Em costura'); }}
+                                  onClick={(e) => handleQuickTap(order, 'Em costura', e)}
                                   title="Iniciar"
-                                  className="w-10 h-10 flex items-center justify-center text-white bg-blue-600 rounded text-lg"
+                                  disabled={pendingIds.includes(order.id)}
+                                  className={"w-10 h-10 flex items-center justify-center text-white bg-blue-600 rounded text-lg " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}
                                 ><i className="ri-play-line"></i></button>
                               )}
 
                               {(order.status !== 'Pronto' && order.status !== 'Retirado') && (
                                 <button
                                   type="button"
-                                  onClick={(e) => { e.stopPropagation(); applyQuickStatus(order, 'Pronto'); }}
+                                  onClick={(e) => handleQuickTap(order, 'Pronto', e)}
                                   title="Finalizar"
-                                  className="w-10 h-10 flex items-center justify-center text-white bg-green-600 rounded text-lg"
+                                  disabled={pendingIds.includes(order.id)}
+                                  className={"w-10 h-10 flex items-center justify-center text-white bg-green-600 rounded text-lg " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}
                                 ><i className="ri-check-line"></i></button>
                               )}
 
                               {(order.status === 'Pronto' && order.status !== 'Retirado') && (
                                 <button
                                   type="button"
-                                  onClick={(e) => { e.stopPropagation(); applyQuickStatus(order, 'Retirado'); }}
+                                  onClick={(e) => handleQuickTap(order, 'Retirado', e)}
                                   title="Retirado"
-                                  className="w-10 h-10 flex items-center justify-center text-white bg-purple-600 rounded text-lg"
+                                  disabled={pendingIds.includes(order.id)}
+                                  className={"w-10 h-10 flex items-center justify-center text-white bg-purple-600 rounded text-lg " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}
                                 ><i className="ri-hand-heart-line"></i></button>
                               )}
 
@@ -2747,19 +2780,19 @@ export default function OrdensPage() {
                             <div className="flex items-center justify-center gap-3">
                               <div className="flex items-center gap-2">
                                 {order.status !== 'Em costura' && order.status !== 'Pronto' && order.status !== 'Retirado' && (
-                                  <button onClick={() => applyQuickStatus(order, 'Em costura')} title="Iniciar" className="w-8 h-8 flex items-center justify-center text-white bg-blue-600 rounded">
+                                  <button onClick={(e) => handleQuickTap(order, 'Em costura', e)} title="Iniciar" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-blue-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
                                     <i className="ri-play-line"></i>
                                   </button>
                                 )}
 
                                 {order.status !== 'Pronto' && order.status !== 'Retirado' && (
-                                  <button onClick={() => applyQuickStatus(order, 'Pronto')} title="Finalizar" className="w-8 h-8 flex items-center justify-center text-white bg-green-600 rounded">
+                                  <button onClick={(e) => handleQuickTap(order, 'Pronto', e)} title="Finalizar" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-green-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
                                     <i className="ri-check-line"></i>
                                   </button>
                                 )}
 
                                 {order.status === 'Pronto' && order.status !== 'Retirado' && (
-                                  <button onClick={() => applyQuickStatus(order, 'Retirado')} title="Marcar Retirado" className="w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded">
+                                  <button onClick={(e) => handleQuickTap(order, 'Retirado', e)} title="Marcar Retirado" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
                                     <i className="ri-hand-heart-line"></i>
                                   </button>
                                 )}
