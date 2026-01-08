@@ -36,6 +36,29 @@ const normalizeStatus = (s: any) => {
   } catch (e) { return String(s || 'Recebido'); }
 };
 
+// Aggregate pieces into a compact description like "4 Camiseta (Abrir uma fenda)"
+const formatPiecesSummary = (pieces: any[]) => {
+  try {
+    if (!Array.isArray(pieces) || pieces.length === 0) return '';
+    const map: Record<string, { count: number; services: Set<string> }> = {};
+    (pieces || []).forEach((p: any) => {
+      const tipo = String(p?.tipo || p?.nome || p?.tipo_nome || '').trim() || 'Peça';
+      if (!map[tipo]) map[tipo] = { count: 0, services: new Set() };
+      map[tipo].count += 1;
+      const svcArr = p?.services || p?.servicos || [];
+      (svcArr || []).forEach((s: any) => {
+        const name = String(s?.name || s?.nome || s?.titulo || s).trim();
+        if (name) map[tipo].services.add(name);
+      });
+    });
+    const parts = Object.entries(map).map(([tipo, info]) => {
+      const svc = Array.from(info.services).join(', ');
+      return `${info.count} ${tipo}${svc ? ' (' + svc + ')' : ''}`;
+    });
+    return parts.join(', ');
+  } catch (e) { return ''; }
+};
+
 // build a map of cashFlowDetails by order id/numero, ignoring locally deleted tombstones
 const getCashMap = () => {
   try {
@@ -64,6 +87,31 @@ const getCashMap = () => {
     return map;
   } catch (e) { return {}; }
 };
+
+// parse currency helper (similar to Financeiro) to normalize amounts
+function parseCurrency(raw: any) {
+  try {
+    if (raw === null || raw === undefined) return 0;
+    if (typeof raw === 'number') return raw;
+    let s = String(raw).trim();
+    s = s.replace(/R\$/g, '').replace(/\s/g, '');
+    if (s.indexOf('.') !== -1 && s.indexOf(',') !== -1) {
+      s = s.replace(/\./g, '').replace(/,/g, '.');
+    } else if (s.indexOf(',') !== -1 && s.indexOf('.') === -1) {
+      s = s.replace(/,/g, '.');
+    }
+    let n = parseFloat(s);
+    if (isNaN(n)) {
+      const digits = String(raw).replace(/\D/g, '');
+      if (!digits) return 0;
+      if (digits.length <= 2) return parseFloat(digits) / 100;
+      const reais = digits.slice(0, -2);
+      const cents = digits.slice(-2);
+      n = parseFloat(reais + '.' + cents);
+    }
+    return isNaN(n) ? 0 : n;
+  } catch (e) { return 0; }
+}
 
 // safely read `orders` from localStorage; supports forced write shape { __force: true, payload: [...] }
 const readOrdersFromStorage = (rawStr?: string) => {
@@ -119,6 +167,7 @@ export default function OrdensPage() {
     const [showPecasModal, setShowPecasModal] = useState(false);
     const [showCorModal, setShowCorModal] = useState(false);
     const [showNewClientModal, setShowNewClientModal] = useState(false);
+    const [storageImportText, setStorageImportText] = useState('');
 
     // small UI inputs
     const [statusFilter, setStatusFilter] = useState('Todos');
@@ -223,6 +272,16 @@ export default function OrdensPage() {
             };
 
             const enriched: any[] = [];
+            // preserve local overrides (like paymentStatus) when enriching server rows
+            const localExisting = readOrdersFromStorage();
+            const localMapById: Record<string, any> = {};
+            const localMapByNumero: Record<string, any> = {};
+            if (Array.isArray(localExisting)) {
+              localExisting.forEach((l:any) => {
+                try { if (l && l.id) localMapById[String(l.id)] = l; } catch(e){}
+                try { if (l && l.numero) localMapByNumero[String(l.numero)] = l; } catch(e){}
+              });
+            }
             for (const o of raw) {
               try {
                 let client = o.cliente_id ? clientsMap[String(o.cliente_id)] : null;
@@ -234,6 +293,7 @@ export default function OrdensPage() {
                 const pieces = parsedNotas.pieces || parsedNotas.pecas || [];
                 const services = parsedNotas.services || parsedNotas.servicos || [];
                 const servicesText = (services || []).flatMap((s:any) => [s.name || s.titulo || s.title || s.nome || String(s)]).join(', ').trim();
+                const pieceSummary = formatPiecesSummary(pieces);
 
                 const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
                 const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
@@ -247,9 +307,11 @@ export default function OrdensPage() {
                 const clientName = client?.nome || o.client || o.cliente || o.cliente_nome || o.nome || '';
                 const phoneVal = client?.telefone || o.phone || o.telefone || o.celular || '';
                 const clientFoto = client?.foto || o.client_foto || o.foto || null;
-                const serviceField = servicesText || o.service || o.servico || o.servicos || o.serviceText || '';
+                const serviceField = pieceSummary || servicesText || o.service || o.servico || o.servicos || o.serviceText || '';
                 const dateOutField = formatIsoToBR(o.data_entrega || o.dateOut || o.date_out || o.previsao || o.dataPrevista || o.delivery) || o.dateOut || '';
 
+                // apply local overrides if present (do not lose local paymentStatus)
+                const local = (o && String(o.id) && localMapById[String(o.id)]) || (o && String(o.numero) && localMapByNumero[String(o.numero)]) || {};
                 enriched.push({
                   ...o,
                   status: normalizeStatus(o.status),
@@ -260,7 +322,7 @@ export default function OrdensPage() {
                   services,
                   service: serviceField,
                   dateOut: dateOutField,
-                  paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
+                  paymentStatus: (local && local.paymentStatus !== undefined) ? local.paymentStatus : (finalPaid ? 'Pago' : (o.paymentStatus || null)),
                   value: displayValue,
                 });
               } catch (e) { enriched.push({ ...o, status: normalizeStatus(o.status) }); }
@@ -330,6 +392,7 @@ export default function OrdensPage() {
             const pieces = parsedNotas.pieces || parsedNotas.pecas || o.pieces || [];
             const services = parsedNotas.services || parsedNotas.servicos || (pieces||[]).flatMap((p:any) => p.services || []);
             const servicesText = (services || []).flatMap((s:any) => [s.name || s.titulo || s.title || s.nome || String(s)]).join(', ').trim();
+            const pieceSummary = formatPiecesSummary(pieces);
 
             const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
             const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
@@ -343,7 +406,7 @@ export default function OrdensPage() {
             const clientName = (client && (client.nome || client.name)) || o.client || o.cliente || o.cliente_nome || o.nome || '';
             const phoneVal = (client && (client.telefone || client.phone)) || o.phone || o.telefone || o.celular || '';
             const clientFoto = (client && client.foto) || o.client_foto || o.foto || null;
-            const serviceField = servicesText || o.service || o.servico || o.servicos || o.serviceText || '';
+            const serviceField = pieceSummary || servicesText || o.service || o.servico || o.servicos || o.serviceText || '';
             const dateOutField = formatIsoToBR(o.data_entrega || o.dateOut || o.date_out || o.previsao || o.dataPrevista || o.delivery) || o.dateOut || '';
 
             return {
@@ -389,9 +452,11 @@ export default function OrdensPage() {
               const chosenService = (local.service && String(local.service).trim()) ? local.service : serverService;
               const chosenDateOut = (local.dateOut && String(local.dateOut).trim()) ? local.dateOut : serverDateOut;
               const chosenValue = formatLocalValue(local.value !== undefined ? local.value : serverValue, serverValue);
+              const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
+              const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
               return {
                 ...o,
-                paymentStatus: (local.paymentStatus !== undefined ? local.paymentStatus : o.paymentStatus),
+                paymentStatus: (local.paymentStatus !== undefined ? local.paymentStatus : (cashPaid ? 'Pago' : o.paymentStatus)),
                 status: (local.status !== undefined ? normalizeStatus(local.status) : o.status),
                 service: chosenService,
                 dateOut: chosenDateOut,
@@ -1121,7 +1186,10 @@ export default function OrdensPage() {
 
   const serviceDisplayFor = (order: any) => {
     try {
+      // prefer aggregated pieces summary (quantity + services)
       const notasPieces = order.pieces || order.pecas || [];
+      const pieceSummary = formatPiecesSummary(notasPieces);
+      if (pieceSummary) return pieceSummary;
       const servicesWithPiece = (notasPieces || []).flatMap((p:any) => (p.services || []).map((s:any) => ({ ...s, pieceTipo: p.tipo })));
       return (servicesWithPiece && servicesWithPiece.length > 0)
         ? servicesWithPiece.map((s:any) => `${s.name || s.nome || s.title || ''}${s.pieceTipo ? ` (${s.pieceTipo})` : ''}`).join(', ')
@@ -1203,6 +1271,8 @@ export default function OrdensPage() {
     const localNum = getLocalNextNumber();
     const displayNumber = savedNumero ? formatOrderNumber(savedNumero) : formatOrderNumber(localNum);
 
+    const serviceFieldForNew = formatPiecesSummary(pieces) || servicesText || '';
+
     const newOrder = {
       id: savedId || `OS-${1242 + orders.length}`,
       numero: displayNumber,
@@ -1210,7 +1280,7 @@ export default function OrdensPage() {
       phone: clientPhone,
       client_foto: clientFoto,
       category: orderServices[0].category,
-      service: servicesText,
+      service: serviceFieldForNew,
       pieces,
       value: `R$ ${totalValue.toFixed(2)}`,
       status: newOrderStatus || 'Recebido',
@@ -1728,16 +1798,49 @@ export default function OrdensPage() {
             window.dispatchEvent(new CustomEvent('financeUpdated'));
           } catch (ee) { console.warn('failed to save cash entry locally', ee); }
         }
+
+      // Try to persist paymentStatus to ordens table so state is canonical
+      (async () => {
+        try {
+          if (supabase && typeof supabase.from === 'function') {
+            try {
+              if (orderId) {
+                const up = await supabase.from('ordens').update({ paymentStatus: newStatus === 'Pago' ? 'Pago' : null }).eq('id', orderId);
+                if ((up as any).error) {
+                  if ((up as any).error.code === 'PGRST205') { markFluxoMissing(); }
+                  console.warn('Supabase ordens paymentStatus update error', (up as any).error);
+                } else {
+                  try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
+                }
+              } else if (numero) {
+                const up2 = await supabase.from('ordens').update({ paymentStatus: newStatus === 'Pago' ? 'Pago' : null }).eq('numero', numero);
+                if ((up2 as any).error) {
+                  console.warn('Supabase ordens paymentStatus update by numero error', (up2 as any).error);
+                } else {
+                  try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
+                }
+              }
+            } catch (e) { console.warn('error updating ordens paymentStatus', e); }
+          }
+        } catch (e) { console.warn('ordens paymentStatus persistence failed', e); }
+      })();
       } else {
-        // remove entradas relacionadas no fluxo_caixa (server then local)
+        // marca como pendente/Não pago em vez de remover entradas
         try {
           if (isFluxoAvailable() && supabase && typeof supabase.from === 'function') {
-            const del1 = await supabase.from('fluxo_caixa').delete().eq('orderid', orderId);
-            if (del1 && (del1 as any).error && (del1 as any).error.code === 'PGRST205') { markFluxoMissing(); throw (del1 as any).error; }
-            if (numero) {
-              const del2 = await supabase.from('fluxo_caixa').delete().eq('numero', numero);
-              if (del2 && (del2 as any).error && (del2 as any).error.code === 'PGRST205') { markFluxoMissing(); throw (del2 as any).error; }
-            }
+            // try update by orderid then by numero
+            try {
+              if (orderId) {
+                const up = await supabase.from('fluxo_caixa').update({ status: 'Pendente' }).eq('orderid', orderId);
+                if ((up as any).error && (up as any).error.code === 'PGRST205') { markFluxoMissing(); }
+              }
+            } catch (e) { /* ignore */ }
+            try {
+              if (numero) {
+                const up2 = await supabase.from('fluxo_caixa').update({ status: 'Pendente' }).eq('numero', numero);
+                if ((up2 as any).error && (up2 as any).error.code === 'PGRST205') { markFluxoMissing(); }
+              }
+            } catch (e) { /* ignore */ }
             window.dispatchEvent(new CustomEvent('financeUpdated'));
           } else {
             throw new Error('no-supabase-or-fluxo-missing');
@@ -1746,10 +1849,17 @@ export default function OrdensPage() {
           try {
             const raw = localStorage.getItem('cashFlowDetails');
             const parsed = raw ? JSON.parse(raw) : [];
-            const filtered = (parsed || []).filter((c:any) => String(c.orderId || c.orderid) !== String(orderId) && !(numero && String(c.numero || '') === String(numero)));
-            localStorage.setItem('cashFlowDetails', JSON.stringify(filtered));
+            // update local entries to status 'Não pago' instead of removing
+            const updated = (parsed || []).map((c:any) => {
+              try {
+                if (orderId && String(c.orderId || c.orderid) === String(orderId)) return { ...c, status: 'Não pago' };
+                if (numero && String(c.numero || '') === String(numero)) return { ...c, status: 'Não pago' };
+              } catch (err) {}
+              return c;
+            });
+            localStorage.setItem('cashFlowDetails', JSON.stringify(updated));
             window.dispatchEvent(new CustomEvent('financeUpdated'));
-          } catch (ee) { console.warn('failed to remove local cash entries on unpaid', ee); }
+          } catch (ee) { console.warn('failed to mark local cash entries as unpaid', ee); }
         }
       }
     } catch (e) {
@@ -2647,7 +2757,7 @@ export default function OrdensPage() {
                             </button>
                           </div>
                         </div>
-                        <div className="text-xs text-gray-500 break-words">{orderRef(order)} · <span className={order.status === 'Em costura' ? 'font-bold' : ''}>{serviceDisplayFor(order)}</span></div>
+                        <div className="text-xs text-gray-500 break-words"><span className="text-blue-600 font-semibold">{orderRef(order)}</span> · <span className={order.status === 'Em costura' ? 'font-bold' : ''}>{serviceDisplayFor(order)}</span></div>
                         <div className="text-xs text-gray-600 mt-1">Prazo: {order.dateOut || '—'}</div>
                       </div>
                       <div className="text-right ml-3">
@@ -2758,7 +2868,7 @@ export default function OrdensPage() {
                               {order.client_foto ? <img src={order.client_foto} alt={order.client || 'cliente'} className="w-8 h-8 rounded-full object-cover inline-block" /> : null}
                               <div className="font-medium">{order.client}</div>
                             </div>
-                            <div className="text-xs text-gray-500">{orderRef(order)}</div>
+                            <div className="text-xs text-gray-500"><span className="text-blue-600 font-semibold">{orderRef(order)}</span></div>
                             <div className="sm:hidden mt-1 text-xs text-gray-600">{serviceDisplay} · {order.dateOut || '—'}</div>
                           </td>
                           <td className="hidden sm:table-cell px-3 py-3 align-top text-sm text-gray-700 break-words">{serviceDisplay}</td>

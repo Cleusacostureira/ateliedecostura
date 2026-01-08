@@ -7,6 +7,21 @@ export default function RelatoriosPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
   const [orders, setOrders] = useState<any[]>([]);
   const [clientsList, setClientsList] = useState<any[]>([]);
+  const [chartMonth, setChartMonth] = useState<number>(new Date().getMonth());
+  const [chartYear, setChartYear] = useState<number>(new Date().getFullYear());
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+
+  const seedSampleOrders = () => {
+    try {
+      const sample = [
+        { id: 'ord-000033', numero: '000033', client: 'Cliente Teste', total: 120.5, value: 120.5, pecas: [{ tipo: 'Camisa', nome: 'Camisa'},{ tipo: 'Camisa', nome: 'Camisa'}], service: 'Ajuste Geral', data: new Date().toISOString(), created_at: new Date().toISOString() },
+        { id: 'ord-000034', numero: '000034', client: 'Cliente Dois', total: 80, value: 80, pecas: [{ tipo: 'Vestido', nome: 'Vestido'}], service: 'Bainha', data: new Date().toISOString(), created_at: new Date().toISOString() }
+      ];
+      try { localStorage.setItem('orders', JSON.stringify(sample)); } catch (e) {}
+      setOrders(sample);
+      alert('Dados de teste adicionados em localStorage');
+    } catch (e) { console.warn('seed failed', e); }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -46,7 +61,75 @@ export default function RelatoriosPage() {
         }
       } catch (e) { console.warn('relatorios localStorage parse failed', e); }
 
-      if (mounted) setOrders([]);
+      // Dev helper: seed sample orders into localStorage when requested via URL
+      try {
+        if (typeof window !== 'undefined' && window.location.search.includes('seedOrders=1')) {
+          const sample = [
+            {
+              id: 'ord-000033',
+              numero: '000033',
+              client: 'Cliente Teste',
+              total: 120.5,
+              value: 120.5,
+              pecas: [{ tipo: 'Camisa', nome: 'Camisa' }, { tipo: 'Camisa', nome: 'Camisa' }],
+              service: 'Ajuste Geral',
+              data: new Date().toISOString(),
+              created_at: new Date().toISOString()
+            },
+            {
+              id: 'ord-000034',
+              numero: '000034',
+              client: 'Cliente Dois',
+              total: 80,
+              value: 80,
+              pecas: [{ tipo: 'Vestido', nome: 'Vestido' }],
+              service: 'Bainha',
+              data: new Date().toISOString(),
+              created_at: new Date().toISOString()
+            }
+          ];
+          try { localStorage.setItem('orders', JSON.stringify(sample)); } catch(e) {}
+          if (mounted) setOrders(sample);
+          return;
+        }
+      } catch(e) {}
+
+      if (mounted) {
+        // if no orders and running locally, seed sample orders so charts show during dev
+        const host = typeof window !== 'undefined' ? (window.location.hostname || '') : '';
+        if ((host && (host.includes('localhost') || host.includes('127.0.0.1'))) ) {
+          try {
+            const sample = [
+              {
+                id: 'ord-000033',
+                numero: '000033',
+                client: 'Cliente Teste',
+                total: 120.5,
+                value: 120.5,
+                pecas: [{ tipo: 'Camisa', nome: 'Camisa' }, { tipo: 'Camisa', nome: 'Camisa' }],
+                service: 'Ajuste Geral',
+                data: new Date().toISOString(),
+                created_at: new Date().toISOString()
+              },
+              {
+                id: 'ord-000034',
+                numero: '000034',
+                client: 'Cliente Dois',
+                total: 80,
+                value: 80,
+                pecas: [{ tipo: 'Vestido', nome: 'Vestido' }],
+                service: 'Bainha',
+                data: new Date().toISOString(),
+                created_at: new Date().toISOString()
+              }
+            ];
+            try { localStorage.setItem('orders', JSON.stringify(sample)); } catch(e) {}
+            setOrders(sample);
+          } catch(e) { setOrders([]); }
+        } else {
+          setOrders([]);
+        }
+      }
     }
 
     fetchOrders();
@@ -202,6 +285,70 @@ export default function RelatoriosPage() {
   const evolutionMonthly = revenueByMonth;
   const maxEvo = Math.max(...evolutionMonthly, 1);
 
+  // Daily aggregates for selected month/year (orders)
+  const daysInMonth = (y:number,m:number) => new Date(y, m+1, 0).getDate();
+  const buildDailyAggregates = (y:number,m:number) => {
+    const days = daysInMonth(y,m);
+    const arr = Array.from({ length: days }).map((_,i) => ({ day: i+1, revenue: 0, services: 0 }));
+    const parseDate = (rawDate:any) : Date | null => {
+      try {
+        if (!rawDate) return null;
+        if (typeof rawDate === 'string') {
+          if (rawDate.includes('/')) {
+            const parts = rawDate.split('/').map((p:string)=>p.trim());
+            if (parts.length === 3) {
+              const day = parseInt(parts[0]);
+              const month = parseInt(parts[1]) - 1;
+              const year = parseInt(parts[2]);
+              if (!isNaN(day) && !isNaN(month) && !isNaN(year)) return new Date(year, month, day);
+            }
+          }
+          const maybe = new Date(rawDate as any);
+          if (maybe && !isNaN(maybe.getTime())) return maybe;
+        } else if (rawDate instanceof Date) return rawDate;
+        else if (typeof rawDate === 'number') return new Date(rawDate);
+      } catch(e) {}
+      return null;
+    };
+
+    (uniqOrders || []).forEach((o:any) => {
+      try {
+        // prefer created_at (abertura) then createdAt, then data/data_entrega, then outros
+        const candidates = [o.created_at, o.createdAt, o.data, o.data_entrega, o.dataEntrega, o.dateOut, o.dateOutAt, o.date_in, o.dateIn];
+        let d: Date | null = null;
+        for (const rawDate of candidates) {
+          const pd = parseDate(rawDate);
+          if (pd) { d = pd; break; }
+        }
+        if (!d) return;
+        if (d.getFullYear() !== y || d.getMonth() !== m) return;
+        const dayIndex = d.getDate() - 1;
+        // revenue: prefer total-like fields
+        let rawVal: any = o.total ?? o.valor ?? o.value ?? o.total_valor ?? (o.notas && typeof o.notas === 'object' && (o.notas.total || o.notas.valor)) ?? 0;
+        let orderVal = 0;
+        try { const s = String(rawVal || '').replace(/[^0-9,.-]/g, '').replace(',', '.'); orderVal = parseFloat(s) || 0; } catch(e) { orderVal = 0; }
+        arr[dayIndex].revenue += orderVal;
+        // services count: count items/pecas length when possible, else try notes/services arrays, else 1
+        try {
+          let svcCount = 0;
+          const arrItems = (o.itens || o.ordem_itens || o.items || o.pecas || []);
+          if (Array.isArray(arrItems) && arrItems.length > 0) svcCount = arrItems.length;
+          else {
+            const notas = o.notas ? (typeof o.notas === 'string' ? (()=>{ try { return JSON.parse(o.notas); } catch(e){ return null;} })() : o.notas) : null;
+            const fromNotas = (notas && (notas.services || notas.servicos || [])) || [];
+            if (Array.isArray(fromNotas) && fromNotas.length > 0) svcCount = fromNotas.length;
+            else if (o.service || o.servico) svcCount = 1;
+          }
+          arr[dayIndex].services += svcCount;
+        } catch(e) {}
+      } catch(e) {}
+    });
+    return arr;
+  };
+  const dailyAggregates = buildDailyAggregates(chartYear, chartMonth);
+  const maxDailyRevenue = Math.max(...dailyAggregates.map(d=>d.revenue), 1);
+  const maxDailyServices = Math.max(...dailyAggregates.map(d=>d.services), 1);
+
   return (
     <div className="flex min-h-screen bg-gray-50 overflow-x-hidden">
       <Sidebar />
@@ -244,6 +391,7 @@ export default function RelatoriosPage() {
               >
                 Ano
               </button>
+              <button onClick={seedSampleOrders} className="px-3 py-2 rounded-lg text-sm font-medium bg-gray-100 border border-gray-300 hover:bg-gray-50">Popular dados (teste)</button>
             </div>
           </div>
 
@@ -326,48 +474,54 @@ export default function RelatoriosPage() {
             </div>
 
             <div className="bg-white rounded-lg border border-gray-200">
-              <div className="p-4 lg:p-6 border-b border-gray-200">
-                <h2 className="text-base lg:text-lg font-bold text-gray-900">Clientes Mais Frequentes</h2>
+              <div className="p-4 lg:p-6 border-b border-gray-200 flex items-center justify-between">
+                <h2 className="text-base lg:text-lg font-bold text-gray-900">Faturamento Diário</h2>
+                <div className="flex items-center gap-2">
+                  <select value={chartMonth} onChange={(e)=>setChartMonth(Number(e.target.value))} className="border rounded px-2 py-1 text-sm">
+                    {['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map((m,idx)=>(<option key={idx} value={idx}>{m}</option>))}
+                  </select>
+                  <input type="number" value={chartYear} onChange={(e)=>setChartYear(Number(e.target.value))} className="w-20 border rounded px-2 py-1 text-sm" />
+                  <button onClick={()=>setShowDebugPanel(s=>!s)} className="px-2 py-1 bg-gray-100 rounded border">Debug</button>
+                </div>
               </div>
-              <div className="p-4 lg:p-6 space-y-3">
-                {clientsMost && clientsMost.length > 0 ? clientsMost.map((client, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{client.name}</p>
-                      <p className="text-xs text-gray-600">{client.count} ordens</p>
-                    </div>
-                    <p className="text-sm font-bold text-gray-900 ml-2">-</p>
+              <div className="p-4 lg:p-6">
+                <div className="overflow-x-auto">
+                  <div className="h-56 flex items-end gap-2">
+                    {dailyAggregates.map((d, idx) => {
+                      const revPct = Math.round((d.revenue / maxDailyRevenue) * 100);
+                      const svcPct = Math.round((d.services / maxDailyServices) * 100);
+                      // ensure minimal visible height so empty months still show structure
+                      const revHeight = Math.max(6, revPct);
+                      const svcHeight = Math.max(4, Math.round(svcPct/2));
+                    return (
+                      <div key={idx} className="flex flex-col items-center" style={{ width: 40 }}>
+                        <div className="flex flex-col items-center">
+                          <div className="w-8 bg-green-500 rounded-t" style={{ height: `${revHeight}%` }} title={`R$ ${d.revenue.toFixed(2)}`}>
+                            <div className="text-[10px] text-white text-center" style={{opacity: d.revenue>0?1:0}}>{d.revenue>0?`R$ ${d.revenue.toFixed(2)}`:''}</div>
+                          </div>
+                          <div className="w-8 bg-rose-400 mt-0.5 rounded-t" style={{ height: `${svcHeight}%` }} title={`${d.services} serviços`}>
+                            <div className="text-[9px] text-white text-center" style={{opacity: d.services>0?1:0}}>{d.services>0?d.services:''}</div>
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-gray-600 mt-2">{d.day}</div>
+                      </div>
+                    );
+                    })}
                   </div>
-                )) : (
-                  <div className="text-sm text-gray-600">Nenhum cliente registrado</div>
+                </div>
+                <div className="mt-3 text-sm text-gray-600">Barra verde = R$ faturado; barra rosa = quantidade de serviços (mês selecionado)</div>
+                {showDebugPanel && (
+                  <div className="mt-3 p-3 bg-gray-50 rounded border text-xs">
+                    <div><strong>orders.length:</strong> {String((orders||[]).length)}</div>
+                    <div><strong>uniqOrders:</strong> {String((uniqOrders||[]).length)}</div>
+                    <pre className="mt-2 overflow-auto" style={{maxHeight:200}}>{JSON.stringify({ revenueByMonth, dailyAggregates, chartMonth, chartYear }, null, 2)}</pre>
+                  </div>
                 )}
               </div>
             </div>
           </div>
 
-          <div className="mb-4 lg:mb-6">
-            <div className="bg-white rounded-lg border border-gray-200">
-              <div className="p-4 lg:p-6 border-b border-gray-200">
-                <h2 className="text-base lg:text-lg font-bold text-gray-900">Distribuição por Peça</h2>
-              </div>
-              <div className="p-4 lg:p-6">
-                <div className="grid grid-cols-1 gap-3">
-                  {(distributionByPiece && distributionByPiece.length > 0) ? distributionByPiece.map((item, index) => (
-                    <div key={index} className="p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">{item.label}</p>
-                        </div>
-                        <div className="text-sm font-bold text-gray-900">{item.count}</div>
-                      </div>
-                    </div>
-                  )) : (
-                    <div className="text-sm text-gray-600">Sem peças registradas</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* Distribuição por Peça removida conforme solicitado */}
 
           <div className="bg-white rounded-lg border border-gray-200">
             <div className="p-4 lg:p-6 border-b border-gray-200">
@@ -380,9 +534,12 @@ export default function RelatoriosPage() {
                   {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, index) => {
                     const value = evolutionMonthly[index] || 0;
                     const pct = Math.round((value / maxEvo) * 100);
+                    const h = Math.max(6, pct);
                     return (
                       <div key={index} className="flex-1 flex flex-col items-center gap-1">
-                        <div className="w-full bg-rose-500 rounded-t transition-colors" style={{ height: `${pct}%` }} title={`${m}: R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}></div>
+                        <div className="w-full bg-rose-500 rounded-t transition-colors" style={{ height: `${h}%`, minHeight: 6, border: '1px solid rgba(0,0,0,0.06)' }} title={`${m}: R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+                          <div className="text-[10px] text-white text-center" style={{opacity: value>0?1:0}}>{value>0?`R$ ${Number(value).toFixed(2)}`:''}</div>
+                        </div>
                         <span className="text-xs text-gray-600 mt-2">{m}</span>
                       </div>
                     );
@@ -397,9 +554,12 @@ export default function RelatoriosPage() {
                     {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, index) => {
                       const value = evolutionMonthly[index] || 0;
                       const pct = Math.round((value / maxEvo) * 100);
+                      const h = Math.max(6, pct);
                       return (
                         <div key={index} className="flex-1 flex flex-col items-center gap-1">
-                          <div className="w-full bg-rose-500 rounded-t hover:bg-rose-600 transition-colors cursor-pointer" style={{ height: `${pct}%` }} title={`${m}: R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}></div>
+                          <div className="w-full bg-rose-500 rounded-t hover:bg-rose-600 transition-colors cursor-pointer" style={{ height: `${h}%`, minHeight: 6, border: '1px solid rgba(0,0,0,0.06)' }} title={`${m}: R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+                            <div className="text-[10px] text-white text-center" style={{opacity: value>0?1:0}}>{value>0?`R$ ${Number(value).toFixed(2)}`:''}</div>
+                          </div>
                           <span className="text-xs text-gray-600 mt-2">{m}</span>
                         </div>
                       );

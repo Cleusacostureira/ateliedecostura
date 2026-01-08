@@ -78,14 +78,30 @@ export default function FinanceiroPage() {
               if (Array.isArray(dels) && dels.length > 0) data = data.filter((d:any) => !dels.includes(String(d.orderId) || String(d.id) || String(d.numero)));
             } catch (e) {}
             try {
-              const normalized = normalizeEntries(data);
-              setCashFlowDetails(normalized);
-              setPendingPayments(normalized.filter((d:any) => d.status === 'Pendente'));
+              let normalized = normalizeEntries(data);
+              // correlate with local orders to prefer local client names when available
+              try {
+                const orders = readOrdersFromStorage();
+                if (Array.isArray(orders) && orders.length > 0) {
+                  normalized = normalized.map((d:any) => {
+                    try {
+                      const match = orders.find((o:any) => String(o.id) === String(d.orderId || d.orderid) || String(o.numero) === String(d.numero));
+                      if (match && (match.client || match.nome || match.cliente)) {
+                        return { ...d, client: match.client || match.nome || match.cliente };
+                      }
+                    } catch (e) {}
+                    return d;
+                  });
+                }
+              } catch (e) {}
+              const reconciled = reconcileCashWithOrders(normalized);
+              setCashFlowDetails(reconciled.map((dd:any)=> ({ ...dd, status: (dd.status === 'Pendente' ? 'Não pago' : dd.status) } )));
+              setPendingPayments(reconciled.filter((d:any) => (d.status === 'Pendente' || d.status === 'Não pago')));
               try { setFluxoStatus(`Sincronizado ${normalized.length} entradas`); } catch (e) {}
               try { setLocalEntriesPreview((normalized || []).slice(0,50)); } catch (e) {}
             } catch (e) {
-              setCashFlowDetails(data);
-              setPendingPayments(data.filter((d:any) => d.status === 'Pendente'));
+              setCashFlowDetails(data.map((dd:any)=> ({ ...dd, status: (dd.status === 'Pendente' ? 'Não pago' : dd.status) } )));
+              setPendingPayments(data.filter((d:any) => (d.status === 'Pendente' || d.status === 'Não pago')));
             }
             return;
           }
@@ -111,9 +127,24 @@ export default function FinanceiroPage() {
               const dels = rawDel ? JSON.parse(rawDel) : [];
               const filtered = Array.isArray(dels) && dels.length > 0 ? parsed.filter((p:any) => !dels.includes(String(p.orderId) || String(p.numero) || String(p.id))) : parsed;
               const finalFiltered = activeSetLocal.size > 0 ? filtered.filter((p:any) => activeSetLocal.has(String(p.orderId) || String(p.orderid) || String(p.numero) || String(p.id))) : [];
-              const normalized = normalizeEntries(finalFiltered);
-              setCashFlowDetails(normalized);
-              setPendingPayments(normalized.filter((d:any) => d.status === 'Pendente'));
+              let normalized = normalizeEntries(finalFiltered);
+              try {
+                const orders = readOrdersFromStorage();
+                if (Array.isArray(orders) && orders.length > 0) {
+                  normalized = normalized.map((d:any) => {
+                    try {
+                      const match = orders.find((o:any) => String(o.id) === String(d.orderId || d.orderid) || String(o.numero) === String(d.numero));
+                      if (match && (match.client || match.nome || match.cliente)) {
+                        return { ...d, client: match.client || match.nome || match.cliente };
+                      }
+                    } catch (e) {}
+                    return d;
+                  });
+                }
+              } catch (e) {}
+              const reconciled = reconcileCashWithOrders(normalized);
+              setCashFlowDetails(reconciled.map((dd:any)=> ({ ...dd, status: (dd.status === 'Pendente' ? 'Não pago' : dd.status) } )));
+              setPendingPayments(reconciled.filter((d:any) => (d.status === 'Pendente' || d.status === 'Não pago')));
               try { setLocalEntriesPreview((normalized || []).slice(0,50)); } catch (e) {}
               return;
             } catch (e) { setCashFlowDetails(parsed); setPendingPayments(parsed.filter((d:any) => d.status === 'Pendente')); }
@@ -234,6 +265,36 @@ export default function FinanceiroPage() {
       } catch (e) { console.warn('confirmPayment persistence failed', e); }
     })();
 
+    // also try to persist payment status to the ordens table (authoritative source)
+    (async () => {
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          // prefer order id, fall back to numero
+          try {
+            if (selectedClient.orderId || selectedClient.orderid) {
+              const byId = await supabase.from('ordens').update({ paymentStatus: 'Pago' }).eq('id', selectedClient.orderId || selectedClient.orderid);
+              if ((byId as any).error) {
+                console.warn('Supabase ordens update by id error', (byId as any).error);
+              } else {
+                try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
+              }
+            } else if (selectedClient.numero) {
+              const byNum = await supabase.from('ordens').update({ paymentStatus: 'Pago' }).eq('numero', selectedClient.numero);
+              if ((byNum as any).error) {
+                console.warn('Supabase ordens update by numero error', (byNum as any).error);
+              } else {
+                try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
+              }
+            }
+          } catch (e) {
+            console.warn('failed to persist paymentStatus to ordens', e);
+          }
+        }
+      } catch (e) {
+        console.warn('ordens persistence block failed', e);
+      }
+    })();
+
     // also mark related order as paid (local + try supabase)
     try {
       const ordersArr = readOrdersFromStorage();
@@ -274,7 +335,18 @@ export default function FinanceiroPage() {
     setShowCobrancaModal(false);
   };
 
-  const totalPending = pendingPayments.reduce((sum, p) => sum + parseCurrency(p.value ?? p.valor ?? 0), 0);
+  // compute merged entries once and aggregate by OS so totals use canonical per-order totals
+  const _mergedEntries = mergePaidOrdersIntoEntries(cashFlowDetails || []);
+  const _aggregatedByOrder = aggregateByOrder(_mergedEntries || []);
+  // pending sum computed from aggregated groups (A Receber)
+  const totalPending = (_aggregatedByOrder || []).reduce((sum, g) => {
+    const status = String(g.status || '').toLowerCase();
+    if (status === 'pago') return sum;
+    return sum + parseCurrency(g.total ?? 0);
+  }, 0);
+
+  const [showDebugModal, setShowDebugModal] = useState(false);
+  const [debugData, setDebugData] = useState<any[]>([]);
 
   // compute totals from cashFlowDetails
   function parseCurrency(raw: any) {
@@ -307,13 +379,183 @@ export default function FinanceiroPage() {
     } catch (e) { return 0; }
   };
 
-  const receitas = cashFlowDetails.reduce((sum, it) => {
-    const v = parseCurrency(it.value ?? it.valor ?? 0);
-    const tipo = (it.tipo || it.type || '').toString().toLowerCase();
-    if (tipo === 'despesa' || v < 0) return sum;
-    return sum + v;
+  const reconcileCashWithOrders = (entries: any[]) => {
+    try {
+      if (!Array.isArray(entries)) return entries || [];
+      const orders = readOrdersFromStorage();
+      if (!Array.isArray(orders) || orders.length === 0) return entries;
+      return (entries || []).map((e:any) => {
+        try {
+          const match = orders.find((o:any) => String(o.id) === String(e.orderId || e.orderid) || String(o.numero) === String(e.numero));
+          if (match) {
+            // if the order explicitly is not paid, prefer that and mark cash entry as not paid locally
+            const orderPaid = String(match.paymentStatus || '').toLowerCase() === 'pago';
+            if (!orderPaid) {
+              return { ...e, status: 'Não pago' };
+            }
+          }
+        } catch (err) {}
+        return e;
+      });
+    } catch (err) { return entries || []; }
+  };
+
+  // Merge paid orders (from local orders storage) into fluxo entries when missing
+  function mergePaidOrdersIntoEntries(entries: any[]) {
+    try {
+      const orders = readOrdersFromStorage();
+      if (!Array.isArray(orders) || orders.length === 0) return entries || [];
+      const existingKeys = new Set<string>();
+      const normalizeKey = (s: any) => String(s || '').replace(/\D/g, '');
+      (entries || []).forEach((e:any) => {
+        try {
+          const raw = String(e.numero || e.orderId || e.id || '');
+          existingKeys.add(raw);
+          const digits = normalizeKey(raw);
+          if (digits) existingKeys.add(digits);
+        } catch (e) {}
+      });
+      const result = (entries || []).slice();
+      orders.forEach((o:any) => {
+        try {
+          const paid = String(o.paymentStatus || o.finalPaid || '').toLowerCase() === 'pago' || !!o.finalPaid;
+          if (!paid) return;
+          const rawKey = String(o.numero || o.id || '');
+          const digitsKey = normalizeKey(rawKey);
+          if (existingKeys.has(rawKey) || (digitsKey && existingKeys.has(digitsKey))) return;
+          const value = parseCurrency(o.value ?? o.total ?? o.total_valor ?? 0);
+          const synthetic = {
+            id: `order-${o.id || rawKey}`,
+            orderId: o.id,
+            numero: o.numero,
+            client: o.client || o.nome || o.cliente || '',
+            service: '',
+            pieces: o.pecas || o.pieces || [],
+            value,
+            status: 'Pago',
+            date: o.date || o.data || o.created_at || ''
+          };
+          // attach a readable service summary if available
+          try { synthetic.service = formatPiecesSummary(synthetic); } catch (e) {}
+          result.push(synthetic);
+        } catch (e) {}
+      });
+      return result;
+    } catch (e) { return entries || []; }
+  }
+
+  // Aggregate entries by order (numero/orderId) producing lines and total per OS
+  function aggregateByOrder(entries: any[]) {
+    try {
+      const map: Record<string, any> = {};
+      (entries || []).forEach((e:any) => {
+        try {
+          const key = String(e.numero || e.orderId || e.id || 'unassigned');
+          if (!map[key]) map[key] = { key, numero: e.numero, orderId: e.orderId, client: e.client || '', lines: [], total: 0, status: e.status || '', date: '' };
+          // populate date if available (keep first non-empty)
+          try {
+            map[key].date = map[key].date || (e.date || e.data || e.data_entrega || e.dataEntrega || e.created_at || e.createdAt || e.dateOut || '');
+          } catch (er) {}
+          const serviceLabel = (e.service || e.servico || e.description || '').toString().trim();
+          const v = parseCurrency(e.value ?? e.valor ?? e.total ?? 0);
+          // build a combined label: pieces summary + service + status when available
+          let builtLabel = '';
+          try {
+            const piecesSummary = formatPiecesSummary(e);
+            if (piecesSummary && serviceLabel) {
+              // extract service names present in piecesSummary parentheses
+              const svcSet = new Set<string>();
+              try {
+                const re = /\(([^)]+)\)/g;
+                let m;
+                while ((m = re.exec(String(piecesSummary || ''))) !== null) {
+                  const parts = (m[1] || '').split(/[,;|]/).map((s:any)=>String(s).trim().toLowerCase()).filter(Boolean);
+                  parts.forEach((p:any)=>svcSet.add(p));
+                }
+              } catch(e) {}
+              // split serviceLabel into parts
+              const svcParts = String(serviceLabel || '').split(/[,;|]/).map((s:any)=>String(s).trim()).filter(Boolean);
+              const remaining = svcParts.filter((p:any)=> !svcSet.has(String(p).toLowerCase()));
+              if (remaining.length > 0) {
+                builtLabel = `${piecesSummary} - ${remaining.join(', ')}`;
+              } else {
+                builtLabel = piecesSummary;
+              }
+            } else if (piecesSummary) builtLabel = piecesSummary;
+            else if (serviceLabel) builtLabel = `${serviceLabel}`;
+            else builtLabel = 'Serviço';
+          } catch (er) { builtLabel = serviceLabel || 'Serviço'; }
+          map[key].lines.push({ label: builtLabel, value: v });
+          map[key].total += v;
+          if ((String(e.status || '').toLowerCase() === 'pago')) map[key].status = 'Pago';
+        } catch (e) {}
+      });
+      // if group date missing, try to populate from local orders
+      try {
+        const orders = readOrdersFromStorage();
+        if (Array.isArray(orders) && orders.length > 0) {
+          Object.keys(map).forEach(k => {
+            try {
+              if (map[k].date) return;
+              const keyNum = String(map[k].numero || map[k].orderId || '');
+              const match = orders.find((o:any) => String(o.id) === String(map[k].orderId) || String(o.numero) === String(map[k].numero) || String(o.numero) === String(keyNum));
+              if (match) map[k].date = match.data || match.date || match.created_at || match.createdAt || match.data_entrega || match.dataEntrega || '';
+            } catch (e) {}
+          });
+        }
+      } catch (e) {}
+
+      // dedupe lines inside each group (case-insensitive)
+      Object.keys(map).forEach(k => {
+        try {
+          const seen = new Set<string>();
+          const uniqLines: any[] = [];
+          (map[k].lines || []).forEach((ln:any) => {
+            const keyLabel = String(ln.label || '').trim().toLowerCase();
+            if (!seen.has(keyLabel)) { seen.add(keyLabel); uniqLines.push(ln); }
+          });
+          map[k].lines = uniqLines;
+        } catch (er) {}
+      });
+      const arr = Object.values(map);
+      // prefer canonical order total from local `orders` when available to avoid summing duplicated cash rows
+      try {
+        const orders = readOrdersFromStorage();
+        if (Array.isArray(orders) && orders.length > 0) {
+          arr.forEach((g:any) => {
+            try {
+              const keyNum = String(g.numero || g.orderId || '').replace(/\D/g,'');
+              const match = orders.find((o:any) => String(o.id) === String(g.orderId) || String((o.numero||'')).replace(/\D/g,'') === keyNum || String(o.numero) === String(g.numero));
+              if (match) {
+                const ot = parseCurrency(match.total ?? match.value ?? match.valor ?? match.total_valor ?? 0);
+                if (ot && ot > 0) g.total = ot;
+              }
+            } catch (e) {}
+          });
+        }
+      } catch (e) {}
+      // sort by numeric OS number when available
+      arr.sort((a:any,b:any) => {
+        const an = Number(String(a.numero || a.orderId || '').replace(/\D/g,'')) || 0;
+        const bn = Number(String(b.numero || b.orderId || '').replace(/\D/g,'')) || 0;
+        return an - bn;
+      });
+      return arr;
+    } catch (e) { return entries || []; }
+  }
+
+  // include merged paid orders when computing receitas/recebido so totals align with orders-based reports
+  // compute receitas/recebido from aggregated per-order totals to avoid double-counting
+  const receitas = (_aggregatedByOrder || []).reduce((sum, g) => {
+    const v = parseCurrency(g.total ?? 0);
+    return sum + (v > 0 ? v : 0);
   }, 0);
-  const despesas = cashFlowDetails.reduce((sum, it) => {
+  const recebido = (_aggregatedByOrder || []).reduce((sum, g) => {
+    if (String(g.status || '').toLowerCase() === 'pago') return sum + parseCurrency(g.total ?? 0);
+    return sum;
+  }, 0);
+  // despesas still computed from merged entries (fluxo) where tipo is 'despesa' or negative values
+  const despesas = (_mergedEntries || []).reduce((sum, it) => {
     const v = parseCurrency(it.value ?? it.valor ?? 0);
     const tipo = (it.tipo || it.type || '').toString().toLowerCase();
     if (tipo === 'despesa' || v < 0) return sum + Math.abs(v);
@@ -321,24 +563,35 @@ export default function FinanceiroPage() {
   }, 0);
   const lucro = receitas - despesas;
 
-  const pecasSummary = (item: any) => {
+  function formatPiecesSummary(item: any) {
     try {
       const p = item.pecas || item.pieces || [];
       if (!Array.isArray(p) || p.length === 0) return '';
-      return p.map((x: any) => {
-        const nome = x.nome || x.name || x.tipo || x.modelo || x.cor || String(x);
-        const cat = x.categoria || x.category || '';
-        return cat ? `${nome} (${cat})` : nome;
-      }).join(', ');
+      const map: Record<string, { count: number; services: Set<string> }> = {};
+      (p || []).forEach((x: any) => {
+        const tipo = String(x.tipo || x.nome || x.name || '').trim() || 'Peça';
+        if (!map[tipo]) map[tipo] = { count: 0, services: new Set() };
+        map[tipo].count += 1;
+        const svcArr = x.services || x.servicos || [];
+        (svcArr || []).forEach((s: any) => {
+          const name = String(s?.name || s?.nome || s?.titulo || s).trim();
+          if (name) map[tipo].services.add(name);
+        });
+      });
+      const parts = Object.entries(map).map(([tipo, info]) => {
+        const svc = Array.from(info.services).join(', ');
+        return `${info.count} ${tipo}${svc ? ' (' + svc + ')' : ''}`;
+      });
+      return parts.join(', ');
     } catch (e) { return ''; }
-  };
+  }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 overflow-x-auto">
+    <div className="flex min-h-screen bg-gray-50 overflow-x-hidden">
       <Sidebar />
       
       <main className="flex-1 lg:ml-56 pt-14 lg:pt-0">
-        <div className="p-3 lg:p-8">
+        <div className="p-3 lg:p-8 max-w-screen-xl mx-auto">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 lg:mb-6 gap-2">
             <div>
               <div className="flex items-center gap-3">
@@ -348,23 +601,51 @@ export default function FinanceiroPage() {
               <p className="text-xs lg:text-sm text-gray-600">Controle suas receitas e despesas</p>
               
             </div>
-            {/* Botão de teste móvel: confirma que o cliente está rodando a versão deployed */}
-            <div className="lg:hidden flex items-center">
-              <button
-                onClick={() => {
-                  try {
-                    const ver = 'v:332b310';
-                    alert('Teste de deploy — versão: ' + ver);
-                    console.info('[financeiro-debug] teste clicado', ver);
-                    localStorage.setItem('dbg_financeiro_test', JSON.stringify({ at: Date.now(), ver }));
-                    // dispatch event so other pages can react if needed
-                    window.dispatchEvent(new CustomEvent('financeiroTestClicked', { detail: { ver } }));
-                  } catch (e) { console.warn('debug click failed', e); }
-                }}
-                className="ml-2 px-2 py-1 text-xs bg-rose-50 text-rose-700 border border-rose-100 rounded-lg"
-              >
-                Teste DBG
-              </button>
+            {/* Botões de teste: mobile e desktop */}
+              <div className="flex items-center gap-2">
+              <div className="lg:hidden">
+                <button
+                  onClick={() => {
+                    try {
+                      const ver = 'v:332b310';
+                      alert('Teste de deploy — versão: ' + ver);
+                      console.info('[financeiro-debug] teste clicado', ver);
+                      localStorage.setItem('dbg_financeiro_test', JSON.stringify({ at: Date.now(), ver }));
+                      window.dispatchEvent(new CustomEvent('financeiroTestClicked', { detail: { ver } }));
+                    } catch (e) { console.warn('debug click failed', e); }
+                  }}
+                  className="ml-2 px-2 py-1 text-xs bg-rose-50 text-rose-700 border border-rose-100 rounded-lg"
+                >
+                  Teste DBG
+                </button>
+              </div>
+              <div className="hidden lg:block flex items-center gap-2">
+                <button onClick={() => { try { const localRaw = localStorage.getItem('cashFlowDetails'); const local = localRaw ? JSON.parse(localRaw) : []; const orders = readOrdersFromStorage(); const correlations = (cashFlowDetails||[]).map((d:any)=> ({ entry: d, matchedOrder: (orders||[]).find((o:any)=> String(o.id) === String(d.orderId || d.orderid) || String(o.numero) === String(d.numero)) || null })); setDebugData({ cashFlowDetails, localStorageEntries: local, orders, correlations }); setShowDebugModal(true); } catch(e){ console.warn('show debug failed', e); } }} className="ml-2 px-2 py-1 text-xs bg-gray-100 text-gray-800 border rounded">Mostrar dados (debug)</button>
+                <button onClick={() => {
+                    try {
+                      const orders = readOrdersFromStorage();
+                      const cashLocalRaw = localStorage.getItem('cashFlowDetails');
+                      const cashLocal = cashLocalRaw ? JSON.parse(cashLocalRaw) : [];
+                      // include current runtime state `cashFlowDetails` and merged computed from it
+                      const runtimeCash = cashFlowDetails || [];
+                      const mergedFromLocal = mergePaidOrdersIntoEntries(cashLocal || []);
+                      const mergedFromState = mergePaidOrdersIntoEntries(runtimeCash || []);
+                      const sumOrders = (orders||[]).reduce((s:any,o:any)=> s + (Number(o.total || o.value || o.valor || 0) || 0), 0);
+                      const sumMergedLocal = (mergedFromLocal||[]).reduce((s:any,e:any)=> s + (parseCurrency(e.value ?? e.valor ?? e.total ?? 0) || 0), 0);
+                      const sumMergedState = (mergedFromState||[]).reduce((s:any,e:any)=> s + (parseCurrency(e.value ?? e.valor ?? e.total ?? 0) || 0), 0);
+                      const payload = { orders, cashLocal, runtimeCash, mergedLocal: mergedFromLocal, mergedState: mergedFromState, totals: { sumOrders, sumMergedLocal, sumMergedState, receitas: sumMergedState || 0, recebido: recebido || 0, despesas: despesas || 0, totalPending } };
+                      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `financeiro-debug-${Date.now()}.json`;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      URL.revokeObjectURL(url);
+                    } catch (e) { console.warn('export debug failed', e); alert('Export failed: ' + String(e)); }
+                  }} className="ml-2 px-2 py-1 text-xs bg-blue-50 text-blue-700 border rounded">Exportar debug</button>
+              </div>
             </div>
             <div className="flex gap-1.5 lg:gap-2">
               <button
@@ -400,12 +681,12 @@ export default function FinanceiroPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-6 mb-3 lg:mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 lg:gap-6 mb-3 lg:mb-6">
             <div className="bg-white rounded-lg p-2.5 lg:p-6 border border-gray-200">
               <div className="flex flex-col gap-1.5 lg:gap-2">
-                <div className="w-7 h-7 lg:w-12 lg:h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                  <i className="ri-arrow-up-line text-sm lg:text-2xl text-green-600 w-3.5 h-3.5 lg:w-6 lg:h-6 flex items-center justify-center"></i>
-                </div>
+                <div className="w-7 h-7 lg:w-10 lg:h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                    <i className="ri-arrow-up-line text-sm lg:text-xl text-green-600 w-3.5 h-3.5 lg:w-5 lg:h-5 flex items-center justify-center"></i>
+                  </div>
                 <div>
                   <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">Receitas</p>
                   <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ {receitas.toLocaleString('pt-BR')}</p>
@@ -415,8 +696,20 @@ export default function FinanceiroPage() {
 
             <div className="bg-white rounded-lg p-2.5 lg:p-6 border border-gray-200">
               <div className="flex flex-col gap-1.5 lg:gap-2">
-                <div className="w-7 h-7 lg:w-12 lg:h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                  <i className="ri-arrow-down-line text-sm lg:text-2xl text-red-600 w-3.5 h-3.5 lg:w-6 lg:h-6 flex items-center justify-center"></i>
+                <div className="w-7 h-7 lg:w-10 lg:h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                  <i className="ri-checkbox-circle-line text-sm lg:text-xl text-indigo-600 w-3.5 h-3.5 lg:w-5 lg:h-5 flex items-center justify-center"></i>
+                </div>
+                <div>
+                  <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">Recebido</p>
+                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ {recebido.toLocaleString('pt-BR')}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg p-2.5 lg:p-6 border border-gray-200">
+              <div className="flex flex-col gap-1.5 lg:gap-2">
+                <div className="w-7 h-7 lg:w-10 lg:h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                  <i className="ri-arrow-down-line text-sm lg:text-xl text-red-600 w-3.5 h-3.5 lg:w-5 lg:h-5 flex items-center justify-center"></i>
                 </div>
                 <div>
                   <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">Despesas</p>
@@ -427,8 +720,8 @@ export default function FinanceiroPage() {
 
             <div className="bg-white rounded-lg p-2.5 lg:p-6 border border-gray-200">
               <div className="flex flex-col gap-1.5 lg:gap-2">
-                <div className="w-7 h-7 lg:w-12 lg:h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <i className="ri-wallet-line text-sm lg:text-2xl text-blue-600 w-3.5 h-3.5 lg:w-6 lg:h-6 flex items-center justify-center"></i>
+                <div className="w-7 h-7 lg:w-10 lg:h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <i className="ri-wallet-line text-sm lg:text-xl text-blue-600 w-3.5 h-3.5 lg:w-5 lg:h-5 flex items-center justify-center"></i>
                 </div>
                 <div>
                   <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">Lucro</p>
@@ -513,60 +806,8 @@ export default function FinanceiroPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-6 mb-3 lg:mb-6">
-            <div className="bg-white rounded-lg border border-gray-200">
-              <div className="p-2.5 lg:p-6 border-b border-gray-200">
-                <h2 className="text-sm lg:text-lg font-bold text-gray-900">Receitas Recentes</h2>
-              </div>
-              <div className="p-2.5 lg:p-6 space-y-2 lg:space-y-4">
-                {(cashFlowDetails && cashFlowDetails.length > 0 ? cashFlowDetails.filter(i => {
-                  const v = Number(i.value ?? i.valor ?? 0) || 0;
-                  return v > 0;
-                }).slice(0,4) : []).map((item, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 lg:p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] lg:text-sm font-medium text-gray-900 truncate">{item.client || item.cliente || 'Cliente'}</p>
-                      <p className="text-[9px] lg:text-xs text-gray-600 truncate">{item.service || item.servico || ''}</p>
-                      <p className="text-[8px] lg:text-xs text-gray-500">{item.date || item.data || ''}</p>
-                    </div>
-                    <div className="text-right ml-2 flex-shrink-0">
-                      <p className="text-xs lg:text-base font-bold text-amber-700 mb-2">R$ {parseCurrency(item.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                      <div className="flex gap-1.5 lg:gap-2">
-                        <span className={`text-[8px] lg:text-xs px-1.5 lg:px-2 py-0.5 lg:py-1 rounded-full whitespace-nowrap ${
-                          (item.status === 'Pago' || String(item.status || '').toLowerCase() === 'pago') ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {item.status || ''}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg border border-gray-200">
-              <div className="p-2.5 lg:p-6 border-b border-gray-200">
-                <h2 className="text-sm lg:text-lg font-bold text-gray-900">Despesas Recentes</h2>
-              </div>
-              <div className="p-2.5 lg:p-6 space-y-2 lg:space-y-4">
-                {(cashFlowDetails && cashFlowDetails.length > 0 ? cashFlowDetails.filter(i => {
-                  const v = Number(i.value ?? i.valor ?? 0) || 0;
-                  return v < 0 || (i.tipo||'').toString().toLowerCase() === 'despesa';
-                }).slice(0,4) : []).map((item, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 lg:p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] lg:text-sm font-medium text-gray-900 truncate">{item.description || item.descricao || ''}</p>
-                      <p className="text-[9px] lg:text-xs text-gray-600">{item.category || item.categoria || ''}</p>
-                      <p className="text-[8px] lg:text-xs text-gray-500">{item.date || item.data || ''}</p>
-                    </div>
-                    <div className="text-right ml-2 flex-shrink-0">
-                      <p className="text-[10px] lg:text-sm font-bold text-red-600">R$ {(Math.abs(Number(item.value ?? item.valor ?? 0)) || 0).toFixed(2)}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          {/* Recentes: removido por solicitação do usuário */}
+          <div className="mb-3" />
 
           {/* Fluxo de Caixa Detalhado */}
           <div className="bg-white rounded-lg border border-gray-200 mb-3 lg:mb-6">
@@ -576,25 +817,39 @@ export default function FinanceiroPage() {
             </div>
             {/* Mobile: stacked list for cash flow */}
             <div className="sm:hidden p-2.5 space-y-2">
-              {cashFlowDetails.map((item) => (
-                <div key={item.id} className="bg-white p-3 rounded-lg border">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-medium text-gray-900 truncate">{item.client}</p>
-                        <p className="text-[9px] text-gray-600 truncate">{item.service}</p>
-                        {item.numero && <p className="text-[8px] text-gray-500">OS Nº {item.numero}</p>}
-                        {pecasSummary(item) ? <p className="text-[8px] text-gray-500">Peças: {pecasSummary(item)}</p> : null}
-                        <p className="text-[8px] text-gray-500">{item.date}</p>
-                      </div>
-                      <div className="text-right ml-3 flex-shrink-0">
-                        <p className="text-[10px] font-bold text-green-600">R$ {parseCurrency(item.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                        <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${item.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{item.status}</span>
+              {(() => {
+                const merged = mergePaidOrdersIntoEntries(cashFlowDetails || []);
+                const sorted = (merged || []).slice().sort((a:any,b:any) => {
+                  const ad = String(a.numero||a.orderId||'').replace(/\D/g,'');
+                  const bd = String(b.numero||b.orderId||'').replace(/\D/g,'');
+                  return (Number(ad) || 0) - (Number(bd) || 0);
+                });
+                const aggregated = aggregateByOrder(sorted || []);
+                return aggregated.map((grp:any) => (
+                  <div key={grp.key} className="bg-white p-3 rounded-lg border">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-medium text-gray-900 truncate">{grp.client}</p>
+                          <div className="text-[9px] text-gray-600 truncate space-y-0.5">
+                            {grp.lines.map((l:any, idx:number) => (
+                              <div key={idx} className="truncate">
+                                <span className="font-semibold text-[11px] text-gray-800">{l.label}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {grp.numero && <p className="text-[8px] text-gray-500">OS <span className="text-blue-600 font-semibold"><span className="text-sm align-middle">N</span>{String(grp.numero).replace(/\D/g,'').padStart(6,'0')}</span></p>}
+                          <p className="text-[8px] text-gray-500">{grp.date || ''}</p>
+                        </div>
+                        <div className="text-right ml-3 flex-shrink-0">
+                          <p className="text-[10px] font-bold text-green-600">R$ {Number(grp.total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                          <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${grp.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{grp.status || ''}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ));
+              })()}
             </div>
 
             {/* Desktop/table */}
@@ -610,37 +865,54 @@ export default function FinanceiroPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {cashFlowDetails.map((item) => (
-                    <tr 
-                      key={item.id}
-                      onClick={() => handleRowClick(item)}
-                      className={`transition-colors ${
-                        item.status === 'Pendente' 
-                          ? 'hover:bg-amber-50 cursor-pointer' 
-                          : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap text-[9px] lg:text-sm text-gray-600">{item.date}</td>
-                      <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap text-[10px] lg:text-sm font-medium text-gray-900">{item.client}</td>
-                      <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap text-[9px] lg:text-sm text-gray-700">
-                        <div className="flex flex-col">
-                          <span className="truncate"><strong>{item.service}</strong></span>
-                          {item.numero && <span className="text-[9px] text-gray-500">OS Nº {item.numero}</span>}
-                          {pecasSummary(item) ? <span className="text-[9px] text-gray-500">Peças: {pecasSummary(item)}</span> : null}
-                        </div>
-                      </td>
-                      <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap text-[10px] lg:text-sm font-bold text-green-600">
-                        R$ {(Number(item.value) || 0).toFixed(2)}
-                      </td>
-                      <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap">
-                        <span className={`px-1.5 lg:px-2 py-0.5 lg:py-1 rounded-full text-[8px] lg:text-xs font-medium whitespace-nowrap ${
-                          item.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {item.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    const sorted = (cashFlowDetails || []).slice().sort((a:any,b:any) => {
+                      const ad = String(a.numero||a.orderId||'').replace(/\D/g,'');
+                      const bd = String(b.numero||b.orderId||'').replace(/\D/g,'');
+                      return (Number(ad) || 0) - (Number(bd) || 0);
+                    });
+                    const merged = mergePaidOrdersIntoEntries(cashFlowDetails || []);
+                    const sortedAgg = (merged || []).slice().sort((a:any,b:any) => {
+                      const ad = String(a.numero||a.orderId||'').replace(/\D/g,'');
+                      const bd = String(b.numero||b.orderId||'').replace(/\D/g,'');
+                      return (Number(ad) || 0) - (Number(bd) || 0);
+                    });
+                    const aggregated = aggregateByOrder(sortedAgg || []);
+                    return aggregated.map((grp:any) => (
+                          <tr 
+                            key={grp.key}
+                            onClick={() => handleRowClick(grp)}
+                            className={`transition-colors ${
+                              grp.status === 'Pendente' 
+                                ? 'hover:bg-amber-50 cursor-pointer' 
+                                : 'hover:bg-gray-50'
+                            }`}
+                          >
+                            <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap text-[9px] lg:text-sm text-gray-600">{grp.date || ''}</td>
+                            <td className="px-3 lg:px-6 py-2 lg:py-4 text-[10px] lg:text-sm font-medium text-gray-900 max-w-[180px] truncate">{grp.client}</td>
+                            <td className="px-3 lg:px-6 py-2 lg:py-4 text-[9px] lg:text-sm text-gray-700 max-w-[360px] break-words">
+                              <div className="flex flex-col">
+                                <div className="truncate space-y-0.5">
+                                  {grp.lines.map((l:any, idx:number) => (
+                                    <div key={idx} className="text-[10px] text-gray-800"><span className="font-semibold">{l.label}</span></div>
+                                  ))}
+                                </div>
+                                {grp.numero && <span className="text-[9px] text-gray-500">OS <span className="text-blue-600 font-semibold"><span className="text-sm align-middle">N</span>{` ${String(grp.numero).replace(/\D/g,'').padStart(6,'0')}`}</span></span>}
+                              </div>
+                            </td>
+                            <td className="px-3 lg:px-6 py-2 lg:py-4 text-[10px] lg:text-sm font-bold text-green-600">
+                              R$ {(Number(grp.total) || 0).toFixed(2)}
+                            </td>
+                            <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap">
+                              <span className={`px-1.5 lg:px-2 py-0.5 lg:py-1 rounded-full text-[8px] lg:text-xs font-medium whitespace-nowrap ${
+                                grp.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                              }`}>
+                                {grp.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ));
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -725,6 +997,24 @@ export default function FinanceiroPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Debug modal: mostrar cashFlowDetails em localStorage */}
+      {showDebugModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold">Debug - cashFlowDetails</h3>
+              <button onClick={()=>setShowDebugModal(false)} className="px-2 py-1 border rounded">Fechar</button>
+            </div>
+            <div className="text-sm text-gray-700 mb-2">Total: {Array.isArray(debugData?.cashFlowDetails) ? debugData.cashFlowDetails.length : 0} registros</div>
+            <div className="mb-3">
+              <div className="text-xs font-medium">Correlações (entry → matchedOrder.numero)</div>
+              <div className="text-xs text-gray-600 mb-2">{(debugData?.correlations || []).map((c:any)=> (`${c.entry.numero || c.entry.id} → ${c.matchedOrder ? (c.matchedOrder.numero || c.matchedOrder.id) : '—'}`)).join(', ')}</div>
+            </div>
+            <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto">{JSON.stringify(debugData, null, 2)}</pre>
           </div>
         </div>
       )}

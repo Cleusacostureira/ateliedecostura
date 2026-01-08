@@ -241,60 +241,69 @@ export default function DashboardPage() {
         setDistributionByPiece(pieceArr.sort((a,b)=>b.count - a.count));
       } catch(e) { setDistributionByPiece([]); }
 
-      // top services from ordem_itens joined with servicos
-      const svcCounts: Record<string, {count:number, total:number, servicoId?:string}> = {};
-      ordemItens.forEach(it => {
-        const sid = it.servico_id || it.servicoId || it.servico;
-        const qty = parseInt(it.quantidade || 1);
-        const price = parseFloat((it.preco_unitario || it.preco || 0).toString()) || 0;
-        const key = sid || (it.nome_servico || 'desconhecido');
-        svcCounts[key] = svcCounts[key] || { count: 0, total: 0, servicoId: sid };
-        svcCounts[key].count += qty;
-        svcCounts[key].total += qty * price;
-      });
-      // also collect service items from orders payloads (some installations store items inside `ordens`)
-      const orderSvcCounts: Record<string, {count:number, total:number, servicoId?:string}> = {};
-      orders.forEach(o => {
-        const items = (o.itens || o.ordem_itens || o.items || o.pecas || []).map((it:any) => it || {}).filter(Boolean);
-        items.forEach((it:any) => {
-          const name = (it.nome || it.name || it.servico || it.title || it.titulo || '').toString() || null;
-          if (!name) return;
-          const qty = parseInt(it.quantidade || it.qty || 1) || 1;
-          const price = parseFloat((it.preco_unitario || it.preco || it.price || 0).toString()) || 0;
-          orderSvcCounts[name] = orderSvcCounts[name] || { count: 0, total: 0 };
-          orderSvcCounts[name].count += qty;
-          orderSvcCounts[name].total += qty * price;
-        });
-        // also parse notas.services / notas.servicos if present to capture services stored in notas
+      // accumulate service counts across all data sources (ordem_itens, ordem-level items, notas)
+      const svcMap: Record<string, { nameDisplay: string; count: number; total: number }> = {};
+      const normalize = (s: any) => String(s || '').toLowerCase().trim();
+
+      // helper to add to map
+      const addSvc = (rawName: any, qty: number, totalPrice: number, displayHint?: string) => {
         try {
-          const notas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : null;
-          const servicesFromNotas = notas && (notas.services || notas.servicos || []);
-          (servicesFromNotas || []).forEach((s:any) => {
-            const nm = (s.name || s.titulo || s.nome || s.servico || s.title || '').toString();
-            if (!nm) return;
-            orderSvcCounts[nm] = orderSvcCounts[nm] || { count: 0, total: 0 };
-            const qty = parseInt(s.quantidade || s.qty || 1) || 1;
-            const price = parseFloat((s.preco_unitario || s.preco || s.price || s.valor || 0).toString()) || 0;
-            orderSvcCounts[nm].count += qty;
-            orderSvcCounts[nm].total += qty * price;
-          });
-        } catch(e) {}
+          const key = normalize(rawName) || 'desconhecido';
+          if (!svcMap[key]) svcMap[key] = { nameDisplay: displayHint || String(rawName || 'Serviço'), count: 0, total: 0 };
+          svcMap[key].count += Number(qty || 0);
+          svcMap[key].total += Number(totalPrice || 0);
+          if (displayHint && (!svcMap[key].nameDisplay || svcMap[key].nameDisplay === 'Serviço')) svcMap[key].nameDisplay = displayHint;
+        } catch (e) {}
+      };
+
+      ordemItens.forEach(it => {
+        try {
+          const qty = parseInt(it.quantidade || 1) || 1;
+          const price = parseFloat((it.preco_unitario || it.preco || 0).toString()) || 0;
+          const svcName = it.nome_servico || it.servico || it.title || it.name || it.servico_id || 'desconhecido';
+          let display = svcName;
+          try {
+            const sid = it.servico_id || it.servicoId || it.servico;
+            if (sid) {
+              const svc = servicosList.find(s => String(s.id) === String(sid));
+              if (svc) display = svc.titulo || svc.nome || svc.name || display;
+            }
+          } catch(e){}
+          addSvc(svcName, qty, qty * price, display);
+        } catch(e){}
       });
 
-      const svcArr = Object.keys(svcCounts).map(k => {
-        const sid = svcCounts[k].servicoId;
-        const svc = servicosList.find(s => String(s.id) === String(sid) || String(s.id) === String(k));
-        const svcName = svc ? (svc.titulo || svc.nome || svc.name || svc.title) : k;
-        return { servicoId: sid, name: svcName || k, count: svcCounts[k].count, total: svcCounts[k].total };
+      // orders-level items and notas
+      orders.forEach(o => {
+        try {
+          const items = (o.itens || o.ordem_itens || o.items || o.pecas || []).map((it:any) => it || {}).filter(Boolean);
+          items.forEach((it:any) => {
+            try {
+              const name = it.nome || it.name || it.servico || it.title || it.titulo || null;
+              if (!name) return;
+              const qty = parseInt(it.quantidade || it.qty || 1) || 1;
+              const price = parseFloat((it.preco_unitario || it.preco || it.price || 0).toString()) || 0;
+              addSvc(name, qty, qty * price, name);
+            } catch(e){}
+          });
+          try {
+            const notas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : null;
+            const servicesFromNotas = notas && (notas.services || notas.servicos || []);
+            (servicesFromNotas || []).forEach((s:any) => {
+              try {
+                const nm = (s.name || s.titulo || s.nome || s.servico || s.title || '').toString();
+                if (!nm) return;
+                const qty = parseInt(s.quantidade || s.qty || 1) || 1;
+                const price = parseFloat((s.preco_unitario || s.preco || s.price || s.valor || 0).toString()) || 0;
+                addSvc(nm, qty, qty * price, nm);
+              } catch(e){}
+            });
+          } catch(e){}
+        } catch(e){}
       });
-      // merge with order-level items
-      Object.keys(orderSvcCounts).forEach(k => {
-        const existing = svcArr.find(s => s.name === k);
-        if (existing) { existing.count += orderSvcCounts[k].count; existing.total += orderSvcCounts[k].total; }
-        else svcArr.push({ servicoId: undefined, name: k, count: orderSvcCounts[k].count, total: orderSvcCounts[k].total });
-      });
-      // mergedSvc already contains ordem_itens + order-level items (merged above), avoid merging twice
-      setTopServices(svcArr.sort((a,b)=>b.count - a.count).slice(0,5));
+
+      const svcArr = Object.keys(svcMap).map(k => ({ name: svcMap[k].nameDisplay || k, count: svcMap[k].count, total: svcMap[k].total }));
+      setTopServices(svcArr.sort((a,b) => b.count - a.count));
 
       // upcoming deliveries (next 5)
       const today = new Date(); today.setHours(0,0,0,0);

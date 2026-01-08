@@ -745,7 +745,7 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
                           .slice()
                           .sort((a,b) => a.nome.localeCompare(b.nome))
                           .map(p => (
-                            <button key={p.nome} onClick={()=>prepareAddPieceType(p.nome)} className={`flex items-center gap-2 px-3 py-1 border rounded ${currentPieceTipo===p.nome ? 'bg-rose-50 border-rose-200' : 'bg-white'}`}>
+                            <button type="button" key={p.nome} onClick={()=>prepareAddPieceType(p.nome)} onPointerDown={()=>prepareAddPieceType(p.nome)} onTouchStart={(e)=>{ e.preventDefault(); prepareAddPieceType(p.nome); }} className={`flex items-center gap-2 px-3 py-1 border rounded ${currentPieceTipo===p.nome ? 'bg-rose-50 border-rose-200' : 'bg-white'}`}>
                               <span className="text-lg">{p.icone}</span>
                               <span className="text-sm">{p.nome}</span>
                             </button>
@@ -956,8 +956,9 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
         </div>
         {/* Quantity / Color prompt modal */}
         {showQuantityPrompt && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg w-full max-w-sm p-4 shadow-lg">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/40" onClick={() => { setShowQuantityPrompt(false); }}></div>
+            <div className="relative bg-white rounded-lg w-full max-w-sm p-4 shadow-lg">
               <h4 className="font-bold mb-2">Adicionar peça(s)</h4>
               <div className="mb-3">
                 <label className="block text-xs text-gray-600 mb-1">Peça</label>
