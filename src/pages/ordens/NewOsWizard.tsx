@@ -29,6 +29,9 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   const [pieces, setPieces] = useState<Piece[]>([]);
   const [currentPieceTipo, setCurrentPieceTipo] = useState('');
   const [currentPieceCor, setCurrentPieceCor] = useState('');
+  const [pieceQuantity, setPieceQuantity] = useState<number>(1);
+  const [pieceColor, setPieceColor] = useState<string>('');
+  const [showQuantityPrompt, setShowQuantityPrompt] = useState(false);
   const [currentPieceModelo, setCurrentPieceModelo] = useState('');
   const [selectedPieceForService, setSelectedPieceForService] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -316,7 +319,31 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
 
   const addPiece = () => {
     // abrir fluxo de peças em tela cheia
-    setPieceFlowOpen(true);
+    // instead of immediately opening flow, prompt for quantity/color when adding from quick inputs
+    setShowQuantityPrompt(true);
+  };
+
+  const prepareAddPieceType = (tipo: string) => {
+    setCurrentPieceTipo(tipo);
+    setPieceQuantity(1);
+    setPieceColor('');
+    setShowQuantityPrompt(true);
+  };
+
+  const confirmAddPieces = () => {
+    const qty = Number(pieceQuantity) || 1;
+    const color = pieceColor || currentPieceCor || '';
+    const toAdd: Piece[] = [];
+    for (let i = 0; i < Math.max(1, qty); i++) {
+      toAdd.push({ id: `local-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, tipo: currentPieceTipo || 'Peça', cor: color, services: [], icone: '' });
+    }
+    setPieces(prev => [...prev, ...toAdd]);
+    setShowQuantityPrompt(false);
+    setCurrentPieceTipo('');
+    setCurrentPieceCor('');
+    setPieceQuantity(1);
+    // move to preview/services step
+    setStep(5);
   };
 
   const updatePieceServicePrice = (pieceId: string, svcIdx: number, price: number) => {
@@ -701,10 +728,10 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
               {pieces.length === 0 ? (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Cadastrar Peça</label>
-                  <div className="flex gap-2 mb-2">
+                    <div className="flex gap-2 mb-2">
                     <input placeholder="Nome da peça" className="flex-1 border p-2 rounded" value={currentPieceTipo} onChange={e=>setCurrentPieceTipo(e.target.value)} />
                     <input placeholder="Modelo / Observação" className="w-40 border p-2 rounded" value={currentPieceModelo} onChange={e=>setCurrentPieceModelo(e.target.value)} />
-                    <button onClick={addPiece} className="px-4 py-2 bg-rose-500 text-white rounded">Adicionar</button>
+                    <button onClick={() => setShowQuantityPrompt(true)} className="px-4 py-2 bg-rose-500 text-white rounded">Adicionar</button>
                   </div>
 
                   <div className="mb-3">
@@ -718,7 +745,7 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
                           .slice()
                           .sort((a,b) => a.nome.localeCompare(b.nome))
                           .map(p => (
-                            <button key={p.nome} onClick={()=>setCurrentPieceTipo(p.nome)} className={`flex items-center gap-2 px-3 py-1 border rounded ${currentPieceTipo===p.nome ? 'bg-rose-50 border-rose-200' : 'bg-white'}`}>
+                            <button key={p.nome} onClick={()=>prepareAddPieceType(p.nome)} className={`flex items-center gap-2 px-3 py-1 border rounded ${currentPieceTipo===p.nome ? 'bg-rose-50 border-rose-200' : 'bg-white'}`}>
                               <span className="text-lg">{p.icone}</span>
                               <span className="text-sm">{p.nome}</span>
                             </button>
@@ -927,6 +954,29 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
             </div>
           )}
         </div>
+        {/* Quantity / Color prompt modal */}
+        {showQuantityPrompt && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg w-full max-w-sm p-4 shadow-lg">
+              <h4 className="font-bold mb-2">Adicionar peça(s)</h4>
+              <div className="mb-3">
+                <label className="block text-xs text-gray-600 mb-1">Peça</label>
+                <div className="text-sm font-medium mb-1">{currentPieceTipo || currentPieceTipo || 'Nova peça'}</div>
+                <label className="block text-xs text-gray-600">Quantidade</label>
+                <input type="number" min={1} value={pieceQuantity} onChange={e=>setPieceQuantity(Number(e.target.value || 1))} className="w-full border p-2 rounded mb-2" />
+                <label className="block text-xs text-gray-600">Cor (opcional)</label>
+                <select value={pieceColor} onChange={e=>setPieceColor(e.target.value)} className="w-full border p-2 rounded">
+                  <option value="">— Selecionar —</option>
+                  {COLORS.map(c => (<option key={c} value={c}>{c}</option>))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => { setShowQuantityPrompt(false); setPieceQuantity(1); setPieceColor(''); }} className="px-3 py-2 border rounded">Cancelar</button>
+                <button onClick={confirmAddPieces} className="px-3 py-2 bg-rose-600 text-white rounded">Adicionar</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="border-t p-4 flex justify-between items-center bg-white">
           <div>

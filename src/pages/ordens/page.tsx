@@ -142,6 +142,7 @@ export default function OrdensPage() {
     const pendingStatusRef = useRef<Set<string>>(new Set());
     const [pendingIds, setPendingIds] = useState<string[]>([]);
     const [toast, setToast] = useState<string | null>(null);
+    const [quickTapDebug, setQuickTapDebug] = useState<any>(null);
 
     const showToast = (msg: string, ms = 1800) => {
       try { setToast(msg); } catch(_){}
@@ -154,10 +155,9 @@ export default function OrdensPage() {
     const handleQuickTap = async (order: any, newStatus: string, e?: React.MouseEvent) => {
       try { if (e && (e as any).stopPropagation) (e as any).stopPropagation(); } catch(_){}
       try { if (e && (e as any).preventDefault) (e as any).preventDefault(); } catch(_){}
-      try { console.debug('[handleQuickTap] start', { id: order && order.id, newStatus }); } catch(_){}
-      try { showToast('Operação enviada'); } catch(_){}
-      // debug: log touch on mobile
-      try { if (typeof navigator !== 'undefined' && /iP(hone|ad|od)/.test((navigator as any).userAgent || '') ) console.debug('[handleQuickTap] mobile touch', { id: order && order.id, newStatus }); } catch(e) {}
+      try { console.debug('[handleQuickTap] start', { id: order && order.id, newStatus }); } catch(_){ }
+      try { showToast('Operação enviada'); } catch(_){ }
+      try { setQuickTapDebug({ id: order && order.id, newStatus, ts: Date.now() }); localStorage.setItem('lastQuickTap', JSON.stringify({ id: order && order.id, newStatus, ts: Date.now() })); } catch(e) {}
       if (!order || !order.id) return;
       if (pendingIds.includes(order.id) || pendingStatusRef.current.has(order.id)) return;
       addPendingId(order.id);
@@ -2873,6 +2873,11 @@ export default function OrdensPage() {
                     <div className="bg-black/80 text-white text-sm px-4 py-2 rounded-md shadow">{toast}</div>
                   </div>
                 )}
+                  {quickTapDebug && (
+                    <div className="fixed top-4 right-4 z-50">
+                      <div className="bg-white/90 text-xs text-gray-800 px-3 py-1 rounded border shadow">Last action: {quickTapDebug.newStatus} ({quickTapDebug.id ? quickTapDebug.id.slice(0,6) : '—'})</div>
+                    </div>
+                  )}
               </div>
             </div>
           </div>
