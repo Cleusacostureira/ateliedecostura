@@ -2105,6 +2105,7 @@ export default function OrdensPage() {
               <i className="ri-add-line text-xl w-5 h-5 flex items-center justify-center"></i>
               Nova Ordem
             </button>
+          </div>
           <div className="flex flex-wrap gap-2 mb-6 items-center">
             {Object.entries(statusCounts).map(([status, count]) => {
               const icon = statusIcons[status] || 'ri-checkbox-blank-line';
