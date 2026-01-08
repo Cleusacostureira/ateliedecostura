@@ -141,13 +141,21 @@ export default function OrdensPage() {
     // prevent duplicate quick-status changes while a previous change is in-flight
     const pendingStatusRef = useRef<Set<string>>(new Set());
     const [pendingIds, setPendingIds] = useState<string[]>([]);
+    const [toast, setToast] = useState<string | null>(null);
+
+    const showToast = (msg: string, ms = 1800) => {
+      try { setToast(msg); } catch(_){}
+      try { setTimeout(() => setToast(null), ms); } catch(_){}
+    };
 
     const addPendingId = (id: string) => setPendingIds((p) => (p.includes(id) ? p : [...p, id]));
     const removePendingId = (id: string) => setPendingIds((p) => p.filter(x => x !== id));
 
     const handleQuickTap = async (order: any, newStatus: string, e?: React.MouseEvent) => {
       try { if (e && (e as any).stopPropagation) (e as any).stopPropagation(); } catch(_){}
+      try { if (e && (e as any).preventDefault) (e as any).preventDefault(); } catch(_){}
       try { console.debug('[handleQuickTap] start', { id: order && order.id, newStatus }); } catch(_){}
+      try { showToast('Operação enviada'); } catch(_){}
       if (!order || !order.id) return;
       if (pendingIds.includes(order.id) || pendingStatusRef.current.has(order.id)) return;
       addPendingId(order.id);
