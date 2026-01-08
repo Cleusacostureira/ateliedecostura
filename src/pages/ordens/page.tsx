@@ -146,7 +146,8 @@ export default function OrdensPage() {
     const removePendingId = (id: string) => setPendingIds((p) => p.filter(x => x !== id));
 
     const handleQuickTap = async (order: any, newStatus: string, e?: React.MouseEvent) => {
-      try { if (e && e.stopPropagation) e.stopPropagation(); } catch(_){}
+      try { if (e && (e as any).stopPropagation) (e as any).stopPropagation(); } catch(_){}
+      try { console.debug('[handleQuickTap] start', { id: order && order.id, newStatus }); } catch(_){}
       if (!order || !order.id) return;
       if (pendingIds.includes(order.id) || pendingStatusRef.current.has(order.id)) return;
       addPendingId(order.id);
@@ -2648,6 +2649,7 @@ export default function OrdensPage() {
                               {order.status !== 'Em costura' && order.status !== 'Pronto' && order.status !== 'Retirado' && (
                                 <button
                                   type="button"
+                                  onTouchStart={(e) => handleQuickTap(order, 'Em costura', e)}
                                   onClick={(e) => handleQuickTap(order, 'Em costura', e)}
                                   title="Iniciar"
                                   disabled={pendingIds.includes(order.id)}
@@ -2658,6 +2660,7 @@ export default function OrdensPage() {
                               {(order.status !== 'Pronto' && order.status !== 'Retirado') && (
                                 <button
                                   type="button"
+                                  onTouchStart={(e) => handleQuickTap(order, 'Pronto', e)}
                                   onClick={(e) => handleQuickTap(order, 'Pronto', e)}
                                   title="Finalizar"
                                   disabled={pendingIds.includes(order.id)}
@@ -2668,6 +2671,7 @@ export default function OrdensPage() {
                               {(order.status === 'Pronto' && order.status !== 'Retirado') && (
                                 <button
                                   type="button"
+                                  onTouchStart={(e) => handleQuickTap(order, 'Retirado', e)}
                                   onClick={(e) => handleQuickTap(order, 'Retirado', e)}
                                   title="Retirado"
                                   disabled={pendingIds.includes(order.id)}
@@ -2780,19 +2784,19 @@ export default function OrdensPage() {
                             <div className="flex items-center justify-center gap-3">
                               <div className="flex items-center gap-2">
                                 {order.status !== 'Em costura' && order.status !== 'Pronto' && order.status !== 'Retirado' && (
-                                  <button onClick={(e) => handleQuickTap(order, 'Em costura', e)} title="Iniciar" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-blue-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
+                                  <button onTouchStart={(e) => handleQuickTap(order, 'Em costura', e)} onClick={(e) => handleQuickTap(order, 'Em costura', e)} title="Iniciar" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-blue-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
                                     <i className="ri-play-line"></i>
                                   </button>
                                 )}
 
                                 {order.status !== 'Pronto' && order.status !== 'Retirado' && (
-                                  <button onClick={(e) => handleQuickTap(order, 'Pronto', e)} title="Finalizar" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-green-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
+                                  <button onTouchStart={(e) => handleQuickTap(order, 'Pronto', e)} onClick={(e) => handleQuickTap(order, 'Pronto', e)} title="Finalizar" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-green-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
                                     <i className="ri-check-line"></i>
                                   </button>
                                 )}
 
                                 {order.status === 'Pronto' && order.status !== 'Retirado' && (
-                                  <button onClick={(e) => handleQuickTap(order, 'Retirado', e)} title="Marcar Retirado" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
+                                  <button onTouchStart={(e) => handleQuickTap(order, 'Retirado', e)} onClick={(e) => handleQuickTap(order, 'Retirado', e)} title="Marcar Retirado" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
                                     <i className="ri-hand-heart-line"></i>
                                   </button>
                                 )}
