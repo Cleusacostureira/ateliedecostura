@@ -3,6 +3,7 @@ import Sidebar from '../../components/layout/Sidebar';
 import StatCard from '../../components/dashboard/StatCard';
 import { clientsSummaryForMonth } from '../../lib/clients';
 import { supabase } from '../../lib/supabaseClient';
+import { readOrdersFromStorage } from '../../lib/storageHelpers';
 
 const formatDate = (d: any) => {
   if (!d) return '';
@@ -130,8 +131,8 @@ export default function DashboardPage() {
 
       // fallback localStorage
       try {
-        const raw = localStorage.getItem('orders');
-        if (raw && mounted) setOrders(JSON.parse(raw));
+        const parsed = readOrdersFromStorage();
+        if (Array.isArray(parsed) && mounted) setOrders(parsed);
       } catch (e) {}
     }
 

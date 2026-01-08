@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import { supabase } from '../../lib/supabaseClient';
+import { readOrdersFromStorage } from '../../lib/storageHelpers';
 
 export default function RelatoriosPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
@@ -38,17 +39,12 @@ export default function RelatoriosPage() {
 
       // fallback to localStorage
       try {
-        const raw = localStorage.getItem('orders');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && mounted) {
-            setOrders(parsed);
-            return;
-          }
+        const parsed = readOrdersFromStorage();
+        if (Array.isArray(parsed) && mounted) {
+          setOrders(parsed);
+          return;
         }
-      } catch (e) {
-        console.warn('relatorios localStorage parse failed', e);
-      }
+      } catch (e) { console.warn('relatorios localStorage parse failed', e); }
 
       if (mounted) setOrders([]);
     }

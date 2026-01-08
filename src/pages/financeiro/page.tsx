@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import { readOrdersFromStorage } from '../../lib/storageHelpers';
 import { supabase } from '../../lib/supabaseClient';
 
 export default function FinanceiroPage() {
@@ -53,11 +54,8 @@ export default function FinanceiroPage() {
                 (ordRes as any).data.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
               }
             } catch (e) {
-              try {
-                const rawOrders = localStorage.getItem('orders');
-                const parsedOrders = rawOrders ? JSON.parse(rawOrders) : [];
-                if (Array.isArray(parsedOrders)) parsedOrders.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
-              } catch (ee) { /* ignore */ }
+              const parsedOrders = readOrdersFromStorage();
+              if (Array.isArray(parsedOrders)) parsedOrders.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
             }
             if (activeSet.size > 0) {
               data = data.filter((d:any) => {
@@ -106,8 +104,7 @@ export default function FinanceiroPage() {
             try { parsed = parsed.filter((d:any) => { const num = String(d.numero||'').toLowerCase(); const digits = String(d.numero||'').replace(/\D/g,''); if (num === 'n000002') return false; if (digits === '2') return false; return true; }); } catch (e) {}
             try {
               // also ensure cash entries correspond to existing orders (local fallback)
-              const rawOrders = localStorage.getItem('orders');
-              const parsedOrders = rawOrders ? JSON.parse(rawOrders) : [];
+              const parsedOrders = readOrdersFromStorage();
               const activeSetLocal = new Set<string>();
               if (Array.isArray(parsedOrders)) parsedOrders.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSetLocal.add(String(o.id)); if (o.numero) activeSetLocal.add(String(o.numero)); } });
               const rawDel = localStorage.getItem('deletedOrders');
@@ -239,8 +236,7 @@ export default function FinanceiroPage() {
 
     // also mark related order as paid (local + try supabase)
     try {
-      const rawOrders = localStorage.getItem('orders');
-      const ordersArr = rawOrders ? JSON.parse(rawOrders) : [];
+      const ordersArr = readOrdersFromStorage();
       const idx = ordersArr.findIndex((o:any) => String(o.id) === String(selectedClient.orderId) || String(o.id) === String(selectedClient.orderid) || String(o.numero) === String(selectedClient.numero) || String(o.numero) === String(selectedClient.orderId));
       if (idx >= 0) {
         ordersArr[idx].paymentStatus = 'Pago';

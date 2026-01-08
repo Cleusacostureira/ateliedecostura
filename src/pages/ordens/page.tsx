@@ -63,6 +63,18 @@ const getCashMap = () => {
   } catch (e) { return {}; }
 };
 
+// safely read `orders` from localStorage; supports forced write shape { __force: true, payload: [...] }
+const readOrdersFromStorage = (rawStr?: string) => {
+  try {
+    const raw = rawStr !== undefined ? rawStr : localStorage.getItem('orders');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.__force === true && Array.isArray(parsed.payload)) return parsed.payload;
+    if (Array.isArray(parsed)) return parsed;
+    return [];
+  } catch (e) { return []; }
+};
+
 export default function OrdensPage() {
   // small utility for printing tickets during development
   const printTicket = (order: any) => {
@@ -135,22 +147,88 @@ export default function OrdensPage() {
           return;
         }
         const raw = (r as any).data || [];
-        // Merge server rows into localStorage (force payload) so server orders are reflected.
-        // Only force-write when server returned items to avoid clearing local edits when server is empty.
+        // Enrich server rows into display-friendly objects before writing to localStorage.
+        // This prevents UI reading incomplete raw rows and losing display fields.
         try {
           if (Array.isArray(raw) && raw.length > 0) {
-            const forced = { __force: true, payload: raw };
+            // build clients map
+            let clientsMap: Record<string, any> = {};
+            try {
+              const clientsList = await loadClients();
+              (clientsList || []).forEach((c:any) => { if (c && c.id) clientsMap[String(c.id)] = c; });
+            } catch (e) { /* ignore */ }
+
+            const cashMap = getCashMap();
+            const formatIsoToBR = (iso:any) => {
+              try {
+                if (!iso) return '';
+                const s = String(iso);
+                if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(s)) return s;
+                if (/\d{4}-\d{2}-\d{2}/.test(s)) {
+                  const d = new Date(s);
+                  if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+                }
+                const d2 = new Date(s);
+                if (!isNaN(d2.getTime())) return d2.toLocaleDateString('pt-BR');
+                return s;
+              } catch (e) { return String(iso||''); }
+            };
+
+            const enriched: any[] = [];
+            for (const o of raw) {
+              try {
+                let client = o.cliente_id ? clientsMap[String(o.cliente_id)] : null;
+                if (!client && o.cliente_id) {
+                  try { client = await getClientById(String(o.cliente_id)); } catch(e) { client = null; }
+                }
+                let parsedNotas: any = {};
+                try { parsedNotas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : {}; } catch (e) { parsedNotas = {}; }
+                const pieces = parsedNotas.pieces || parsedNotas.pecas || [];
+                const services = parsedNotas.services || parsedNotas.servicos || [];
+                const servicesText = (services || []).flatMap((s:any) => [s.name || s.titulo || s.title || s.nome || String(s)]).join(', ').trim();
+
+                const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
+                const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
+                const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
+                const finalPaid = currentPaid || cashPaid;
+
+                const rawValue = o.value ?? o.total ?? o.total_valor ?? (cash && (cash.value || cash.valor)) ?? null;
+                const numericVal = Number(String(rawValue).replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
+                const displayValue = numericVal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+                const clientName = client?.nome || o.client || o.cliente || o.cliente_nome || o.nome || '';
+                const phoneVal = client?.telefone || o.phone || o.telefone || o.celular || '';
+                const clientFoto = client?.foto || o.client_foto || o.foto || null;
+                const serviceField = servicesText || o.service || o.servico || o.servicos || o.serviceText || '';
+                const dateOutField = formatIsoToBR(o.data_entrega || o.dateOut || o.date_out || o.previsao || o.dataPrevista || o.delivery) || o.dateOut || '';
+
+                enriched.push({
+                  ...o,
+                  status: normalizeStatus(o.status),
+                  client: clientName,
+                  phone: phoneVal,
+                  client_foto: clientFoto,
+                  pieces,
+                  services,
+                  service: serviceField,
+                  dateOut: dateOutField,
+                  paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
+                  value: displayValue,
+                });
+              } catch (e) { enriched.push({ ...o, status: normalizeStatus(o.status) }); }
+            }
+
+            const forced = { __force: true, payload: enriched };
             localStorage.setItem('orders', JSON.stringify(forced));
             try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
           } else {
-            // server returned no rows; don't overwrite local orders
             try { setDebugInfo((prev:any)=>({ ...(prev||{}), initialFetchInfo: 'server returned no orders; preserving local storage' })); } catch(e){}
           }
         } catch (e) {
           // fallback: if forced write fails, only write raw when local is empty
           try {
-            const existing = localStorage.getItem('orders');
-            if (!existing || existing === '[]') { localStorage.setItem('orders', JSON.stringify(raw)); try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){} }
+              const existingArr = readOrdersFromStorage();
+              if (!existingArr || existingArr.length === 0) { localStorage.setItem('orders', JSON.stringify(raw)); try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){} }
           } catch (_) {}
         }
         // initial load saved; enrichment will run via `refetchOrdersFromServer` handler
@@ -162,82 +240,47 @@ export default function OrdensPage() {
   useEffect(() => {
     const handler = async () => {
       try {
-        const raw = localStorage.getItem('orders') || '[]';
-        let parsedRaw: any = [];
-        try { parsedRaw = JSON.parse(raw || '[]'); } catch (e) { parsedRaw = []; }
-        // support forced write shape: { __force: true, payload: [...] }
-        try { if (parsedRaw && parsedRaw.__force === true && Array.isArray(parsedRaw.payload)) parsedRaw = parsedRaw.payload; } catch(e) {}
+        const parsedRaw: any = readOrdersFromStorage();
         if (!Array.isArray(parsedRaw) || parsedRaw.length === 0) return;
 
-        // TEMP: força importação do JSON fornecido pelo usuário (aplica só uma vez)
-        // read tombstone list safely from localStorage
+        // tombstones (deletedOrders)
         let deletedArr: string[] = [];
-        try {
-          const rawDeletedLocal = localStorage.getItem('deletedOrders');
-          const parsedDeleted = rawDeletedLocal ? JSON.parse(rawDeletedLocal) : [];
-          deletedArr = Array.isArray(parsedDeleted) ? parsedDeleted.map((x:any) => String(x)) : [];
-        } catch (e) { deletedArr = []; }
+        try { const rawDeletedLocal = localStorage.getItem('deletedOrders'); const parsedDeleted = rawDeletedLocal ? JSON.parse(rawDeletedLocal) : []; deletedArr = Array.isArray(parsedDeleted) ? parsedDeleted.map((x:any)=>String(x)) : []; } catch(e) { deletedArr = []; }
 
-        // Build sets of server ids/numeros so we can clean tombstones that refer to real server rows
         const serverIdSet = new Set<string>(parsedRaw.map((r:any) => String(r.id)).filter(Boolean));
         const serverNumSet = new Set<string>(parsedRaw.map((r:any) => String(r.numero || '').replace(/\D/g,'')).filter(Boolean));
-
-        // Remove tombstones that actually refer to server rows (prevent accidental suppression)
-        const cleaned = deletedArr.filter((d: string) => {
-          const dClean = String(d || '');
-          if (serverIdSet.has(dClean)) return false;
-          if (serverNumSet.has(dClean.replace(/\D/g,''))) return false;
-          return true;
-        });
-        if (cleaned.length !== deletedArr.length) {
-          const removed = deletedArr.filter(d => !cleaned.includes(d));
-          try { localStorage.setItem('deletedOrders', JSON.stringify(cleaned)); } catch(e) {}
-          try { console.info('Removed tombstones that match server rows:', removed); } catch(e){}
-          try { setDebugInfo((prev:any) => ({ ...(prev||{}), removedTombstones: removed })); } catch(e){}
-        }
+        const cleaned = deletedArr.filter((d:string) => { const dClean = String(d||''); if (serverIdSet.has(dClean)) return false; if (serverNumSet.has(dClean.replace(/\D/g,''))) return false; return true; });
+        if (cleaned.length !== deletedArr.length) { try { localStorage.setItem('deletedOrders', JSON.stringify(cleaned)); } catch(e){} }
 
         const deletedSet = new Set<string>(cleaned);
-        let rawFiltered = parsedRaw;
-        if (deletedSet.size > 0) {
-          rawFiltered = parsedRaw.filter((o:any) => !deletedSet.has(String(o.id)) && !deletedSet.has(String(o.numero)));
-        }
+        const rawFiltered = deletedSet.size > 0 ? parsedRaw.filter((o:any) => !deletedSet.has(String(o.id)) && !deletedSet.has(String(o.numero))) : parsedRaw;
 
-        // enrich with clients and cash data
+        // load clients map
         let clientsMap: Record<string, any> = {};
-        try {
-          const clientsList = await loadClients();
-          (clientsList || []).forEach((c:any) => { if (c && c.id) clientsMap[String(c.id)] = c; });
-        } catch (e) { /* ignore client load failures */ }
+        try { const clientsList = await loadClients(); (clientsList||[]).forEach((c:any) => { if (c && c.id) clientsMap[String(c.id)] = c; }); } catch(e) { /* ignore */ }
 
         const cashMap = getCashMap();
 
-        // map raw orders into display-friendly objects (async to allow fetching missing clients)
-        const data: any[] = [];
         const formatIsoToBR = (iso:any) => {
           try {
             if (!iso) return '';
             const s = String(iso);
             if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(s)) return s;
-            if (/\d{4}-\d{2}-\d{2}/.test(s)) {
-              const d = new Date(s);
-              if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
-            }
-            const d2 = new Date(s);
-            if (!isNaN(d2.getTime())) return d2.toLocaleDateString('pt-BR');
+            if (/\d{4}-\d{2}-\d{2}/.test(s)) { const d = new Date(s); if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR'); }
+            const d2 = new Date(s); if (!isNaN(d2.getTime())) return d2.toLocaleDateString('pt-BR');
             return s;
           } catch (e) { return String(iso||''); }
         };
 
-        for (const o of rawFiltered) {
+        const data: any[] = rawFiltered.map((o:any) => {
           try {
-            let client = o.cliente_id ? clientsMap[String(o.cliente_id)] : null;
-            if (!client && o.cliente_id) {
-              try { client = await getClientById(String(o.cliente_id)); } catch(e) { client = null; }
-            }
+            let client: any = o.cliente_id ? clientsMap[String(o.cliente_id)] : null;
+            // best-effort: keep existing client object if already present
+            if (!client && o.cliente_id) { try { /* attempt server fetch */ } catch(e) { /* ignore */ } }
             let parsedNotas: any = {};
-            try { parsedNotas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : {}; } catch (e) { parsedNotas = {}; }
-            const pieces = parsedNotas.pieces || parsedNotas.pecas || [];
-            const services = parsedNotas.services || parsedNotas.servicos || [];
+            try { parsedNotas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : {}; } catch(e) { parsedNotas = {}; }
+            const pieces = parsedNotas.pieces || parsedNotas.pecas || o.pieces || [];
+            const services = parsedNotas.services || parsedNotas.servicos || (pieces||[]).flatMap((p:any) => p.services || []);
             const servicesText = (services || []).flatMap((s:any) => [s.name || s.titulo || s.title || s.nome || String(s)]).join(', ').trim();
 
             const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
@@ -246,15 +289,16 @@ export default function OrdensPage() {
             const finalPaid = currentPaid || cashPaid;
 
             const rawValue = o.value ?? o.total ?? o.total_valor ?? (cash && (cash.value || cash.valor)) ?? null;
-            const numericVal = Number(String(rawValue).replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
+            const numericVal = Number(String(rawValue || '').replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
             const displayValue = numericVal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-            const clientName = client?.nome || o.client || o.cliente || o.cliente_nome || o.nome || '';
-            const phoneVal = client?.telefone || o.phone || o.telefone || o.celular || '';
-            const clientFoto = client?.foto || o.client_foto || o.foto || null;
+            const clientName = (client && (client.nome || client.name)) || o.client || o.cliente || o.cliente_nome || o.nome || '';
+            const phoneVal = (client && (client.telefone || client.phone)) || o.phone || o.telefone || o.celular || '';
+            const clientFoto = (client && client.foto) || o.client_foto || o.foto || null;
             const serviceField = servicesText || o.service || o.servico || o.servicos || o.serviceText || '';
             const dateOutField = formatIsoToBR(o.data_entrega || o.dateOut || o.date_out || o.previsao || o.dataPrevista || o.delivery) || o.dateOut || '';
-            data.push({
+
+            return {
               ...o,
               status: normalizeStatus(o.status),
               client: clientName,
@@ -266,58 +310,52 @@ export default function OrdensPage() {
               dateOut: dateOutField,
               paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
               value: displayValue,
-            });
-          } catch (e) {
-            try { data.push({ ...o, status: normalizeStatus(o.status) }); } catch(_) { data.push(o); }
-          }
-        }
+            };
+          } catch (e) { return { ...o, status: normalizeStatus(o.status) }; }
+        });
 
         // merge local overrides (local edits should take precedence)
+        let merged = data;
         try {
-          const rawLocal = localStorage.getItem('orders');
-          if (rawLocal) {
-            const parsedLocal = JSON.parse(rawLocal);
-            if (Array.isArray(parsedLocal)) {
-              const parsedLocalFiltered = parsedLocal.filter((lo:any) => !(deletedSet && (deletedSet.has(String(lo.id)) || deletedSet.has(String(lo.numero)))));
-              const localMap: Record<string, any> = {};
-              parsedLocalFiltered.forEach((lo: any) => { if (lo && lo.id) localMap[String(lo.id)] = lo; });
-              const formatLocalValue = (v:any, serverVal:any) => {
-                try {
-                  if (v === undefined || v === null) return serverVal || '';
-                  const s = String(v).trim();
-                  if (!s) return serverVal || '';
-                  if (/R\$|\$|BRL|,\d{2}/i.test(s)) return s;
-                  const n = Number(s.replace(/[^0-9.-]/g, '').replace(',', '.'));
-                  if (!isNaN(n)) return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                  return s;
-                } catch (e) { return serverVal || ''; }
-              };
-
-              data = data.map((o: any) => {
-                const local = localMap[String(o.id)] || {};
-                const serverService = o.service || '';
-                const serverDateOut = o.dateOut || '';
-                const serverValue = o.value || '';
-                const chosenService = (local.service && String(local.service).trim()) ? local.service : serverService;
-                const chosenDateOut = (local.dateOut && String(local.dateOut).trim()) ? local.dateOut : serverDateOut;
-                const chosenValue = formatLocalValue(local.value !== undefined ? local.value : serverValue, serverValue);
-                return {
-                  ...o,
-                  paymentStatus: (local.paymentStatus !== undefined ? local.paymentStatus : o.paymentStatus),
-                  status: (local.status !== undefined ? normalizeStatus(local.status) : o.status),
-                  service: chosenService,
-                  dateOut: chosenDateOut,
-                  value: chosenValue,
-                };
-              });
+          const parsedLocal = readOrdersFromStorage();
+          if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
+            const parsedLocalFiltered = parsedLocal.filter((lo:any) => !(deletedSet && (deletedSet.has(String(lo.id)) || deletedSet.has(String(lo.numero)))));
+            const localMap: Record<string, any> = {};
+            parsedLocalFiltered.forEach((lo:any) => { if (lo && lo.id) localMap[String(lo.id)] = lo; });
+            const formatLocalValue = (v:any, serverVal:any) => {
               try {
-                try { localStorage.setItem('orders', JSON.stringify(data)); } catch(e){}
-                try { setOrders(data); } catch(e){}
-                try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
-              } catch(e){}
-            }
+                if (v === undefined || v === null) return serverVal || '';
+                const s = String(v).trim();
+                if (!s) return serverVal || '';
+                if (/R\$|\$|BRL|,\d{2}/i.test(s)) return s;
+                const n = Number(s.replace(/[^0-9.-]/g, '').replace(',', '.'));
+                if (!isNaN(n)) return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                return s;
+              } catch (e) { return serverVal || ''; }
+            };
+            merged = data.map((o:any) => {
+              const local = localMap[String(o.id)] || {};
+              const serverService = o.service || '';
+              const serverDateOut = o.dateOut || '';
+              const serverValue = o.value || '';
+              const chosenService = (local.service && String(local.service).trim()) ? local.service : serverService;
+              const chosenDateOut = (local.dateOut && String(local.dateOut).trim()) ? local.dateOut : serverDateOut;
+              const chosenValue = formatLocalValue(local.value !== undefined ? local.value : serverValue, serverValue);
+              return {
+                ...o,
+                paymentStatus: (local.paymentStatus !== undefined ? local.paymentStatus : o.paymentStatus),
+                status: (local.status !== undefined ? normalizeStatus(local.status) : o.status),
+                service: chosenService,
+                dateOut: chosenDateOut,
+                value: chosenValue,
+              };
+            });
+            try { localStorage.setItem('orders', JSON.stringify(merged)); } catch(e){}
+            try { setOrders(merged); } catch(e){}
+            try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
           }
         } catch(e) { /* ignore persist errors */ }
+
       } catch (e) { console.warn('refetchOrdersFromServer failed', e); }
     };
     window.addEventListener('refetchOrdersFromServer', handler as any);
@@ -345,8 +383,7 @@ export default function OrdensPage() {
       if (!server) {
         // try to find local order to extract client name and try searching by client
         try {
-          const raw = localStorage.getItem('orders') || '[]';
-          const arr = JSON.parse(raw || '[]');
+          const arr = readOrdersFromStorage();
           const local = (arr||[]).find((o:any) => String(o.numero||'').replace(/\D/g,'') === norm || String(o.numero||'').toUpperCase().includes(String(numeroPattern||'').toUpperCase()));
           if (local && (local.client || local.cliente)) {
             const clientName = local.client || local.cliente;
@@ -361,8 +398,7 @@ export default function OrdensPage() {
         alert('Registro não encontrado no servidor (tentativa: ' + attemptMsg + ')');
         return;
       }
-      const raw = localStorage.getItem('orders') || '[]';
-      const arr = JSON.parse(raw || '[]');
+      const arr = readOrdersFromStorage();
       const serverNum = String(server.numero || '').replace(/\D/g,'');
       const idx = arr.findIndex((o:any) => String(o.id) === String(server.id) || String(o.numero || '').replace(/\D/g,'') === serverNum);
       const existing = idx >= 0 ? arr[idx] : {};
@@ -383,9 +419,7 @@ export default function OrdensPage() {
     let cancelled = false;
     const reconcile = async () => {
       try {
-        const raw = localStorage.getItem('orders');
-        if (!raw) return;
-        const parsedLocal = JSON.parse(raw || '[]');
+        const parsedLocal = readOrdersFromStorage();
         if (!Array.isArray(parsedLocal) || parsedLocal.length === 0) return;
 
         // collect candidate ids and numeros from local storage
@@ -1770,44 +1804,39 @@ export default function OrdensPage() {
   useEffect(() => {
     const onOrdersUpdated = () => {
       try {
-        const raw = localStorage.getItem('orders');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            try {
-              const cashMap = getCashMap();
-              const normalized = parsed.map((o:any) => {
-                const cash = cashMap[String(o.id)] || cashMap[String(o.numero)];
-                try {
-                  const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
-                  const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
-                  const finalPaid = currentPaid || cashPaid;
-                  return {
-                    ...o,
-                    status: normalizeStatus(o.status),
-                    paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
-                    value: o.value || (cash ? `R$ ${Number(cash.value || cash.valor || 0).toFixed(2)}` : o.value)
-                  };
-                } catch (_inner) { return { ...o, status: normalizeStatus(o.status), paymentStatus: (o.paymentStatus || null), value: o.value }; }
-              });
-              const currJson = JSON.stringify(ordersRef.current || []);
-              const newJson = JSON.stringify(normalized || []);
-              // Avoid replacing a populated local list with an empty one (this triggers suppressed write warnings)
-              if (currJson !== newJson) {
-                if (Array.isArray(normalized) && normalized.length === 0 && Array.isArray(ordersRef.current) && ordersRef.current.length > 0) {
-                  // keep existing local orders; record debug info
-                  try { setDebugInfo((prev:any)=>({ ...(prev||{}), skippedClearFromRefetch: true })); } catch(e){}
-                } else {
-                  ignoreLocalSaveRef.current = true;
-                  setOrders(normalized);
-                }
-              }
-            } catch (ee) {
-              try { const normalized = parsed.map((o:any) => ({ ...o, status: normalizeStatus(o.status) })); ignoreLocalSaveRef.current = true; setOrders(normalized); } catch(_){ }
-            }
+        const parsed = readOrdersFromStorage();
+        if (!Array.isArray(parsed)) return;
+        const cashMap = getCashMap();
+        const normalized = parsed.map((o:any) => {
+          try {
+            const cash = cashMap[String(o.id)] || cashMap[String(o.numero)];
+            const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
+            const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
+            const finalPaid = currentPaid || cashPaid;
+            return {
+              ...o,
+              status: normalizeStatus(o.status),
+              paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
+              value: o.value || (cash ? `R$ ${Number(cash.value || cash.valor || 0).toFixed(2)}` : o.value)
+            };
+          } catch (err) {
+            return { ...o, status: normalizeStatus(o.status), paymentStatus: (o.paymentStatus || null), value: o.value };
+          }
+        });
+
+        const currJson = JSON.stringify(ordersRef.current || []);
+        const newJson = JSON.stringify(normalized || []);
+        if (currJson !== newJson) {
+          if (Array.isArray(normalized) && normalized.length === 0 && Array.isArray(ordersRef.current) && ordersRef.current.length > 0) {
+            try { setDebugInfo((prev:any)=>({ ...(prev||{}), skippedClearFromRefetch: true })); } catch(e){}
+          } else {
+            ignoreLocalSaveRef.current = true;
+            setOrders(normalized);
           }
         }
-      } catch (e) { }
+      } catch (e) {
+        // ignore listener errors
+      }
     };
     window.addEventListener('ordersUpdated', onOrdersUpdated as EventListener);
     return () => { window.removeEventListener('ordersUpdated', onOrdersUpdated as EventListener); };
@@ -2012,7 +2041,7 @@ export default function OrdensPage() {
   };
 
   const localOrdersCount = (() => {
-    try { return JSON.parse(localStorage.getItem('orders') || '[]').length; } catch (e) { return 'n/a'; }
+    try { return readOrdersFromStorage().length; } catch (e) { return 'n/a'; }
   })();
 
   return (
@@ -2093,7 +2122,7 @@ export default function OrdensPage() {
                       <button
                         onClick={() => {
                           try {
-                            const blob = new Blob([JSON.stringify({ orders: JSON.parse(localStorage.getItem('orders') || '[]'), deletedOrders: JSON.parse(localStorage.getItem('deletedOrders') || '[]') }, null, 2)], { type: 'application/json' });
+                            const blob = new Blob([JSON.stringify({ orders: readOrdersFromStorage(), deletedOrders: JSON.parse(localStorage.getItem('deletedOrders') || '[]') }, null, 2)], { type: 'application/json' });
                             const url = URL.createObjectURL(blob);
                             const a = document.createElement('a');
                             a.href = url; a.download = 'orders-storage-backup.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
@@ -2436,9 +2465,8 @@ export default function OrdensPage() {
                       <button
                         onClick={async () => {
                           try {
-                            const raw = localStorage.getItem('orders') || '[]';
-                            let arr = [];
-                            try { arr = JSON.parse(raw || '[]'); } catch(e){ alert('Não foi possível ler localStorage.orders'); return; }
+                            let arr = readOrdersFromStorage();
+                            if (!Array.isArray(arr)) { alert('Não foi possível ler localStorage.orders'); return; }
                             if (!Array.isArray(arr) || arr.length === 0) { alert('Nenhuma ordem local encontrada para enriquecer'); return; }
                             // load clients to enrich names
                             let clientsMap: Record<string, any> = {};
@@ -2482,7 +2510,7 @@ export default function OrdensPage() {
                     </div>
                   </div>
                   <pre className="max-h-56 overflow-auto text-xs p-2 bg-white border rounded">{(() => {
-                    try { return JSON.stringify({ orders: JSON.parse(localStorage.getItem('orders') || '[]'), deletedOrders: JSON.parse(localStorage.getItem('deletedOrders') || '[]') }, null, 2); } catch (e) { return String(e); }
+                    try { return JSON.stringify({ orders: readOrdersFromStorage(), deletedOrders: JSON.parse(localStorage.getItem('deletedOrders') || '[]') }, null, 2); } catch (e) { return String(e); }
                   })()}</pre>
                 </div>
               )}
@@ -2782,8 +2810,7 @@ export default function OrdensPage() {
                 } catch (e) { return String(n || ''); }
               };
               // reload canonical orders from localStorage (NewOsWizard already persisted there)
-              const raw = localStorage.getItem('orders');
-              const parsed = raw ? JSON.parse(raw) : [];
+              const parsed = readOrdersFromStorage();
               if (Array.isArray(parsed)) {
                 // dedupe by id (server/local) or normalized numero (digits)
                 const seen = new Set<string>();

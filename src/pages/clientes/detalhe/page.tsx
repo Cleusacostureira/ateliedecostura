@@ -1,15 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Sidebar from '../../../components/layout/Sidebar';
+import { readOrdersFromStorage } from '../../../lib/storageHelpers';
 import { getClientById, loadClients, upsertClient } from '../../../lib/clients';
 
 const loadOrders = () => {
   try {
-    const raw = localStorage.getItem('orders');
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed;
+    return readOrdersFromStorage();
   } catch (e) { return []; }
 };
 

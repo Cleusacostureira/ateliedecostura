@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { readOrdersFromStorage } from './storageHelpers';
 
 export type Cliente = {
   id?: string;
@@ -207,11 +208,8 @@ export function addPointsForOrder(order: any) {
 }
 
 export function clientsSummaryForMonth(month: number, year: number) {
-  // This util still reads from localStorage orders; keep as-is for compatibility
   try {
-    const raw = localStorage.getItem('orders');
-    if (!raw) return [];
-    const orders = JSON.parse(raw);
+    const orders = readOrdersFromStorage();
     const map: Record<string, { name: string; total: number; count: number }> = {};
     for (const o of orders) {
       if (!o.dateOut) continue;

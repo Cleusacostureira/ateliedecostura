@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '../../../components/layout/Sidebar';
+import { readOrdersFromStorage } from '../../../lib/storageHelpers';
 
 export default function EntreguesPage() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -7,16 +8,12 @@ export default function EntreguesPage() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('orders');
-      const parsed = raw ? JSON.parse(raw) : [];
+      const parsed = readOrdersFromStorage();
       if (Array.isArray(parsed)) setOrders(parsed.filter((o: any) => o.status === 'Retirado'));
-    } catch (e) {
-      setOrders([]);
-    }
+    } catch (e) { setOrders([]); }
     const onUpdate = () => {
       try {
-        const raw = localStorage.getItem('orders');
-        const parsed = raw ? JSON.parse(raw) : [];
+        const parsed = readOrdersFromStorage();
         if (Array.isArray(parsed)) setOrders(parsed.filter((o: any) => o.status === 'Retirado'));
       } catch (e) {}
     };

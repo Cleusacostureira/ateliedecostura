@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { loadClients, upsertClient, deleteClient } from '../../lib/clients';
 import { supabase } from '../../lib/supabaseClient';
+import { readOrdersFromStorage } from '../../lib/storageHelpers';
 import ClienteModal from './components/ClienteModal';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../../components/layout/Sidebar';
@@ -27,7 +28,7 @@ export default function ClientesPage() {
         }
 
         let localOrders: any[] = [];
-        try { const raw = localStorage.getItem('orders'); localOrders = raw ? JSON.parse(raw) : []; } catch(e) { localOrders = []; }
+        try { localOrders = readOrdersFromStorage(); } catch(e) { localOrders = []; }
 
         const map: Record<string, { total: number; count: number }> = {};
         const accumulate = (clienteId: string, amt: number, cnt: number) => {

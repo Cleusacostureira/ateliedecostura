@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import { readOrdersFromStorage } from '../../lib/storageHelpers';
 
 function parseDateStr(d: string) {
   if (!d) return null;
@@ -9,7 +10,7 @@ function parseDateStr(d: string) {
 
 export default function AgendaPage() {
   const [orders, setOrders] = useState<any[]>(() => {
-    try { const raw = localStorage.getItem('orders'); return raw ? JSON.parse(raw) : []; } catch (e) { return []; }
+    try { return readOrdersFromStorage(); } catch (e) { return []; }
   });
   const [tab, setTab] = useState<'today'|'tomorrow'|'week'|'kanban'>('today');
 

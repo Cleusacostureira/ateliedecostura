@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
+import { readOrdersFromStorage } from '../../lib/storageHelpers';
 import { loadClients, upsertClient } from '../../lib/clients';
 import PieceFlowModal from './PieceFlowModal';
 
@@ -400,8 +401,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
       } else {
         // fallback to localStorage
         try {
-          const raw = localStorage.getItem('orders');
-          const arr = raw ? JSON.parse(raw) : [];
+          const arr = readOrdersFromStorage();
           let max = 0;
           (arr || []).forEach((o:any) => {
             try { const m = String(o.numero||'').match(/(\d+)$/); if (m) max = Math.max(max, Number(m[1])); } catch(_){}
@@ -412,8 +412,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
     } catch (e) {
       // ignore and fallback
       try {
-        const raw = localStorage.getItem('orders');
-        const arr = raw ? JSON.parse(raw) : [];
+        const arr = readOrdersFromStorage();
         let max = 0;
         (arr || []).forEach((o:any) => { try { const m = String(o.numero||'').match(/(\d+)$/); if (m) max = Math.max(max, Number(m[1])); } catch(_){} });
         numero = 'N' + String(max+1).padStart(5,'0');
@@ -443,8 +442,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
     order._unsynced = true;
     // persist locally
     try {
-      const raw = localStorage.getItem('orders');
-      const arr = raw ? JSON.parse(raw) : [];
+      const arr = readOrdersFromStorage();
       arr.unshift(order);
       localStorage.setItem('orders', JSON.stringify(arr));
     } catch (e) {}
@@ -493,8 +491,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
         // server returned created row; merge it into local storage replacing the temp order
         const serverRow = data[0];
         try {
-          const raw = localStorage.getItem('orders');
-          let arr = raw ? JSON.parse(raw) : [];
+          let arr = readOrdersFromStorage();
           const idx = arr.findIndex((o:any) => o.id === order.id || String(o.numero || '').replace(/\D/g,'') === String(order.numero || '').replace(/\D/g,''));
           const merged = { ...order, ...serverRow, _local: false, _unsynced: false };
           finalOrder = merged;
