@@ -156,6 +156,12 @@ export default function OrdensPage() {
       try { if (e && (e as any).preventDefault) (e as any).preventDefault(); } catch(_){}
       try { console.debug('[handleQuickTap] start', { id: order && order.id, newStatus }); } catch(_){}
       try { showToast('Operação enviada'); } catch(_){}
+      // Temporary iOS-visible alert to confirm handler runs on mobile devices
+      try {
+        if (typeof navigator !== 'undefined' && /iP(hone|ad|od)/.test((navigator as any).userAgent || '') && newStatus === 'Retirado') {
+          try { alert('Confirmado: ação Retirado recebida'); } catch(e) { console.debug('alert blocked', e); }
+        }
+      } catch(e) {}
       if (!order || !order.id) return;
       if (pendingIds.includes(order.id) || pendingStatusRef.current.has(order.id)) return;
       addPendingId(order.id);

@@ -616,9 +616,8 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
       <div className="bg-white shadow-xl w-full h-full rounded-none p-4 z-10 flex flex-col" style={{ minHeight: '80vh', maxHeight: '98vh' }}>
         <div className="p-4 sm:p-0">
           <div className="flex items-start justify-between mb-4 gap-4">
-            <div className="min-w-0">
-              <h3 className="text-xs sm:text-lg font-bold truncate whitespace-nowrap">Nova Ordem de Serviço — Passo {step} de 10</h3>
-            </div>
+            {/* Title removed per UX request: keep only previews/content */}
+            <div className="min-w-0" />
             <div className="ml-auto flex flex-col items-end gap-2 text-right">
               <div className="text-2xl font-bold text-blue-600">{selectedClient?.nome || selectedClient?.name || '-'}</div>
               <div className="flex items-center gap-2">
