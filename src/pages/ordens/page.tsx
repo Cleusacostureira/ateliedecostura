@@ -2792,19 +2792,19 @@ export default function OrdensPage() {
                             <div className="flex items-center justify-center gap-3">
                               <div className="flex items-center gap-2">
                                 {order.status !== 'Em costura' && order.status !== 'Pronto' && order.status !== 'Retirado' && (
-                                  <button onTouchStart={(e) => handleQuickTap(order, 'Em costura', e)} onClick={(e) => handleQuickTap(order, 'Em costura', e)} title="Iniciar" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-blue-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
+                                  <button type="button" onTouchStart={(e) => handleQuickTap(order, 'Em costura', e)} onClick={(e) => handleQuickTap(order, 'Em costura', e)} title="Iniciar" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-blue-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
                                     <i className="ri-play-line"></i>
                                   </button>
                                 )}
 
                                 {order.status !== 'Pronto' && order.status !== 'Retirado' && (
-                                  <button onTouchStart={(e) => handleQuickTap(order, 'Pronto', e)} onClick={(e) => handleQuickTap(order, 'Pronto', e)} title="Finalizar" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-green-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
+                                  <button type="button" onTouchStart={(e) => handleQuickTap(order, 'Pronto', e)} onClick={(e) => handleQuickTap(order, 'Pronto', e)} title="Finalizar" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-green-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
                                     <i className="ri-check-line"></i>
                                   </button>
                                 )}
 
                                 {order.status === 'Pronto' && order.status !== 'Retirado' && (
-                                  <button onTouchStart={(e) => handleQuickTap(order, 'Retirado', e)} onClick={(e) => handleQuickTap(order, 'Retirado', e)} title="Marcar Retirado" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
+                                  <button type="button" onTouchStart={(e) => handleQuickTap(order, 'Retirado', e)} onClick={(e) => handleQuickTap(order, 'Retirado', e)} title="Marcar Retirado" disabled={pendingIds.includes(order.id)} className={"w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}>
                                     <i className="ri-hand-heart-line"></i>
                                   </button>
                                 )}
@@ -2866,6 +2866,11 @@ export default function OrdensPage() {
                     })}
                   </tbody>
                 </table>
+                {toast && (
+                  <div aria-live="polite" className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
+                    <div className="bg-black/80 text-white text-sm px-4 py-2 rounded-md shadow">{toast}</div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
