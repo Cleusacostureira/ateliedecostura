@@ -2683,22 +2683,24 @@ export default function OrdensPage() {
                               )}
 
                               {(order.status === 'Pronto' && order.status !== 'Retirado') && (
-                                <button
-                                  type="button"
-                                  onTouchStart={(e) => handleQuickTap(order, 'Retirado', e)}
-                                  onClick={(e) => handleQuickTap(order, 'Retirado', e)}
-                                  title="Retirado"
-                                  disabled={pendingIds.includes(order.id)}
-                                  className={"w-10 h-10 flex items-center justify-center text-white bg-purple-600 rounded text-lg " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}
-                                ><i className="ri-hand-heart-line"></i></button>
-                                {debugMode && (
+                                <>
                                   <button
                                     type="button"
-                                    onClick={(e) => { e.stopPropagation(); (async () => { await handleQuickTap(order, 'Retirado'); try { alert('DBG: ação enviada'); } catch(_){} })(); }}
-                                    title="DBG Retirar"
-                                    className="ml-2 w-20 h-10 flex items-center justify-center text-white bg-black rounded text-xs"
-                                  >DBG Ret</button>
-                                )}
+                                    onTouchStart={(e) => handleQuickTap(order, 'Retirado', e)}
+                                    onClick={(e) => handleQuickTap(order, 'Retirado', e)}
+                                    title="Retirado"
+                                    disabled={pendingIds.includes(order.id)}
+                                    className={"w-10 h-10 flex items-center justify-center text-white bg-purple-600 rounded text-lg " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}
+                                  ><i className="ri-hand-heart-line"></i></button>
+                                  {debugMode && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); (async () => { await handleQuickTap(order, 'Retirado'); try { alert('DBG: ação enviada'); } catch(_){} })(); }}
+                                      title="DBG Retirar"
+                                      className="ml-2 w-20 h-10 flex items-center justify-center text-white bg-black rounded text-xs"
+                                    >DBG Ret</button>
+                                  )}
+                                </>
                               )}
 
                               <button
