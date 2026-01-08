@@ -827,21 +827,24 @@ export default function FinanceiroPage() {
                 const aggregated = aggregateByOrder(sorted || []);
                 return aggregated.map((grp:any) => (
                   <div key={grp.key} className="bg-white p-3 rounded-lg border">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">{grp.client}</p>
-                          <div className="text-sm text-gray-600 truncate space-y-0.5">
-                            {grp.lines.map((l:any, idx:number) => (
-                              <div key={idx} className="truncate">
-                                <span className="font-semibold text-sm text-gray-800">{l.label}</span>
-                              </div>
-                            ))}
-                          </div>
-                          {grp.numero && <p className="text-[10px] text-gray-500">OS <span className="text-blue-600 font-semibold"><span className="text-sm align-middle">N</span>{String(grp.numero).replace(/\D/g,'').padStart(6,'0')}</span></p>}
-                          <p className="text-[10px] text-gray-500">{grp.date || ''}</p>
+                    <div className="flex flex-col">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900">{grp.client}</p>
+                        <div className="text-sm text-gray-600 space-y-0.5 break-words">
+                          {grp.lines.map((l:any, idx:number) => (
+                            <div key={idx}>
+                              <span className="font-semibold text-sm text-gray-800 break-words">{l.label}</span>
+                            </div>
+                          ))}
                         </div>
-                        <div className="text-right ml-3 flex-shrink-0">
+                        <div className="mt-2 text-[10px] text-gray-500">
+                          {grp.numero && <span className="block">OS <span className="text-blue-600 font-semibold">N{String(grp.numero).replace(/\D/g,'').padStart(6,'0')}</span></span>}
+                          <span className="block">{grp.date || ''}</span>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between">
+                        <div />
+                        <div className="text-right ml-3">
                           <p className="text-sm font-bold text-green-600">R$ {Number(grp.total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${grp.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{grp.status || ''}</span>
                         </div>

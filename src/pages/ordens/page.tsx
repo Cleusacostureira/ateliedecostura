@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
-import DebugCopyButton from '../../components/DebugCopyButton';
 import NewOsWizard from './NewOsWizard';
 import { addPointsForOrder, loadClients, upsertClient, getClientById } from '../../lib/clients';
 import { formatMessageForStatus } from '../../lib/messages';
@@ -2242,7 +2241,6 @@ export default function OrdensPage() {
       
       <main className="flex-1 lg:ml-56 pt-14 lg:pt-0 min-w-0">
         <div className="p-4 lg:p-8 min-w-0">
-          <DebugCopyButton />
           <style>{`
             /* Blink only the "ATRASADO" badge as a slow alert */
             .late-blink { animation: lateBlink 2.0s ease-in-out infinite; }

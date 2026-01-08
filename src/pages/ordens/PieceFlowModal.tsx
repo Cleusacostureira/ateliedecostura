@@ -21,7 +21,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
   const [serverLoading, setServerLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [selectedServices, setSelectedServices] = useState<Array<{ id?: string; name: string; price: number }>>([]);
-  const [pieceQuantity, setPieceQuantity] = useState<number>(1);
+  const [pieceQuantity, setPieceQuantity] = useState<string>('');
   const [newServiceName, setNewServiceName] = useState('');
   const [newServicePrice, setNewServicePrice] = useState('');
   const [serviceSearch, setServiceSearch] = useState('');
@@ -35,6 +35,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
     setModelo(initialModelo || '');
     setSelectedServices([]);
     setNewServiceName(''); setNewServicePrice('');
+    setPieceQuantity('');
   }
 
   const PREDEFINED: Array<{ key:string; nome:string; icone:string }> = (allTipos && Array.isArray(allTipos) ? (allTipos as any).map((t:any,i:number)=>({ key: String(i), nome: t.nome, icone: t.icone })) : [
@@ -74,7 +75,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
   const handleSelectTipo = (nome: string) => {
     try { console.log('[PieceFlowModal] handleSelectTipo', nome); } catch(e) {}
     setSelectedTipo(nome);
-    setPieceQuantity(1);
+    setPieceQuantity('');
     // show immediate quantity prompt before color selection
     setShowQuantityPromptLocal(true);
   }
@@ -205,8 +206,8 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
           <div className="relative bg-white rounded-lg w-full max-w-sm p-4 shadow-lg">
             <h4 className="font-bold mb-2">Quantidade de peças</h4>
             <p className="text-sm text-gray-600 mb-2">Quantas peças do tipo <strong>{selectedTipo}</strong> deseja adicionar?</p>
-            <div className="flex items-center gap-2 mb-3">
-              <input type="number" min={1} value={pieceQuantity} onChange={e=>setPieceQuantity(Number(e.target.value||1))} className="w-28 border p-2 rounded" />
+              <div className="flex items-center gap-2 mb-3">
+              <input type="number" min={1} value={pieceQuantity} onChange={e=>setPieceQuantity(e.target.value)} className="w-28 border p-2 rounded" />
               <button onClick={()=>{ setShowQuantityPromptLocal(false); setStep(2); }} className="px-3 py-2 bg-rose-500 text-white rounded">Confirmar</button>
               <button onClick={()=>{ setShowQuantityPromptLocal(false); setSelectedTipo(''); }} className="px-3 py-2 border rounded">Cancelar</button>
             </div>
@@ -388,7 +389,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
                   </div>
                   <div className="mt-3 mb-3">
                     <label className="block text-sm text-gray-600 mb-1">Quantidade</label>
-                    <input type="number" min={1} value={pieceQuantity} onChange={e=>setPieceQuantity(Number(e.target.value || 1))} className="w-28 border p-2 rounded" />
+                    <input type="number" min={1} value={pieceQuantity} onChange={e=>setPieceQuantity(e.target.value)} className="w-28 border p-2 rounded" />
                   </div>
                   <div className="flex gap-2">
                     <button onClick={()=>setStep(4)} className="px-3 py-2 border rounded">Voltar</button>
