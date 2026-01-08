@@ -731,7 +731,7 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
                     <div className="flex gap-2 mb-2">
                     <input placeholder="Nome da peça" className="flex-1 border p-2 rounded" value={currentPieceTipo} onChange={e=>setCurrentPieceTipo(e.target.value)} />
                     <input placeholder="Modelo / Observação" className="w-40 border p-2 rounded" value={currentPieceModelo} onChange={e=>setCurrentPieceModelo(e.target.value)} />
-                    <button onClick={() => setShowQuantityPrompt(true)} className="px-4 py-2 bg-rose-500 text-white rounded">Adicionar</button>
+                    <button type="button" onClick={() => setShowQuantityPrompt(true)} className="px-4 py-2 bg-rose-500 text-white rounded">Adicionar</button>
                   </div>
 
                   <div className="mb-3">
