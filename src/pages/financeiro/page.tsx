@@ -334,7 +334,7 @@ export default function FinanceiroPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50 overflow-x-hidden">
+    <div className="flex min-h-screen bg-gray-50 overflow-x-auto">
       <Sidebar />
       
       <main className="flex-1 lg:ml-56 pt-14 lg:pt-0">
@@ -347,6 +347,24 @@ export default function FinanceiroPage() {
               </div>
               <p className="text-xs lg:text-sm text-gray-600">Controle suas receitas e despesas</p>
               
+            </div>
+            {/* Botão de teste móvel: confirma que o cliente está rodando a versão deployed */}
+            <div className="lg:hidden flex items-center">
+              <button
+                onClick={() => {
+                  try {
+                    const ver = 'v:332b310';
+                    alert('Teste de deploy — versão: ' + ver);
+                    console.info('[financeiro-debug] teste clicado', ver);
+                    localStorage.setItem('dbg_financeiro_test', JSON.stringify({ at: Date.now(), ver }));
+                    // dispatch event so other pages can react if needed
+                    window.dispatchEvent(new CustomEvent('financeiroTestClicked', { detail: { ver } }));
+                  } catch (e) { console.warn('debug click failed', e); }
+                }}
+                className="ml-2 px-2 py-1 text-xs bg-rose-50 text-rose-700 border border-rose-100 rounded-lg"
+              >
+                Teste DBG
+              </button>
             </div>
             <div className="flex gap-1.5 lg:gap-2">
               <button
@@ -581,7 +599,7 @@ export default function FinanceiroPage() {
 
             {/* Desktop/table */}
             <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[700px]">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-3 lg:px-6 py-2 lg:py-3 text-left text-[9px] lg:text-xs font-medium text-gray-600 uppercase tracking-wider">Data</th>
