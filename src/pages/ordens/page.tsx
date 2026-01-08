@@ -125,6 +125,7 @@ export default function OrdensPage() {
     const [materialPrice, setMaterialPrice] = useState('');
     const [fidelizacaoMessage, setFidelizacaoMessage] = useState('');
     const [clientePhone, setClientePhone] = useState('');
+    const [statusChangeMessage, setStatusChangeMessage] = useState('');
     const [pecasSearch, setPecasSearch] = useState('');
     const [pieceTipo, setPieceTipo] = useState('');
     const [pieceCor, setPieceCor] = useState('');
@@ -1541,7 +1542,29 @@ export default function OrdensPage() {
     setSelectedOrder(updatedOrder);
     setStatusChangeMessage(composeStatusMessage(updatedOrder, newStatus));
     setShowStatusMessageOptions(true);
-    setShowStatusOnlyModal(true);
+    if (newStatus !== 'Pronto') setShowStatusOnlyModal(true);
+
+    // When marking as Pronto, open the fidelização message so the user can copy/send it
+    if (newStatus === 'Pronto') {
+      try {
+        const isPaid = updatedOrder.paymentStatus === 'Pago';
+        const paymentInfo = isPaid
+          ? '\n✅ *Pagamento já realizado!*\n\nAguardamos você! ✨'
+          : `\n\n*DADOS PARA PAGAMENTO PIX:*\n\n*Nome:* Cleusa Belani David\n*Telefone:* 45999126130\n*CPF:* 64166724053\n\nAguardamos você! ✨`;
+
+        const clientNameMsg = getOrderField(updatedOrder, 'client', 'cliente', 'client_name', 'nome');
+        const piecesText = formatPiecesAndServicesForMessage(updatedOrder);
+        const serviceLine = getOrderField(updatedOrder, 'service', 'servico', 'servicos', 'serviceText');
+        const dateOutMsg = getOrderField(updatedOrder, 'dateOut', 'data_entrega', 'previsao');
+        const valueMsg = getOrderField(updatedOrder, 'value', 'valor', 'total');
+        const header = `Olá ${clientNameMsg || updatedOrder.client || '-'}! 🎉\n\n*Cleusa Ateliê de Costura*\n\nSua(s) peça(s) da OS ${orderRef(updatedOrder)} está(ão) pronta(s).`;
+        const details = `${serviceLine ? `\n\n🧾 Serviço(s): ${serviceLine}` : ''}\n${valueMsg ? `\n💰 Valor: ${valueMsg}` : ''}\n${dateOutMsg ? `\n\n📅 Previsão de retirada: ${dateOutMsg}` : ''}`;
+
+        setFidelizacaoMessage(`${header}\n\n${piecesText || ''}${details}\n\n${paymentInfo}`);
+        setClientePhone(updatedOrder.phone);
+        setShowFidelizacaoModal(true);
+      } catch (e) { console.warn('failed to build fidelizacao message for quick finalize', e); }
+    }
   };
 
   const togglePaymentStatus = async (order: any) => {
@@ -2575,18 +2598,18 @@ export default function OrdensPage() {
                       </div>
                     </div>
                       <div className="mt-3 flex items-center gap-2">
-                      {order.status !== 'Em costura' && order.status !== 'Pronto' && order.status !== 'Retirado' && (
-                        <button onClick={() => applyQuickStatus(order, 'Em costura')} title="Iniciar" className="w-8 h-8 flex items-center justify-center text-white bg-blue-600 rounded"><i className="ri-play-line"></i></button>
-                      )}
-                      <button onClick={() => applyQuickStatus(order, 'Pronto')} title="Finalizar" className="w-8 h-8 flex items-center justify-center text-white bg-green-600 rounded"><i className="ri-check-line"></i></button>
-                      <button onClick={() => applyQuickStatus(order, 'Retirado')} title="Retirado" className="w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded"><i className="ri-hand-heart-line"></i></button>
+                              {order.status !== 'Em costura' && order.status !== 'Pronto' && order.status !== 'Retirado' && (
+                                <button onClick={() => applyQuickStatus(order, 'Em costura')} title="Iniciar" className="w-10 h-10 flex items-center justify-center text-white bg-blue-600 rounded text-lg"><i className="ri-play-line"></i></button>
+                              )}
+                              <button onClick={() => applyQuickStatus(order, 'Pronto')} title="Finalizar" className="w-10 h-10 flex items-center justify-center text-white bg-green-600 rounded text-lg"><i className="ri-check-line"></i></button>
+                              <button onClick={() => applyQuickStatus(order, 'Retirado')} title="Retirado" className="w-10 h-10 flex items-center justify-center text-white bg-purple-600 rounded text-lg"><i className="ri-hand-heart-line"></i></button>
 
-                      <button onClick={() => printTicket(order)} title="Imprimir" className="w-8 h-8 flex items-center justify-center text-gray-700 bg-gray-50 rounded"><i className="ri-printer-line"></i></button>
+                              <button onClick={() => printTicket(order)} title="Imprimir" className="w-10 h-10 flex items-center justify-center text-gray-700 bg-gray-50 rounded text-lg"><i className="ri-printer-line"></i></button>
 
-                      <div className="flex-1" />
+                              <div className="flex-1" />
 
-                      <button onClick={() => handleEdit(order)} title="Editar" className="w-8 h-8 flex items-center justify-center text-rose-600 bg-rose-50 rounded"><i className="ri-edit-line"></i></button>
-                      <button onClick={() => handleDelete(order)} title="Excluir" className="w-8 h-8 flex items-center justify-center text-red-600 bg-red-50 rounded"><i className="ri-delete-bin-line"></i></button>
+                              <button onClick={() => handleEdit(order)} title="Editar" className="w-10 h-10 flex items-center justify-center text-rose-600 bg-rose-50 rounded text-lg"><i className="ri-edit-line"></i></button>
+                              <button onClick={() => handleDelete(order)} title="Excluir" className="w-10 h-10 flex items-center justify-center text-red-600 bg-red-50 rounded text-lg"><i className="ri-delete-bin-line"></i></button>
                       {order.phone && (
                         // WhatsApp button removed per request
                         null
