@@ -145,6 +145,7 @@ export default function OrdensPage() {
     const [quickTapDebug, setQuickTapDebug] = useState<any>(null);
     const [debugBanner, setDebugBanner] = useState<string | null>(null);
     const APP_VERSION = '332b310';
+    const debugMode = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).has('dbg') : false;
 
     const showToast = (msg: string, ms = 1800) => {
       try { setToast(msg); } catch(_){}
@@ -2690,6 +2691,14 @@ export default function OrdensPage() {
                                   disabled={pendingIds.includes(order.id)}
                                   className={"w-10 h-10 flex items-center justify-center text-white bg-purple-600 rounded text-lg " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}
                                 ><i className="ri-hand-heart-line"></i></button>
+                                {debugMode && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); (async () => { await handleQuickTap(order, 'Retirado'); try { alert('DBG: ação enviada'); } catch(_){} })(); }}
+                                    title="DBG Retirar"
+                                    className="ml-2 w-20 h-10 flex items-center justify-center text-white bg-black rounded text-xs"
+                                  >DBG Ret</button>
+                                )}
                               )}
 
                               <button
