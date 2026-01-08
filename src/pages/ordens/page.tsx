@@ -2616,7 +2616,7 @@ export default function OrdensPage() {
                       <div className="mt-3 flex items-center gap-2">
                               {order.status !== 'Em costura' && order.status !== 'Pronto' && order.status !== 'Retirado' && (
                                 <button
-                                  onPointerUp={(e) => { e.stopPropagation(); e.preventDefault(); applyQuickStatus(order, 'Em costura'); }}
+                                  type="button"
                                   onClick={(e) => { e.stopPropagation(); applyQuickStatus(order, 'Em costura'); }}
                                   title="Iniciar"
                                   className="w-10 h-10 flex items-center justify-center text-white bg-blue-600 rounded text-lg"
@@ -2625,7 +2625,7 @@ export default function OrdensPage() {
 
                               {(order.status !== 'Pronto' && order.status !== 'Retirado') && (
                                 <button
-                                  onPointerUp={(e) => { e.stopPropagation(); e.preventDefault(); applyQuickStatus(order, 'Pronto'); }}
+                                  type="button"
                                   onClick={(e) => { e.stopPropagation(); applyQuickStatus(order, 'Pronto'); }}
                                   title="Finalizar"
                                   className="w-10 h-10 flex items-center justify-center text-white bg-green-600 rounded text-lg"
@@ -2634,7 +2634,7 @@ export default function OrdensPage() {
 
                               {(order.status === 'Pronto' && order.status !== 'Retirado') && (
                                 <button
-                                  onPointerUp={(e) => { e.stopPropagation(); e.preventDefault(); applyQuickStatus(order, 'Retirado'); }}
+                                  type="button"
                                   onClick={(e) => { e.stopPropagation(); applyQuickStatus(order, 'Retirado'); }}
                                   title="Retirado"
                                   className="w-10 h-10 flex items-center justify-center text-white bg-purple-600 rounded text-lg"
@@ -2642,7 +2642,7 @@ export default function OrdensPage() {
                               )}
 
                               <button
-                                onPointerUp={(e) => { e.stopPropagation(); e.preventDefault(); printTicket(order); }}
+                                type="button"
                                 onClick={(e) => { e.stopPropagation(); printTicket(order); }}
                                 title="Imprimir"
                                 className="w-10 h-10 flex items-center justify-center text-gray-700 bg-gray-50 rounded text-lg"
@@ -2651,13 +2651,13 @@ export default function OrdensPage() {
                               <div className="flex-1" />
 
                               <button
-                                onPointerUp={(e) => { e.stopPropagation(); e.preventDefault(); handleEdit(order); }}
+                                type="button"
                                 onClick={(e) => { e.stopPropagation(); handleEdit(order); }}
                                 title="Editar"
                                 className="w-10 h-10 flex items-center justify-center text-rose-600 bg-rose-50 rounded text-lg"
                               ><i className="ri-edit-line"></i></button>
                               <button
-                                onPointerUp={(e) => { e.stopPropagation(); e.preventDefault(); handleDelete(order); }}
+                                type="button"
                                 onClick={(e) => { e.stopPropagation(); handleDelete(order); }}
                                 title="Excluir"
                                 className="w-10 h-10 flex items-center justify-center text-red-600 bg-red-50 rounded text-lg"

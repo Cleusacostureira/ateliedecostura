@@ -617,7 +617,7 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
         <div className="p-4 sm:p-0">
           <div className="flex items-start justify-between mb-4 gap-4">
             <div>
-              <h3 className="text-lg font-bold">Nova Ordem de Serviço — Passo {step} de 10</h3>
+              <h3 className="text-base sm:text-lg font-bold">Nova Ordem de Serviço — Passo {step} de 10</h3>
             </div>
             <div className="ml-auto flex flex-col items-end gap-2 text-right">
               <div className="text-2xl font-bold text-blue-600">{selectedClient?.nome || selectedClient?.name || '-'}</div>
