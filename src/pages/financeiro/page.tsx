@@ -603,22 +603,7 @@ export default function FinanceiroPage() {
             </div>
             {/* Botões de teste: mobile e desktop */}
               <div className="flex items-center gap-2">
-              <div className="lg:hidden">
-                <button
-                  onClick={() => {
-                    try {
-                      const ver = 'v:332b310';
-                      alert('Teste de deploy — versão: ' + ver);
-                      console.info('[financeiro-debug] teste clicado', ver);
-                      localStorage.setItem('dbg_financeiro_test', JSON.stringify({ at: Date.now(), ver }));
-                      window.dispatchEvent(new CustomEvent('financeiroTestClicked', { detail: { ver } }));
-                    } catch (e) { console.warn('debug click failed', e); }
-                  }}
-                  className="ml-2 px-2 py-1 text-xs bg-rose-50 text-rose-700 border border-rose-100 rounded-lg"
-                >
-                  Teste DBG
-                </button>
-              </div>
+              
               <div className="hidden lg:block flex items-center gap-2">
                 <button onClick={() => { try { const localRaw = localStorage.getItem('cashFlowDetails'); const local = localRaw ? JSON.parse(localRaw) : []; const orders = readOrdersFromStorage(); const correlations = (cashFlowDetails||[]).map((d:any)=> ({ entry: d, matchedOrder: (orders||[]).find((o:any)=> String(o.id) === String(d.orderId || d.orderid) || String(o.numero) === String(d.numero)) || null })); setDebugData({ cashFlowDetails, localStorageEntries: local, orders, correlations }); setShowDebugModal(true); } catch(e){ console.warn('show debug failed', e); } }} className="ml-2 px-2 py-1 text-xs bg-gray-100 text-gray-800 border rounded">Mostrar dados (debug)</button>
                 <button onClick={() => {
