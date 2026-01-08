@@ -2576,13 +2576,19 @@ export default function OrdensPage() {
                   <div key={order.id} className="bg-white p-3 rounded-lg border w-full">
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 w-full">
-                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2">
                           {order.client_foto ? (
                             <img src={order.client_foto} alt={order.client || 'cliente'} className="w-8 h-8 rounded-full object-cover" />
                           ) : null}
                           <div className="font-medium text-sm text-gray-900 truncate">{order.client}</div>
                           <div className="mt-0">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${statusOptions.find(s=>s.id===order.status)?.color || 'bg-gray-100 text-gray-800'}`}>{order.status}</span>
+                            <button
+                              onClick={() => { setSelectedOrder(order); setStatusSelection(order.status); setShowStatusOnlyModal(true); setShowStatusMessageOptions(false); }}
+                              title="Clique para alterar o status"
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${statusOptions.find(s=>s.id===order.status)?.color || 'bg-gray-100 text-gray-800'}`}
+                            >
+                              {order.status}
+                            </button>
                           </div>
                         </div>
                         <div className="text-xs text-gray-500 break-words">{orderRef(order)} · <span className={order.status === 'Em costura' ? 'font-bold' : ''}>{serviceDisplayFor(order)}</span></div>
