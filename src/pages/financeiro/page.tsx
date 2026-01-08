@@ -681,15 +681,15 @@ export default function FinanceiroPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 lg:gap-6 mb-3 lg:mb-6">
+          <div className="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-5 gap-2 lg:gap-6 mb-3 lg:mb-6">
             <div className="bg-white rounded-lg p-2.5 lg:p-6 border border-gray-200">
-              <div className="flex flex-col gap-1.5 lg:gap-2">
+                <div className="flex flex-col gap-1.5 lg:gap-2">
                 <div className="w-7 h-7 lg:w-10 lg:h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                    <i className="ri-arrow-up-line text-sm lg:text-xl text-green-600 w-3.5 h-3.5 lg:w-5 lg:h-5 flex items-center justify-center"></i>
+                    <i className="ri-arrow-up-line text-base lg:text-xl text-green-600 w-4 h-4 lg:w-5 lg:h-5 flex items-center justify-center"></i>
                   </div>
                 <div>
-                  <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">Receitas</p>
-                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ {receitas.toLocaleString('pt-BR')}</p>
+                  <p className="text-sm lg:text-sm text-gray-600 mb-0.5">Receitas</p>
+                  <p className="text-sm lg:text-2xl font-bold text-gray-900">R$ {receitas.toLocaleString('pt-BR')}</p>
                 </div>
               </div>
             </div>
@@ -697,11 +697,11 @@ export default function FinanceiroPage() {
             <div className="bg-white rounded-lg p-2.5 lg:p-6 border border-gray-200">
               <div className="flex flex-col gap-1.5 lg:gap-2">
                 <div className="w-7 h-7 lg:w-10 lg:h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
-                  <i className="ri-checkbox-circle-line text-sm lg:text-xl text-indigo-600 w-3.5 h-3.5 lg:w-5 lg:h-5 flex items-center justify-center"></i>
+                  <i className="ri-checkbox-circle-line text-base lg:text-xl text-indigo-600 w-4 h-4 lg:w-5 lg:h-5 flex items-center justify-center"></i>
                 </div>
                 <div>
-                  <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">Recebido</p>
-                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ {recebido.toLocaleString('pt-BR')}</p>
+                  <p className="text-sm lg:text-sm text-gray-600 mb-0.5">Recebido</p>
+                  <p className="text-sm lg:text-2xl font-bold text-gray-900">R$ {recebido.toLocaleString('pt-BR')}</p>
                 </div>
               </div>
             </div>
@@ -709,11 +709,11 @@ export default function FinanceiroPage() {
             <div className="bg-white rounded-lg p-2.5 lg:p-6 border border-gray-200">
               <div className="flex flex-col gap-1.5 lg:gap-2">
                 <div className="w-7 h-7 lg:w-10 lg:h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                  <i className="ri-arrow-down-line text-sm lg:text-xl text-red-600 w-3.5 h-3.5 lg:w-5 lg:h-5 flex items-center justify-center"></i>
+                  <i className="ri-arrow-down-line text-base lg:text-xl text-red-600 w-4 h-4 lg:w-5 lg:h-5 flex items-center justify-center"></i>
                 </div>
                 <div>
-                  <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">Despesas</p>
-                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ {despesas.toLocaleString('pt-BR')}</p>
+                  <p className="text-sm lg:text-sm text-gray-600 mb-0.5">Despesas</p>
+                  <p className="text-sm lg:text-2xl font-bold text-gray-900">R$ {despesas.toLocaleString('pt-BR')}</p>
                 </div>
               </div>
             </div>
@@ -830,20 +830,20 @@ export default function FinanceiroPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <div className="min-w-0">
-                          <p className="text-[10px] font-medium text-gray-900 truncate">{grp.client}</p>
-                          <div className="text-[9px] text-gray-600 truncate space-y-0.5">
+                          <p className="text-sm font-medium text-gray-900 truncate">{grp.client}</p>
+                          <div className="text-sm text-gray-600 truncate space-y-0.5">
                             {grp.lines.map((l:any, idx:number) => (
                               <div key={idx} className="truncate">
-                                <span className="font-semibold text-[11px] text-gray-800">{l.label}</span>
+                                <span className="font-semibold text-sm text-gray-800">{l.label}</span>
                               </div>
                             ))}
                           </div>
-                          {grp.numero && <p className="text-[8px] text-gray-500">OS <span className="text-blue-600 font-semibold"><span className="text-sm align-middle">N</span>{String(grp.numero).replace(/\D/g,'').padStart(6,'0')}</span></p>}
-                          <p className="text-[8px] text-gray-500">{grp.date || ''}</p>
+                          {grp.numero && <p className="text-[10px] text-gray-500">OS <span className="text-blue-600 font-semibold"><span className="text-sm align-middle">N</span>{String(grp.numero).replace(/\D/g,'').padStart(6,'0')}</span></p>}
+                          <p className="text-[10px] text-gray-500">{grp.date || ''}</p>
                         </div>
                         <div className="text-right ml-3 flex-shrink-0">
-                          <p className="text-[10px] font-bold text-green-600">R$ {Number(grp.total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                          <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${grp.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{grp.status || ''}</span>
+                          <p className="text-sm font-bold text-green-600">R$ {Number(grp.total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${grp.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{grp.status || ''}</span>
                         </div>
                       </div>
                     </div>
