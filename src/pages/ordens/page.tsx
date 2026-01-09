@@ -3133,6 +3133,23 @@ export default function OrdensPage() {
                   <div className="fixed bottom-4 left-4 z-50">
                     <button onClick={exportLocalDebug} className="bg-black text-white text-xs px-3 py-2 rounded-md shadow">Export Debug</button>
                   </div>
+                  <div className="fixed bottom-4 right-4 z-60">
+                    <button
+                      id="test-retirar-btn"
+                      onClick={() => {
+                        try {
+                          const first = orders.find((o:any) => o.status === 'Pronto');
+                          if (!first) { showToast('Nenhuma OS com status Pronto'); return; }
+                          handleQuickTap(first, 'Retirado' as any);
+                        } catch (e) { console.warn('test retirar click failed', e); }
+                      }}
+                      onTouchStart={(e)=>{ try{ (e as any).stopPropagation(); }catch(_){}; try{ const first=orders.find((o:any)=>o.status==='Pronto'); if(first) handleQuickTap(first,'Retirado' as any);}catch(_){} }}
+                      onPointerUp={(e)=>{ try{ (e as any).stopPropagation(); }catch(_){}; try{ const first=orders.find((o:any)=>o.status==='Pronto'); if(first) handleQuickTap(first,'Retirado' as any);}catch(_){} }}
+                      className="bg-rose-600 text-white text-xs px-3 py-2 rounded-md shadow"
+                    >
+                      Test Retirar
+                    </button>
+                  </div>
                   {debugBanner && (
                     <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-50">
                       <div className="bg-rose-600 text-white text-sm px-4 py-2 rounded-md shadow">{debugBanner}</div>
