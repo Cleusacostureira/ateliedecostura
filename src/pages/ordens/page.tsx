@@ -226,6 +226,7 @@ export default function OrdensPage() {
       try { if (e && (e as any).preventDefault) (e as any).preventDefault(); } catch(_){}
       try { console.debug('[handleQuickTap] start', { id: order && order.id, newStatus }); } catch(_){ }
       try { showToast('Operação enviada'); } catch(_){ }
+      try { if (newStatus === 'Retirado') showToast('Solicitado: marcar como Retirado'); } catch(_){}
       try { setQuickTapDebug({ id: order && order.id, newStatus, ts: Date.now() }); localStorage.setItem('lastQuickTap', JSON.stringify({ id: order && order.id, newStatus, ts: Date.now() })); } catch(e) {}
       try { setDebugBanner(`HANDLER: ${newStatus} ${order && order.id ? order.id.slice(0,6) : ''}`); setTimeout(()=>setDebugBanner(null), 2500); } catch(e) {}
       if (!order || !order.id) return;
@@ -1721,6 +1722,7 @@ export default function OrdensPage() {
       // If marking as Retirado, handle payment confirmation and marking
       if (newStatus === 'Retirado') {
       const isPaid = String(order.paymentStatus || '').trim().toLowerCase() === 'pago';
+      try { if (isPaid) showToast('Ordem paga — marcando como Retirado'); else showToast('Ordem NÃO paga — abrindo confirmação'); } catch(_){}
       if (isPaid) {
         const updatedOrder = { ...order, status: 'Retirado' };
         const next = orders.map(o => o.id === order.id ? updatedOrder : o);
@@ -1744,6 +1746,7 @@ export default function OrdensPage() {
       // open an explicit confirm modal; if user confirms we'll open the payment modal
       setSelectedOrder(order);
       setShowConfirmDeliverPrompt(true);
+      try { showToast('Confirmação de entrega exibida'); } catch(_){}
       return;
     }
 
