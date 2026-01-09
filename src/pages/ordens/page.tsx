@@ -1560,19 +1560,17 @@ export default function OrdensPage() {
       ? 'Pagamento confirmado! ✅' 
       : `Pagamento pendente - Aguardamos seu pagamento. 💰\n\n*DADOS PARA PAGAMENTO PIX:*\n\n*Nome:* Cleusa Belani David\n*Telefone:* 45999126130\n*CPF:* 64166724053\n\n⚠️ *Ao realizar o pagamento, por favor envie o comprovante.*`;
     
-    setFidelizacaoMessage(`Olá ${selectedOrder.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n${paymentText}\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`);
-    setClientePhone(updatedOrder.phone);
-    setShowFidelizacaoModal(true);
-
-    setShowPaymentModal(false);
-    try { setSelectedOrder(null); } catch(_){}
-    // preparar mensagem de retirada para envio (não enviar automaticamente)
+    const fidelMsg = `Olá ${updatedOrder.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n${paymentText}\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`;
     try { setSelectedOrder(updatedOrder); } catch(_){}
+    try { setClientePhone(updatedOrder.phone); } catch(_){}
+    setFidelizacaoMessage(fidelMsg);
+    setShowPaymentModal(false);
+    // small delay helps mobile browsers render modal above other overlays
+    try { setTimeout(() => setShowFidelizacaoModal(true), 120); } catch(_) { setShowFidelizacaoModal(true); }
     const msg = formatMessageForStatus(updatedOrder, 'Retirado');
     setStatusChangeMessage(msg);
     setFidelizacaoMessage(msg);
     setShowStatusMessageOptions(true);
-    setShowFidelizacaoModal(true);
     // atualizar pontos/total do cliente se pago
     if (updatedOrder.paymentStatus === 'Pago') {
       try { addPointsForOrder(updatedOrder); window.dispatchEvent(new CustomEvent('clientsUpdated')); } catch (e) {}
