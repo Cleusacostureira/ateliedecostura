@@ -2964,6 +2964,17 @@ export default function OrdensPage() {
 
                 <div className="hidden sm:block w-full">
                 <table className="w-full table-auto border-collapse">
+                  <div className="sm:hidden mb-3 px-3">
+                    <button
+                      onClick={() => {
+                        try { const first = orders.find((o:any) => o.status === 'Pronto'); if (!first) { showToast('Nenhuma OS com status Pronto'); return; } handleQuickTap(first, 'Retirado' as any); } catch(e){ console.warn(e); }
+                      }}
+                      onTouchStart={(e)=>{ try{ (e as any).stopPropagation(); }catch(_){}; try{ const first=orders.find((o:any)=>o.status==='Pronto'); if(first) handleQuickTap(first,'Retirado' as any);}catch(_){} }}
+                      className="w-full bg-indigo-600 text-white py-3 rounded-md text-center font-medium"
+                    >
+                      Test Retirar (inline)
+                    </button>
+                  </div>
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-2 text-left text-xs text-gray-600">Cliente</th>
