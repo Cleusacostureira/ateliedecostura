@@ -1790,16 +1790,9 @@ export default function OrdensPage() {
   };
 
   const togglePaymentStatus = async (order: any) => {
-    const currentlyPaid = String(order.paymentStatus || '').trim().toLowerCase() === 'pago';
-    const newStatus = currentlyPaid ? 'Não pago' : 'Pago';
-    // optimistic UI
-    const next = orders.map(o => o.id === order.id ? { ...o, paymentStatus: newStatus } : o);
-    setOrders(next);
-    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
-
-    // persist order payment status to Supabase (best-effort)
-    // Do not update `ordens` table with `paymentStatus` (column may not exist).
-    // Payment is persisted in `fluxo_caixa` above; financeiro merges that back into orders.
+    // Disallow changing payment status from the Ordens UI to avoid conflicts.
+    try { showToast('Marcação de pagamento só pelo Financeiro'); } catch (e) {}
+    return;
 
     // --- sincronizar fluxo_caixa ---
     try {
@@ -2879,11 +2872,9 @@ export default function OrdensPage() {
                         <div className="text-xs text-gray-600 mt-1">Prazo: {order.dateOut || '—'}</div>
                       </div>
                       <div className="text-right ml-3">
-                                <div onClick={() => togglePaymentStatus(order)} className="font-bold text-sm text-green-600 truncate cursor-pointer">{order.value}</div>
+                                <div className="font-bold text-sm text-green-600 truncate">{order.value}</div>
                                 <div className="text-xs mt-1">
-                                  <button onClick={() => togglePaymentStatus(order)} className="text-[12px] px-2 py-1 rounded inline-flex items-center justify-center " title="Marcar pagamento">
-                                    {order.paymentStatus === 'Pago' ? 'Pago' : 'Não Pago'}
-                                  </button>
+                                  <div className="text-[12px] px-2 py-1 rounded inline-flex items-center justify-center bg-red-50 text-red-600">Não Pago</div>
                                 </div>
                       </div>
                     </div>
@@ -3024,12 +3015,12 @@ export default function OrdensPage() {
                             )}
                           </td>
                           <td className="px-3 py-3 align-top text-sm text-right">
-                            <div onClick={() => togglePaymentStatus(order)} className="font-bold text-green-600 cursor-pointer">{order.value}</div>
+                            <div className="font-bold text-green-600">{order.value}</div>
                               <div className="text-xs mt-1 flex items-center justify-center gap-2">
-                                <button onClick={() => togglePaymentStatus(order)} className={"inline-flex items-center gap-1 text-sm px-2 py-1 rounded " + (order.paymentStatus === 'Pago' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600') }>
+                                <div className={"inline-flex items-center gap-1 text-sm px-2 py-1 rounded bg-red-50 text-red-600"}>
                                   <i className="ri-money-dollar-circle-line"></i>
-                                  {order.paymentStatus === 'Pago' ? 'Pago' : 'Não Pago'}
-                                </button>
+                                  Não Pago
+                                </div>
                               </div>
                           </td>
                           <td className="px-3 py-3 align-top text-sm text-center">
