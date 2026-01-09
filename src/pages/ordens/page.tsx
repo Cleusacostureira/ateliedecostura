@@ -297,7 +297,13 @@ export default function OrdensPage() {
                 const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
                 const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
                 const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
-                const finalPaid = currentPaid || cashPaid;
+                const localOverride = localMapById[String(o.id)] || localMapByNumero[String(o.numero)];
+                let finalPaid = false;
+                if (localOverride && Object.prototype.hasOwnProperty.call(localOverride, 'paymentStatus')) {
+                  finalPaid = String((localOverride.paymentStatus || '')).toLowerCase() === 'pago';
+                } else {
+                  finalPaid = currentPaid || cashPaid;
+                }
 
                 const rawValue = o.value ?? o.total ?? o.total_valor ?? (cash && (cash.value || cash.valor)) ?? null;
                 const numericVal = Number(String(rawValue).replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
@@ -393,10 +399,16 @@ export default function OrdensPage() {
             const servicesText = (services || []).flatMap((s:any) => [s.name || s.titulo || s.title || s.nome || String(s)]).join(', ').trim();
             const pieceSummary = formatPiecesSummary(pieces);
 
-            const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
-            const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
-            const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
-            const finalPaid = currentPaid || cashPaid;
+              const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
+              const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
+              const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
+              const localOverride = localMapById[String(o.id)] || localMapByNumero[String(o.numero)];
+              let finalPaid = false;
+              if (localOverride && Object.prototype.hasOwnProperty.call(localOverride, 'paymentStatus')) {
+                finalPaid = String((localOverride.paymentStatus || '')).toLowerCase() === 'pago';
+              } else {
+                finalPaid = currentPaid || cashPaid;
+              }
 
             const rawValue = o.value ?? o.total ?? o.total_valor ?? (cash && (cash.value || cash.valor)) ?? null;
             const numericVal = Number(String(rawValue || '').replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
@@ -1429,9 +1441,30 @@ export default function OrdensPage() {
         try { addPointsForOrder(updatedOrder); window.dispatchEvent(new CustomEvent('clientsUpdated')); } catch (e) {}
       }
     } else {
-      // Se não foi pago, pergunta sobre o pagamento
-      setSelectedOrder(order);
-      setShowPaymentModal(true);
+      // Se não foi pago, ainda permite entregar; marca como Retirado e exibe dados PIX na fidelização
+      const updatedOrder = { ...order, status: 'Retirado', paymentStatus: order.paymentStatus || 'Pendente' };
+      const next = orders.map(o => o.id === order.id ? updatedOrder : o);
+      setOrders(next);
+      try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+      (async () => {
+        try {
+          if (supabase && typeof supabase.from === 'function') {
+            await supabase.from('ordens').update({ status: updatedOrder.status, paymentStatus: updatedOrder.paymentStatus }).eq('id', updatedOrder.id);
+          }
+        } catch (e) { console.warn('Failed to persist order status to Supabase', e); }
+      })();
+
+      const paymentText = `Pagamento pendente - Aguardamos seu pagamento. 💰\n\n*DADOS PARA PAGAMENTO PIX:*\n\n*Nome:* Cleusa Belani David\n*Telefone:* 45999126130\n*CPF:* 64166724053\n\n⚠️ *Ao realizar o pagamento, por favor envie o comprovante.*`;
+      setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n${paymentText}\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`);
+      setClientePhone(order.phone);
+      setShowFidelizacaoModal(true);
+      // enviar notificação automática de retirada
+      sendStatusWhatsApp(updatedOrder, 'Retirado');
+      // preparar mensagem de retirada para envio (não enviar automaticamente)
+      setSelectedOrder(updatedOrder);
+      const msg = formatMessageForStatus(updatedOrder, 'Retirado');
+      setStatusChangeMessage(msg);
+      setShowStatusMessageOptions(true);
     }
   };
 
