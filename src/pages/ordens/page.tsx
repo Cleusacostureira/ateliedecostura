@@ -1720,7 +1720,7 @@ export default function OrdensPage() {
     try {
       // If marking as Retirado, handle payment confirmation and marking
       if (newStatus === 'Retirado') {
-      const isPaid = String(order.paymentStatus || '').toLowerCase().includes('pago');
+      const isPaid = String(order.paymentStatus || '').trim().toLowerCase() === 'pago';
       if (isPaid) {
         const updatedOrder = { ...order, status: 'Retirado' };
         const next = orders.map(o => o.id === order.id ? updatedOrder : o);
@@ -1790,7 +1790,7 @@ export default function OrdensPage() {
   };
 
   const togglePaymentStatus = async (order: any) => {
-    const currentlyPaid = String(order.paymentStatus || '').toLowerCase().includes('pago');
+    const currentlyPaid = String(order.paymentStatus || '').trim().toLowerCase() === 'pago';
     const newStatus = currentlyPaid ? 'Não pago' : 'Pago';
     // optimistic UI
     const next = orders.map(o => o.id === order.id ? { ...o, paymentStatus: newStatus } : o);
