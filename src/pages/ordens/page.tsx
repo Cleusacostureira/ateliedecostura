@@ -1892,6 +1892,29 @@ export default function OrdensPage() {
             window.dispatchEvent(new CustomEvent('financeUpdated'));
           } catch (ee) { console.warn('failed to save cash entry locally', ee); }
         }
+          // ensure ordens.paymentStatus is updated to 'Não pago' when unmarking
+          try {
+            if (supabase && typeof supabase.from === 'function') {
+              try {
+                if (orderId) {
+                  const up = await supabase.from('ordens').update({ paymentStatus: 'Não pago' }).eq('id', orderId);
+                  if ((up as any).error) console.warn('failed to update ordens paymentStatus by id', (up as any).error);
+                } else if (numero) {
+                  const numeroClean = String(numero).replace(/\D/g,'');
+                  let up2 = null;
+                  if (numeroClean) {
+                    up2 = await supabase.from('ordens').update({ paymentStatus: 'Não pago' }).eq('numero', numeroClean);
+                    if ((up2 as any).error) { console.warn('update ordens by numeric numero failed', (up2 as any).error); up2 = null; }
+                  }
+                  if (!up2) {
+                    const up3 = await supabase.from('ordens').update({ paymentStatus: 'Não pago' }).eq('numero', numero);
+                    if ((up3 as any).error) console.warn('update ordens by raw numero failed', (up3 as any).error);
+                  }
+                }
+              } catch (ee) { console.warn('error updating ordens paymentStatus to Não pago', ee); }
+              try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
+            }
+          } catch (ee) { /* ignore */ }
 
       // Try to persist paymentStatus to ordens table so state is canonical
       (async () => {
