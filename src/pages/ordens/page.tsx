@@ -3093,11 +3093,10 @@ export default function OrdensPage() {
                       <div className="bg-white/90 text-xs text-gray-800 px-3 py-1 rounded border shadow">Last action: {quickTapDebug.newStatus} ({quickTapDebug.id ? quickTapDebug.id.slice(0,6) : '—'})</div>
                     </div>
                   )}
-                  {debugMode && (
-                    <div className="fixed bottom-4 left-4 z-50">
-                      <button onClick={exportLocalDebug} className="bg-black text-white text-xs px-3 py-2 rounded-md shadow">Export Debug</button>
-                    </div>
-                  )}
+                  {/* Export Debug: always visible to allow mobile Safari export of localStorage */}
+                  <div className="fixed bottom-4 left-4 z-50">
+                    <button onClick={exportLocalDebug} className="bg-black text-white text-xs px-3 py-2 rounded-md shadow">Export Debug</button>
+                  </div>
                   {debugBanner && (
                     <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-50">
                       <div className="bg-rose-600 text-white text-sm px-4 py-2 rounded-md shadow">{debugBanner}</div>
