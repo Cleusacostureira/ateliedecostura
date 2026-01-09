@@ -1540,9 +1540,11 @@ export default function OrdensPage() {
     }
   };
 
-  const confirmDeliveryWithPayment = (isPaid: boolean) => {
-    const updatedOrder = { ...selectedOrder, status: 'Retirado', paymentStatus: isPaid ? 'Pago' : 'Pendente' };
-    const next = orders.map(o => o.id === selectedOrder.id ? updatedOrder : o);
+  const confirmDeliveryWithPayment = (isPaid: boolean, orderParam?: any) => {
+    const baseOrder = orderParam || selectedOrder;
+    if (!baseOrder || !baseOrder.id) return;
+    const updatedOrder = { ...baseOrder, status: 'Retirado', paymentStatus: isPaid ? 'Pago' : 'Pendente' };
+    const next = orders.map(o => o.id === baseOrder.id ? updatedOrder : o);
     setOrders(next);
     try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
     (async () => {
@@ -1559,13 +1561,13 @@ export default function OrdensPage() {
       : `Pagamento pendente - Aguardamos seu pagamento. 💰\n\n*DADOS PARA PAGAMENTO PIX:*\n\n*Nome:* Cleusa Belani David\n*Telefone:* 45999126130\n*CPF:* 64166724053\n\n⚠️ *Ao realizar o pagamento, por favor envie o comprovante.*`;
     
     setFidelizacaoMessage(`Olá ${selectedOrder.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n${paymentText}\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`);
-    setClientePhone(selectedOrder.phone);
+    setClientePhone(updatedOrder.phone);
     setShowFidelizacaoModal(true);
-    
+
     setShowPaymentModal(false);
-    setSelectedOrder(null);
+    try { setSelectedOrder(null); } catch(_){}
     // preparar mensagem de retirada para envio (não enviar automaticamente)
-    setSelectedOrder(updatedOrder);
+    try { setSelectedOrder(updatedOrder); } catch(_){}
     const msg = formatMessageForStatus(updatedOrder, 'Retirado');
     setStatusChangeMessage(msg);
     setFidelizacaoMessage(msg);
@@ -1759,7 +1761,7 @@ export default function OrdensPage() {
       try {
         const confirmed = typeof window !== 'undefined' ? window.confirm('Cliente ainda não pagou. Deseja confirmar entrega mesmo assim?') : false;
         if (confirmed) {
-          try { confirmDeliveryWithPayment(false); } catch(e){ console.warn('confirmDeliveryWithPayment failed', e); }
+          try { confirmDeliveryWithPayment(false, order); } catch(e){ console.warn('confirmDeliveryWithPayment failed', e); }
         } else {
           try { showToast('Entrega cancelada'); } catch(_){ }
         }
