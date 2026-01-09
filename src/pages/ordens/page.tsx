@@ -1926,6 +1926,7 @@ export default function OrdensPage() {
                 if ((up as any).error) {
                   if ((up as any).error.code === 'PGRST205') { markFluxoMissing(); }
                   console.warn('Supabase ordens paymentStatus update error', (up as any).error);
+                  try { showToast('Falha ao atualizar servidor: ' + String((up as any).error.message || (up as any).error)); } catch(_){}
                 } else {
                   try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
                 }
@@ -1933,6 +1934,7 @@ export default function OrdensPage() {
                 const up2 = await supabase.from('ordens').update({ paymentStatus: newStatus === 'Pago' ? 'Pago' : 'Não pago' }).eq('numero', numero);
                 if ((up2 as any).error) {
                   console.warn('Supabase ordens paymentStatus update by numero error', (up2 as any).error);
+                  try { showToast('Falha ao atualizar servidor: ' + String((up2 as any).error.message || (up2 as any).error)); } catch(_){}
                 } else {
                   try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
                 }
