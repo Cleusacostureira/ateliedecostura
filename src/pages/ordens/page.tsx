@@ -158,6 +158,7 @@ export default function OrdensPage() {
     const [showFidelizacaoModal, setShowFidelizacaoModal] = useState(false);
     const [showStatusMessageOptions, setShowStatusMessageOptions] = useState(false);
     const [showModal, setShowModal] = useState(false);
+    const [showDebugOverlay, setShowDebugOverlay] = useState(true);
     const [showSavedSummary, setShowSavedSummary] = useState(false);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [showStatusOnlyModal, setShowStatusOnlyModal] = useState(false);
@@ -226,17 +227,19 @@ export default function OrdensPage() {
       try { if (e && (e as any).stopPropagation) (e as any).stopPropagation(); } catch(_){}
       try { if (e && (e as any).preventDefault) (e as any).preventDefault(); } catch(_){}
       try { console.debug('[handleQuickTap] start', { id: order && order.id, newStatus }); } catch(_){ }
-      try { if (typeof window !== 'undefined') { try { alert('DEBUG: Retirado handler invoked for OS ' + (order && (order.numero || order.id) || 'unknown')); } catch(_){} } } catch(_){}
+      try { if (typeof window !== 'undefined') { try { alert('DEBUG: Retirado handler invoked for OS ' + (order && (order.numero || order.id) || 'unknown')); } catch(_){} } } catch(_){ }
       try {
         const existing = localStorage.getItem('retiradoTaps');
         const arr = existing ? JSON.parse(existing) : [];
-        arr.unshift({ id: order && order.id, numero: order && order.numero, newStatus, ts: Date.now(), source: 'handleQuickTap' });
-        localStorage.setItem('retiradoTaps', JSON.stringify(arr.slice(0,20)));
+        const entry = { id: order && order.id, numero: order && order.numero, newStatus, ts: Date.now(), source: 'handleQuickTap', userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null };
+        arr.unshift(entry);
+        try { localStorage.setItem('retiradoTaps', JSON.stringify(arr.slice(0,200))); } catch(_){}
       } catch (ee) { /* ignore */ }
       try { showToast('Operação enviada'); } catch(_){ }
       try { if (newStatus === 'Retirado') showToast('Solicitado: marcar como Retirado'); } catch(_){}
       try { setQuickTapDebug({ id: order && order.id, newStatus, ts: Date.now() }); localStorage.setItem('lastQuickTap', JSON.stringify({ id: order && order.id, newStatus, ts: Date.now() })); } catch(e) {}
       try { setDebugBanner(`HANDLER: ${newStatus} ${order && order.id ? order.id.slice(0,6) : ''}`); setTimeout(()=>setDebugBanner(null), 2500); } catch(e) {}
+      // no optimistic marking here; unpaid deliveries require confirmation
       if (!order || !order.id) return;
       if (pendingIds.includes(order.id) || pendingStatusRef.current.has(order.id)) return;
       addPendingId(order.id);
@@ -1751,10 +1754,16 @@ export default function OrdensPage() {
         return;
       }
 
-      // open an explicit confirm modal; if user confirms we'll open the payment modal
-      setSelectedOrder(order);
-      setShowConfirmDeliverPrompt(true);
-      try { showToast('Confirmação de entrega exibida'); } catch(_){}
+      // use native confirm dialog to avoid modal rendering issues on some mobiles
+      try { setSelectedOrder(order); } catch(_){}
+      try {
+        const confirmed = typeof window !== 'undefined' ? window.confirm('Cliente ainda não pagou. Deseja confirmar entrega mesmo assim?') : false;
+        if (confirmed) {
+          try { confirmDeliveryWithPayment(false); } catch(e){ console.warn('confirmDeliveryWithPayment failed', e); }
+        } else {
+          try { showToast('Entrega cancelada'); } catch(_){ }
+        }
+      } catch (e) { try { console.warn('native confirm failed', e); } catch(_){} }
       return;
     }
 
@@ -1765,7 +1774,13 @@ export default function OrdensPage() {
     (async () => {
       try {
         if (supabase && typeof supabase.from === 'function') {
-          await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id);
+          const resp = await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id);
+          try {
+            const existing = localStorage.getItem('retiradoTaps');
+            const arr = existing ? JSON.parse(existing) : [];
+            arr.unshift({ id: updatedOrder.id, numero: updatedOrder.numero, newStatus: updatedOrder.status, ts: Date.now(), source: 'applyQuickStatus.persist', supabaseResponse: resp && (resp.error ? String(resp.error) : 'ok') });
+            try { localStorage.setItem('retiradoTaps', JSON.stringify(arr.slice(0,200))); } catch(_){}
+          } catch(_){}
         }
       } catch (e) { console.warn('Failed to persist order status to Supabase', e); }
     })();
@@ -3162,6 +3177,39 @@ export default function OrdensPage() {
                     >
                       Test Retirar
                     </button>
+                    <button
+                      id="force-confirm-btn"
+                      onClick={() => {
+                        try {
+                          const first = orders.find((o:any) => o.status === 'Pronto');
+                          if (!first) { showToast('Nenhuma OS com status Pronto'); return; }
+                          setSelectedOrder(first);
+                          setShowConfirmDeliverPrompt(true);
+                        } catch (e) { console.warn('force confirm click failed', e); }
+                      }}
+                      className="bg-yellow-500 text-white text-sm px-3 py-2 rounded-md shadow-lg mt-2 block sm:hidden"
+                      style={{ minWidth: '120px' }}
+                    >
+                      Forçar Confirm
+                    </button>
+                    <button
+                      id="intrusive-test-btn"
+                      onClick={() => {
+                        try {
+                          alert('TEST CLICK');
+                          const existing = localStorage.getItem('retiradoTaps');
+                          const arr = existing ? JSON.parse(existing) : [];
+                          arr.unshift({ testClick: true, ts: Date.now(), ua: typeof navigator !== 'undefined' ? navigator.userAgent : null });
+                          try { localStorage.setItem('retiradoTaps', JSON.stringify(arr.slice(0,200))); } catch(_){}
+                          try { showToast('Teste registrado'); } catch(_){}
+                        } catch (e) { try { console.warn('intrusive test click failed', e); } catch(_){} }
+                      }}
+                      onTouchStart={(e)=>{ try{ (e as any).stopPropagation(); }catch(_){}; try{ alert('TEST CLICK'); }catch(_){} }}
+                      className="bg-red-600 text-white text-sm px-5 py-4 rounded-full shadow-lg block sm:hidden"
+                      style={{ minWidth: '140px', minHeight: '56px' }}
+                    >
+                      BOTÃO TESTE
+                    </button>
                   </div>
                   {debugBanner && (
                     <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-50">
@@ -3170,6 +3218,16 @@ export default function OrdensPage() {
                   )}
                   {/* Visible version marker so mobile can confirm updated deploy */}
                   <div className="fixed top-2 left-2 z-40 text-[10px] text-gray-500 bg-white/70 px-2 py-1 rounded">v:{APP_VERSION}</div>
+                  {showDebugOverlay && (
+                    <div className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center p-4">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold mb-2">BUILD ATUAL</h1>
+                        <div className="text-sm text-gray-700 mb-4">Agora: {new Date().toLocaleString()}</div>
+                        <div className="text-xs text-gray-500 mb-6">Se você vê este overlay, seu dispositivo está carregando a versão mais recente.</div>
+                        <button onClick={()=>setShowDebugOverlay(false)} className="bg-black text-white px-4 py-2 rounded">Fechar</button>
+                      </div>
+                    </div>
+                  )}
                   {/* Duplicate Export Debug button in top-right to avoid Safari bottom toolbar overlay */}
                   <div className="fixed top-2 right-2 z-50">
                     <button onClick={exportLocalDebug} className="bg-black text-white text-xs px-3 py-2 rounded-md shadow">Export Debug</button>
