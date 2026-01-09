@@ -199,7 +199,8 @@ export default function OrdensPage() {
       try {
         const ordersRaw = localStorage.getItem('orders');
         const cashRaw = localStorage.getItem('cashFlowDetails');
-        const payload = { orders: ordersRaw ? JSON.parse(ordersRaw) : null, cashFlowDetails: cashRaw ? JSON.parse(cashRaw) : null };
+        const tapsRaw = localStorage.getItem('retiradoTaps');
+        const payload = { orders: ordersRaw ? JSON.parse(ordersRaw) : null, cashFlowDetails: cashRaw ? JSON.parse(cashRaw) : null, retiradoTaps: tapsRaw ? JSON.parse(tapsRaw) : null };
         const txt = JSON.stringify(payload, null, 2);
         if (navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(txt);
