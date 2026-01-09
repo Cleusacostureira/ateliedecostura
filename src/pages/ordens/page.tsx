@@ -225,6 +225,12 @@ export default function OrdensPage() {
       try { if (e && (e as any).stopPropagation) (e as any).stopPropagation(); } catch(_){}
       try { if (e && (e as any).preventDefault) (e as any).preventDefault(); } catch(_){}
       try { console.debug('[handleQuickTap] start', { id: order && order.id, newStatus }); } catch(_){ }
+      try {
+        const existing = localStorage.getItem('retiradoTaps');
+        const arr = existing ? JSON.parse(existing) : [];
+        arr.unshift({ id: order && order.id, numero: order && order.numero, newStatus, ts: Date.now(), source: 'handleQuickTap' });
+        localStorage.setItem('retiradoTaps', JSON.stringify(arr.slice(0,20)));
+      } catch (ee) { /* ignore */ }
       try { showToast('Operação enviada'); } catch(_){ }
       try { if (newStatus === 'Retirado') showToast('Solicitado: marcar como Retirado'); } catch(_){}
       try { setQuickTapDebug({ id: order && order.id, newStatus, ts: Date.now() }); localStorage.setItem('lastQuickTap', JSON.stringify({ id: order && order.id, newStatus, ts: Date.now() })); } catch(e) {}
