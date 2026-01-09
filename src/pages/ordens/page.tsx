@@ -226,6 +226,7 @@ export default function OrdensPage() {
       try { if (e && (e as any).stopPropagation) (e as any).stopPropagation(); } catch(_){}
       try { if (e && (e as any).preventDefault) (e as any).preventDefault(); } catch(_){}
       try { console.debug('[handleQuickTap] start', { id: order && order.id, newStatus }); } catch(_){ }
+      try { if (typeof window !== 'undefined') { try { alert('DEBUG: Retirado handler invoked for OS ' + (order && (order.numero || order.id) || 'unknown')); } catch(_){} } } catch(_){}
       try {
         const existing = localStorage.getItem('retiradoTaps');
         const arr = existing ? JSON.parse(existing) : [];
