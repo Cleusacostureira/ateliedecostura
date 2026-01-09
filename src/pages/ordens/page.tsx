@@ -1567,9 +1567,12 @@ export default function OrdensPage() {
     setShowPaymentModal(false);
     // small delay helps mobile browsers render modal above other overlays
     try { setTimeout(() => setShowFidelizacaoModal(true), 120); } catch(_) { setShowFidelizacaoModal(true); }
-    const msg = formatMessageForStatus(updatedOrder, 'Retirado');
-    setStatusChangeMessage(msg);
-    setFidelizacaoMessage(msg);
+    const statusMsg = formatMessageForStatus(updatedOrder, 'Retirado');
+    setStatusChangeMessage(statusMsg);
+    // Only overwrite the fidelizacao message with the short status message when payment was confirmed.
+    try {
+      if (isPaid) setFidelizacaoMessage(statusMsg);
+    } catch(_) {}
     setShowStatusMessageOptions(true);
     // atualizar pontos/total do cliente se pago
     if (updatedOrder.paymentStatus === 'Pago') {
