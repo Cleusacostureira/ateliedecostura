@@ -17,6 +17,7 @@ const DisparosPage = lazy(() => import('../pages/disparos/page'));
 const ConfiguracoesPage = lazy(() => import('../pages/configuracoes/page'));
 const DebugExportPage = lazy(() => import('../pages/debug-export/page'));
 const DebugResetPage = lazy(() => import('../pages/debug-reset/page'));
+const DebugServerPage = lazy(() => import('../pages/debug-server/page'));
 const NotFoundPage = lazy(() => import('../pages/NotFound'));
 
 const routes: RouteObject[] = [
@@ -79,6 +80,10 @@ const routes: RouteObject[] = [
   {
     path: '/debug-reset',
     element: <DebugResetPage />,
+  },
+  {
+    path: '/debug-server',
+    element: <DebugServerPage />,
   },
   {
     path: '*',
