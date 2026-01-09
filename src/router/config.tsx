@@ -15,6 +15,7 @@ const FinanceiroPage = lazy(() => import('../pages/financeiro/page'));
 const RelatoriosPage = lazy(() => import('../pages/relatorios/page'));
 const DisparosPage = lazy(() => import('../pages/disparos/page'));
 const ConfiguracoesPage = lazy(() => import('../pages/configuracoes/page'));
+const DebugExportPage = lazy(() => import('../pages/debug-export/page'));
 const NotFoundPage = lazy(() => import('../pages/NotFound'));
 
 const routes: RouteObject[] = [
@@ -69,6 +70,10 @@ const routes: RouteObject[] = [
   {
     path: '/configuracoes',
     element: <ConfiguracoesPage />,
+  },
+  {
+    path: '/debug-export',
+    element: <DebugExportPage />,
   },
   {
     path: '*',
