@@ -333,6 +333,27 @@ export default function OrdensPage() {
               } catch (e) { enriched.push({ ...o, status: normalizeStatus(o.status) }); }
             }
 
+            // Preserve explicit local paymentStatus values (including null) to avoid
+            // server/cash entries from overwriting user's local choice when reloading.
+            try {
+              const localExistingForMerge = readOrdersFromStorage();
+              if (Array.isArray(localExistingForMerge) && localExistingForMerge.length > 0) {
+                const localMap: Record<string, any> = {};
+                const localMapNum: Record<string, any> = {};
+                localExistingForMerge.forEach((l:any) => {
+                  try { if (l && l.id) localMap[String(l.id)] = l; } catch(_){}
+                  try { if (l && l.numero) localMapNum[String(l.numero)] = l; } catch(_){}
+                });
+                enriched.forEach((s:any, idx:number) => {
+                  try {
+                    const local = (s && s.id && localMap[String(s.id)]) || (s && s.numero && localMapNum[String(s.numero)]) || null;
+                    if (local && Object.prototype.hasOwnProperty.call(local, 'paymentStatus')) {
+                      enriched[idx].paymentStatus = local.paymentStatus;
+                    }
+                  } catch(_){}
+                });
+              }
+            } catch (e) { /* ignore merge errors */ }
             const forced = { __force: true, payload: enriched };
             localStorage.setItem('orders', JSON.stringify(forced));
             try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
@@ -474,6 +495,27 @@ export default function OrdensPage() {
                 value: chosenValue,
               };
             });
+            try {
+              // ensure explicit local paymentStatus values survive this merge as well
+              const localExistingForMerge2 = readOrdersFromStorage();
+              if (Array.isArray(localExistingForMerge2) && localExistingForMerge2.length > 0) {
+                const lmById: Record<string, any> = {};
+                const lmByNum: Record<string, any> = {};
+                localExistingForMerge2.forEach((l:any) => {
+                  try { if (l && l.id) lmById[String(l.id)] = l; } catch(_){}
+                  try { if (l && l.numero) lmByNum[String(l.numero)] = l; } catch(_){}
+                });
+                merged = merged.map((s:any) => {
+                  try {
+                    const local = (s && s.id && lmById[String(s.id)]) || (s && s.numero && lmByNum[String(s.numero)]) || null;
+                    if (local && Object.prototype.hasOwnProperty.call(local, 'paymentStatus')) {
+                      return { ...s, paymentStatus: local.paymentStatus };
+                    }
+                  } catch(_){}
+                  return s;
+                });
+              }
+            } catch (eee) {}
             try { localStorage.setItem('orders', JSON.stringify(merged)); } catch(e){}
             try { setOrders(merged); } catch(e){}
             try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
