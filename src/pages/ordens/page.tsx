@@ -3133,7 +3133,7 @@ export default function OrdensPage() {
                   <div className="fixed bottom-4 left-4 z-50">
                     <button onClick={exportLocalDebug} className="bg-black text-white text-xs px-3 py-2 rounded-md shadow">Export Debug</button>
                   </div>
-                  <div className="fixed bottom-4 right-4 z-60">
+                  <div className="fixed bottom-6 right-4 z-[9999] pointer-events-auto">
                     <button
                       id="test-retirar-btn"
                       onClick={() => {
@@ -3145,7 +3145,8 @@ export default function OrdensPage() {
                       }}
                       onTouchStart={(e)=>{ try{ (e as any).stopPropagation(); }catch(_){}; try{ const first=orders.find((o:any)=>o.status==='Pronto'); if(first) handleQuickTap(first,'Retirado' as any);}catch(_){} }}
                       onPointerUp={(e)=>{ try{ (e as any).stopPropagation(); }catch(_){}; try{ const first=orders.find((o:any)=>o.status==='Pronto'); if(first) handleQuickTap(first,'Retirado' as any);}catch(_){} }}
-                      className="bg-rose-600 text-white text-xs px-3 py-2 rounded-md shadow"
+                      className="bg-rose-600 text-white text-sm px-4 py-3 rounded-full shadow-lg block sm:hidden"
+                      style={{ minWidth: '120px' }}
                     >
                       Test Retirar
                     </button>
