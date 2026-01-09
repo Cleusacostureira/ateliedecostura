@@ -195,6 +195,24 @@ export default function OrdensPage() {
     const APP_VERSION = '332b310';
     const debugMode = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).has('dbg') : false;
 
+    const exportLocalDebug = async () => {
+      try {
+        const ordersRaw = localStorage.getItem('orders');
+        const cashRaw = localStorage.getItem('cashFlowDetails');
+        const payload = { orders: ordersRaw ? JSON.parse(ordersRaw) : null, cashFlowDetails: cashRaw ? JSON.parse(cashRaw) : null };
+        const txt = JSON.stringify(payload, null, 2);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(txt);
+          alert('Debug copiado para a área de transferência. Cole aqui a mensagem.');
+        } else {
+          // fallback: open new window with the JSON so user can long-press to copy on mobile
+          const w = window.open('', '_blank');
+          if (w) { w.document.write('<pre>' + txt.replace(/</g, '&lt;') + '</pre>'); w.document.close(); }
+          alert('Abra a nova aba e copie o JSON.');
+        }
+      } catch (e) { alert('Falha ao exportar debug: ' + String(e)); }
+    };
+
     const showToast = (msg: string, ms = 1800) => {
       try { setToast(msg); } catch(_){}
       try { setTimeout(() => setToast(null), ms); } catch(_){}
@@ -3073,6 +3091,11 @@ export default function OrdensPage() {
                   {quickTapDebug && (
                     <div className="fixed top-4 right-4 z-50">
                       <div className="bg-white/90 text-xs text-gray-800 px-3 py-1 rounded border shadow">Last action: {quickTapDebug.newStatus} ({quickTapDebug.id ? quickTapDebug.id.slice(0,6) : '—'})</div>
+                    </div>
+                  )}
+                  {debugMode && (
+                    <div className="fixed bottom-4 left-4 z-50">
+                      <button onClick={exportLocalDebug} className="bg-black text-white text-xs px-3 py-2 rounded-md shadow">Export Debug</button>
                     </div>
                   )}
                   {debugBanner && (
