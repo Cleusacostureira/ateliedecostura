@@ -3046,6 +3046,7 @@ export default function OrdensPage() {
                                     type="button"
                                     onClick={(e) => handleQuickTap(order, 'Retirado', e)}
                                     onTouchStart={(e) => { try { (e as any).stopPropagation(); } catch(_){}; handleQuickTap(order, 'Retirado', e as any); }}
+                                    onPointerUp={(e) => { try { (e as any).stopPropagation(); } catch(_){}; handleQuickTap(order, 'Retirado', e as any); }}
                                     title="Marcar Retirado"
                                     disabled={pendingIds.includes(order.id)}
                                     className={"w-8 h-8 flex items-center justify-center text-white bg-purple-600 rounded " + (pendingIds.includes(order.id) ? 'opacity-50 cursor-not-allowed' : '')}
