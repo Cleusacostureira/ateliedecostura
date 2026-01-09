@@ -2977,7 +2977,7 @@ export default function OrdensPage() {
                                         <p className="text-sm text-gray-600 text-center mb-4">Cliente ainda não pagou, deseja realmente entregar?</p>
                                         <div className="flex gap-3 justify-center">
                                           <button onClick={() => { setShowConfirmDeliverPrompt(false); setSelectedOrder(null); }} className="px-4 py-2 border rounded">Não</button>
-                                          <button onClick={() => { setShowConfirmDeliverPrompt(false); setShowPaymentModal(true); }} className="px-4 py-2 bg-green-600 text-white rounded">Sim</button>
+                                          <button onClick={() => { setShowConfirmDeliverPrompt(false); confirmDeliveryWithPayment(false); }} className="px-4 py-2 bg-green-600 text-white rounded">Sim</button>
                                         </div>
                                       </div>
                                     </div>
