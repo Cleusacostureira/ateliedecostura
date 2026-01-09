@@ -1720,7 +1720,8 @@ export default function OrdensPage() {
     try {
       // If marking as Retirado, handle payment confirmation and marking
       if (newStatus === 'Retirado') {
-      if (order.paymentStatus === 'Pago') {
+      const isPaid = String(order.paymentStatus || '').toLowerCase().includes('pago');
+      if (isPaid) {
         const updatedOrder = { ...order, status: 'Retirado' };
         const next = orders.map(o => o.id === order.id ? updatedOrder : o);
         setOrders(next);
@@ -1789,7 +1790,8 @@ export default function OrdensPage() {
   };
 
   const togglePaymentStatus = async (order: any) => {
-    const newStatus = order.paymentStatus === 'Pago' ? null : 'Pago';
+    const currentlyPaid = String(order.paymentStatus || '').toLowerCase().includes('pago');
+    const newStatus = currentlyPaid ? 'Não pago' : 'Pago';
     // optimistic UI
     const next = orders.map(o => o.id === order.id ? { ...o, paymentStatus: newStatus } : o);
     setOrders(next);
@@ -1897,7 +1899,7 @@ export default function OrdensPage() {
           if (supabase && typeof supabase.from === 'function') {
             try {
               if (orderId) {
-                const up = await supabase.from('ordens').update({ paymentStatus: newStatus === 'Pago' ? 'Pago' : null }).eq('id', orderId);
+                const up = await supabase.from('ordens').update({ paymentStatus: newStatus === 'Pago' ? 'Pago' : 'Não pago' }).eq('id', orderId);
                 if ((up as any).error) {
                   if ((up as any).error.code === 'PGRST205') { markFluxoMissing(); }
                   console.warn('Supabase ordens paymentStatus update error', (up as any).error);
@@ -1905,7 +1907,7 @@ export default function OrdensPage() {
                   try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
                 }
               } else if (numero) {
-                const up2 = await supabase.from('ordens').update({ paymentStatus: newStatus === 'Pago' ? 'Pago' : null }).eq('numero', numero);
+                const up2 = await supabase.from('ordens').update({ paymentStatus: newStatus === 'Pago' ? 'Pago' : 'Não pago' }).eq('numero', numero);
                 if ((up2 as any).error) {
                   console.warn('Supabase ordens paymentStatus update by numero error', (up2 as any).error);
                 } else {
@@ -1923,13 +1925,13 @@ export default function OrdensPage() {
             // try update by orderid then by numero
             try {
               if (orderId) {
-                const up = await supabase.from('fluxo_caixa').update({ status: 'Pendente' }).eq('orderid', orderId);
+                const up = await supabase.from('fluxo_caixa').update({ status: 'Não pago' }).eq('orderid', orderId);
                 if ((up as any).error && (up as any).error.code === 'PGRST205') { markFluxoMissing(); }
               }
             } catch (e) { /* ignore */ }
             try {
               if (numero) {
-                const up2 = await supabase.from('fluxo_caixa').update({ status: 'Pendente' }).eq('numero', numero);
+                const up2 = await supabase.from('fluxo_caixa').update({ status: 'Não pago' }).eq('numero', numero);
                 if ((up2 as any).error && (up2 as any).error.code === 'PGRST205') { markFluxoMissing(); }
               }
             } catch (e) { /* ignore */ }
