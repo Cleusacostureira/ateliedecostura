@@ -3104,6 +3104,10 @@ export default function OrdensPage() {
                   )}
                   {/* Visible version marker so mobile can confirm updated deploy */}
                   <div className="fixed top-2 left-2 z-40 text-[10px] text-gray-500 bg-white/70 px-2 py-1 rounded">v:{APP_VERSION}</div>
+                  {/* Duplicate Export Debug button in top-right to avoid Safari bottom toolbar overlay */}
+                  <div className="fixed top-2 right-2 z-50">
+                    <button onClick={exportLocalDebug} className="bg-black text-white text-xs px-3 py-2 rounded-md shadow">Export Debug</button>
+                  </div>
               </div>
             </div>
           </div>
