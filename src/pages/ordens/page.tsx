@@ -226,40 +226,17 @@ export default function OrdensPage() {
             window.dispatchEvent(new CustomEvent('refetchOrdersFromServer'));
             window.dispatchEvent(new CustomEvent('ordersUpdated'));
             window.dispatchEvent(new CustomEvent('financeUpdated'));
-          } catch(_){ }
-          // give some time for handlers to run before confirming completion
-          setTimeout(() => { showToast('Sincronização concluída'); }, 1400);
-        } catch (e) { console.warn('syncFromServer failed', e); showToast('Falha ao iniciar sincronização'); }
-      };
-
-    const showToast = (msg: string, ms = 1800) => {
-      try { setToast(msg); } catch(_){}
+              return {
+                ...o,
+                // server/cash authoritative for paymentStatus — do not re-apply local overrides
+                paymentStatus: ((cashPaid || String(o.paymentStatus || '').toLowerCase() === 'pago') ? 'Pago' : (o.paymentStatus || null)),
+                status: (local.status !== undefined ? normalizeStatus(local.status) : o.status),
+                service: chosenService,
+                dateOut: chosenDateOut,
+                value: chosenValue,
+              };
       try { setTimeout(() => setToast(null), ms); } catch(_){}
-    };
-
-    const addPendingId = (id: string) => setPendingIds((p) => (p.includes(id) ? p : [...p, id]));
-    const removePendingId = (id: string) => setPendingIds((p) => p.filter(x => x !== id));
-
-    const handleQuickTap = async (order: any, newStatus: string, e?: React.MouseEvent) => {
-      try { if (e && (e as any).stopPropagation) (e as any).stopPropagation(); } catch(_){}
-      try { if (e && (e as any).preventDefault) (e as any).preventDefault(); } catch(_){}
-      try { console.debug('[handleQuickTap] start', { id: order && order.id, newStatus }); } catch(_){ }
-      try { if (typeof window !== 'undefined') { try { alert('DEBUG: Retirado handler invoked for OS ' + (order && (order.numero || order.id) || 'unknown')); } catch(_){} } } catch(_){ }
-      try {
-        const existing = localStorage.getItem('retiradoTaps');
-        const arr = existing ? JSON.parse(existing) : [];
-        const entry = { id: order && order.id, numero: order && order.numero, newStatus, ts: Date.now(), source: 'handleQuickTap', userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null };
-        arr.unshift(entry);
-        try { localStorage.setItem('retiradoTaps', JSON.stringify(arr.slice(0,200))); } catch(_){}
-      } catch (ee) { /* ignore */ }
-      try { showToast('Operação enviada'); } catch(_){ }
-      try { if (newStatus === 'Retirado') showToast('Solicitado: marcar como Retirado'); } catch(_){}
-      try { setQuickTapDebug({ id: order && order.id, newStatus, ts: Date.now() }); localStorage.setItem('lastQuickTap', JSON.stringify({ id: order && order.id, newStatus, ts: Date.now() })); } catch(e) {}
-      try { setDebugBanner(`HANDLER: ${newStatus} ${order && order.id ? order.id.slice(0,6) : ''}`); setTimeout(()=>setDebugBanner(null), 2500); } catch(e) {}
-      // no optimistic marking here; unpaid deliveries require confirmation
-      if (!order || !order.id) return;
-      if (pendingIds.includes(order.id) || pendingStatusRef.current.has(order.id)) return;
-      addPendingId(order.id);
+            // Do not re-apply local paymentStatus; merged respects server/cash truth.
       try {
         await applyQuickStatus(order, newStatus);
       } catch (err) {
@@ -362,7 +339,7 @@ export default function OrdensPage() {
                 const serviceField = pieceSummary || servicesText || o.service || o.servico || o.servicos || o.serviceText || '';
                 const dateOutField = formatIsoToBR(o.data_entrega || o.dateOut || o.date_out || o.previsao || o.dataPrevista || o.delivery) || o.dateOut || '';
 
-                // apply local overrides if present (do not lose local paymentStatus)
+                // Do not allow stale local `paymentStatus` to override server/cash truth.
                 const local = (o && String(o.id) && localMapById[String(o.id)]) || (o && String(o.numero) && localMapByNumero[String(o.numero)]) || {};
                 enriched.push({
                   ...o,
@@ -374,33 +351,13 @@ export default function OrdensPage() {
                   services,
                   service: serviceField,
                   dateOut: dateOutField,
-                  paymentStatus: (finalPaid ? 'Pago' : ((local && local.paymentStatus !== undefined) ? local.paymentStatus : (o.paymentStatus || null))),
+                  paymentStatus: (finalPaid ? 'Pago' : (o.paymentStatus || null)),
                   value: displayValue,
                 });
               } catch (e) { enriched.push({ ...o, status: normalizeStatus(o.status) }); }
             }
 
-            // Preserve explicit local paymentStatus values (including null) to avoid
-            // server/cash entries from overwriting user's local choice when reloading.
-            try {
-              const localExistingForMerge = readOrdersFromStorage();
-              if (Array.isArray(localExistingForMerge) && localExistingForMerge.length > 0) {
-                const localMap: Record<string, any> = {};
-                const localMapNum: Record<string, any> = {};
-                localExistingForMerge.forEach((l:any) => {
-                  try { if (l && l.id) localMap[String(l.id)] = l; } catch(_){}
-                  try { if (l && l.numero) localMapNum[String(l.numero)] = l; } catch(_){}
-                });
-                enriched.forEach((s:any, idx:number) => {
-                  try {
-                    const local = (s && s.id && localMap[String(s.id)]) || (s && s.numero && localMapNum[String(s.numero)]) || null;
-                    if (local && Object.prototype.hasOwnProperty.call(local, 'paymentStatus')) {
-                      enriched[idx].paymentStatus = local.paymentStatus;
-                    }
-                  } catch(_){}
-                });
-              }
-            } catch (e) { /* ignore merge errors */ }
+            // Do not preserve explicit local paymentStatus values; rely on server/cash as source of truth.
             const forced = { __force: true, payload: enriched };
             localStorage.setItem('orders', JSON.stringify(forced));
             try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
@@ -2159,36 +2116,10 @@ export default function OrdensPage() {
   useEffect(() => {
     const onOrdersUpdated = () => {
       try {
-        const parsed = readOrdersFromStorage();
-        if (!Array.isArray(parsed)) return;
-        const cashMap = getCashMap();
-        const normalized = parsed.map((o:any) => {
-          try {
-            const cash = cashMap[String(o.id)] || cashMap[String(o.numero)];
-            const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
-            const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
-            const finalPaid = currentPaid || cashPaid;
-            return {
-              ...o,
-              status: normalizeStatus(o.status),
-              paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
-              value: o.value || (cash ? `R$ ${Number(cash.value || cash.valor || 0).toFixed(2)}` : o.value)
-            };
-          } catch (err) {
-            return { ...o, status: normalizeStatus(o.status), paymentStatus: (o.paymentStatus || null), value: o.value };
-          }
-        });
-
-        const currJson = JSON.stringify(ordersRef.current || []);
-        const newJson = JSON.stringify(normalized || []);
-        if (currJson !== newJson) {
-          if (Array.isArray(normalized) && normalized.length === 0 && Array.isArray(ordersRef.current) && ordersRef.current.length > 0) {
-            try { setDebugInfo((prev:any)=>({ ...(prev||{}), skippedClearFromRefetch: true })); } catch(e){}
-          } else {
-            ignoreLocalSaveRef.current = true;
-            setOrders(normalized);
-          }
-        }
+        // When external parts of the app (Financeiro) signal ordersChanged,
+        // prefer to re-fetch canonical rows from the server rather than rely
+        // on potentially stale localStorage values.
+        try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); return; } catch(_){}
       } catch (e) {
         // ignore listener errors
       }
