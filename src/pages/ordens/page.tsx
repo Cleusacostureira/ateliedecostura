@@ -158,7 +158,7 @@ export default function OrdensPage() {
     const [showFidelizacaoModal, setShowFidelizacaoModal] = useState(false);
     const [showStatusMessageOptions, setShowStatusMessageOptions] = useState(false);
     const [showModal, setShowModal] = useState(false);
-    const [showDebugOverlay, setShowDebugOverlay] = useState(true);
+    const [showDebugOverlay, setShowDebugOverlay] = useState(false);
     const [showSavedSummary, setShowSavedSummary] = useState(false);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [showStatusOnlyModal, setShowStatusOnlyModal] = useState(false);
@@ -3221,7 +3221,7 @@ export default function OrdensPage() {
                   )}
                   {/* Visible version marker so mobile can confirm updated deploy */}
                   <div className="fixed top-2 left-2 z-40 text-[10px] text-gray-500 bg-white/70 px-2 py-1 rounded">v:{APP_VERSION}</div>
-                  {showDebugOverlay && (
+                  {debugMode && showDebugOverlay && (
                     <div className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center p-4">
                       <div className="text-center">
                         <h1 className="text-2xl font-bold mb-2">BUILD ATUAL</h1>

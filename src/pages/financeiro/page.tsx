@@ -604,33 +604,34 @@ export default function FinanceiroPage() {
             {/* Botões de teste: mobile e desktop */}
               <div className="flex items-center gap-2">
               
-              <div className="hidden lg:block flex items-center gap-2">
-                <button onClick={() => { try { const localRaw = localStorage.getItem('cashFlowDetails'); const local = localRaw ? JSON.parse(localRaw) : []; const orders = readOrdersFromStorage(); const correlations = (cashFlowDetails||[]).map((d:any)=> ({ entry: d, matchedOrder: (orders||[]).find((o:any)=> String(o.id) === String(d.orderId || d.orderid) || String(o.numero) === String(d.numero)) || null })); setDebugData({ cashFlowDetails, localStorageEntries: local, orders, correlations }); setShowDebugModal(true); } catch(e){ console.warn('show debug failed', e); } }} className="ml-2 px-2 py-1 text-xs bg-gray-100 text-gray-800 border rounded">Mostrar dados (debug)</button>
-                <button onClick={() => {
-                    try {
-                      const orders = readOrdersFromStorage();
-                      const cashLocalRaw = localStorage.getItem('cashFlowDetails');
-                      const cashLocal = cashLocalRaw ? JSON.parse(cashLocalRaw) : [];
-                      // include current runtime state `cashFlowDetails` and merged computed from it
-                      const runtimeCash = cashFlowDetails || [];
-                      const mergedFromLocal = mergePaidOrdersIntoEntries(cashLocal || []);
-                      const mergedFromState = mergePaidOrdersIntoEntries(runtimeCash || []);
-                      const sumOrders = (orders||[]).reduce((s:any,o:any)=> s + (Number(o.total || o.value || o.valor || 0) || 0), 0);
-                      const sumMergedLocal = (mergedFromLocal||[]).reduce((s:any,e:any)=> s + (parseCurrency(e.value ?? e.valor ?? e.total ?? 0) || 0), 0);
-                      const sumMergedState = (mergedFromState||[]).reduce((s:any,e:any)=> s + (parseCurrency(e.value ?? e.valor ?? e.total ?? 0) || 0), 0);
-                      const payload = { orders, cashLocal, runtimeCash, mergedLocal: mergedFromLocal, mergedState: mergedFromState, totals: { sumOrders, sumMergedLocal, sumMergedState, receitas: sumMergedState || 0, recebido: recebido || 0, despesas: despesas || 0, totalPending } };
-                      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `financeiro-debug-${Date.now()}.json`;
-                      document.body.appendChild(a);
-                      a.click();
-                      a.remove();
-                      URL.revokeObjectURL(url);
-                    } catch (e) { console.warn('export debug failed', e); alert('Export failed: ' + String(e)); }
-                  }} className="ml-2 px-2 py-1 text-xs bg-blue-50 text-blue-700 border rounded">Exportar debug</button>
-              </div>
+              {typeof window !== 'undefined' && window.location.search.includes('debug') && (
+                <div className="hidden lg:block flex items-center gap-2">
+                  <button onClick={() => { try { const localRaw = localStorage.getItem('cashFlowDetails'); const local = localRaw ? JSON.parse(localRaw) : []; const orders = readOrdersFromStorage(); const correlations = (cashFlowDetails||[]).map((d:any)=> ({ entry: d, matchedOrder: (orders||[]).find((o:any)=> String(o.id) === String(d.orderId || d.orderid) || String(o.numero) === String(d.numero)) || null })); setDebugData({ cashFlowDetails, localStorageEntries: local, orders, correlations }); setShowDebugModal(true); } catch(e){ console.warn('show debug failed', e); } }} className="ml-2 px-2 py-1 text-xs bg-gray-100 text-gray-800 border rounded">Mostrar dados (debug)</button>
+                  <button onClick={() => {
+                      try {
+                        const orders = readOrdersFromStorage();
+                        const cashLocalRaw = localStorage.getItem('cashFlowDetails');
+                        const cashLocal = cashLocalRaw ? JSON.parse(cashLocalRaw) : [];
+                        const runtimeCash = cashFlowDetails || [];
+                        const mergedFromLocal = mergePaidOrdersIntoEntries(cashLocal || []);
+                        const mergedFromState = mergePaidOrdersIntoEntries(runtimeCash || []);
+                        const sumOrders = (orders||[]).reduce((s:any,o:any)=> s + (Number(o.total || o.value || o.valor || 0) || 0), 0);
+                        const sumMergedLocal = (mergedFromLocal||[]).reduce((s:any,e:any)=> s + (parseCurrency(e.value ?? e.valor ?? e.total ?? 0) || 0), 0);
+                        const sumMergedState = (mergedFromState||[]).reduce((s:any,e:any)=> s + (parseCurrency(e.value ?? e.valor ?? e.total ?? 0) || 0), 0);
+                        const payload = { orders, cashLocal, runtimeCash, mergedLocal: mergedFromLocal, mergedState: mergedFromState, totals: { sumOrders, sumMergedLocal, sumMergedState, receitas: sumMergedState || 0, recebido: recebido || 0, despesas: despesas || 0, totalPending } };
+                        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `financeiro-debug-${Date.now()}.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                      } catch (e) { console.warn('export debug failed', e); alert('Export failed: ' + String(e)); }
+                    }} className="ml-2 px-2 py-1 text-xs bg-blue-50 text-blue-700 border rounded">Exportar debug</button>
+                </div>
+              )}
             </div>
             <div className="flex gap-1.5 lg:gap-2">
               <button
