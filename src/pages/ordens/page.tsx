@@ -2925,7 +2925,11 @@ export default function OrdensPage() {
                       <div className="text-right ml-3">
                                 <div className="font-bold text-sm text-green-600 truncate">{order.value}</div>
                                 <div className="text-xs mt-1">
-                                  <div className="text-[12px] px-2 py-1 rounded inline-flex items-center justify-center bg-red-50 text-red-600">Não Pago</div>
+                                  { (String(order.paymentStatus || '').toLowerCase().includes('pago')) ? (
+                                    <div className="text-[12px] px-2 py-1 rounded inline-flex items-center justify-center bg-green-50 text-green-600">Pago</div>
+                                  ) : (
+                                    <div className="text-[12px] px-2 py-1 rounded inline-flex items-center justify-center bg-red-50 text-red-600">Não Pago</div>
+                                  ) }
                                 </div>
                       </div>
                     </div>
@@ -3079,10 +3083,17 @@ export default function OrdensPage() {
                           <td className="px-3 py-3 align-top text-sm text-right">
                             <div className="font-bold text-green-600">{order.value}</div>
                               <div className="text-xs mt-1 flex items-center justify-center gap-2">
-                                <div className={"inline-flex items-center gap-1 text-sm px-2 py-1 rounded bg-red-50 text-red-600"}>
-                                  <i className="ri-money-dollar-circle-line"></i>
-                                  Não Pago
-                                </div>
+                                { (String(order.paymentStatus || '').toLowerCase().includes('pago')) ? (
+                                  <div className={"inline-flex items-center gap-1 text-sm px-2 py-1 rounded bg-green-50 text-green-600"}>
+                                    <i className="ri-money-dollar-circle-line"></i>
+                                    Pago
+                                  </div>
+                                ) : (
+                                  <div className={"inline-flex items-center gap-1 text-sm px-2 py-1 rounded bg-red-50 text-red-600"}>
+                                    <i className="ri-money-dollar-circle-line"></i>
+                                    Não Pago
+                                  </div>
+                                ) }
                               </div>
                           </td>
                           <td className="px-3 py-3 align-top text-sm text-center">
