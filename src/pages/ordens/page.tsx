@@ -215,12 +215,19 @@ export default function OrdensPage() {
       } catch (e) { alert('Falha ao exportar debug: ' + String(e)); }
     };
 
-      const syncFromServer = () => {
+            const syncFromServer = () => {
         try {
-          try { localStorage.removeItem('orders'); } catch(_){}
-          try { localStorage.removeItem('lastQuickTap'); } catch(_){}
+          // Clear the primary local cache plus related artifacts that can keep stale payment state
+          const keysToClear = ['orders', 'lastQuickTap', 'cashFlowDetails', 'deletedOrders', 'retiradoTaps'];
+          keysToClear.forEach(k => { try { localStorage.removeItem(k); } catch(_){} });
           showToast('Sincronização iniciada');
-          try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(_){}
+          try {
+            // Trigger existing handlers to re-fetch from server and update UI
+            window.dispatchEvent(new CustomEvent('refetchOrdersFromServer'));
+            window.dispatchEvent(new CustomEvent('ordersUpdated'));
+            window.dispatchEvent(new CustomEvent('financeUpdated'));
+          } catch(_){ }
+          // give some time for handlers to run before confirming completion
           setTimeout(() => { showToast('Sincronização concluída'); }, 1400);
         } catch (e) { console.warn('syncFromServer failed', e); showToast('Falha ao iniciar sincronização'); }
       };
