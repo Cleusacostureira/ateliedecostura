@@ -215,6 +215,16 @@ export default function OrdensPage() {
       } catch (e) { alert('Falha ao exportar debug: ' + String(e)); }
     };
 
+      const syncFromServer = () => {
+        try {
+          try { localStorage.removeItem('orders'); } catch(_){}
+          try { localStorage.removeItem('lastQuickTap'); } catch(_){}
+          showToast('Sincronização iniciada');
+          try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(_){}
+          setTimeout(() => { showToast('Sincronização concluída'); }, 1400);
+        } catch (e) { console.warn('syncFromServer failed', e); showToast('Falha ao iniciar sincronização'); }
+      };
+
     const showToast = (msg: string, ms = 1800) => {
       try { setToast(msg); } catch(_){}
       try { setTimeout(() => setToast(null), ms); } catch(_){}
@@ -3238,7 +3248,10 @@ export default function OrdensPage() {
                   )}
                   {/* Duplicate Export Debug button in top-right to avoid Safari bottom toolbar overlay */}
                   <div className="fixed top-2 right-2 z-50">
-                    <button onClick={exportLocalDebug} className="bg-black text-white text-xs px-3 py-2 rounded-md shadow">Export Debug</button>
+                    <div className="flex gap-2 items-center">
+                      <button onClick={syncFromServer} className="bg-rose-600 text-white text-xs px-3 py-2 rounded-md shadow">Sincronizar Servidor</button>
+                      <button onClick={exportLocalDebug} className="bg-black text-white text-xs px-3 py-2 rounded-md shadow">Export Debug</button>
+                    </div>
                   </div>
               </div>
             </div>
