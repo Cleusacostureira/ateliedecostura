@@ -328,11 +328,11 @@ export default function OrdensPage() {
                 const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
                 const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
                 const localOverride = localMapById[String(o.id)] || localMapByNumero[String(o.numero)];
-                let finalPaid = false;
-                if (localOverride && Object.prototype.hasOwnProperty.call(localOverride, 'paymentStatus')) {
+                // Treat server-reported paid (order.paymentStatus or linked cash entry) as authoritative.
+                const serverPaid = currentPaid || cashPaid;
+                let finalPaid = serverPaid;
+                if (!serverPaid && localOverride && Object.prototype.hasOwnProperty.call(localOverride, 'paymentStatus')) {
                   finalPaid = String((localOverride.paymentStatus || '')).toLowerCase() === 'pago';
-                } else {
-                  finalPaid = currentPaid || cashPaid;
                 }
 
                 const rawValue = o.value ?? o.total ?? o.total_valor ?? (cash && (cash.value || cash.valor)) ?? null;
@@ -357,7 +357,7 @@ export default function OrdensPage() {
                   services,
                   service: serviceField,
                   dateOut: dateOutField,
-                  paymentStatus: (local && local.paymentStatus !== undefined) ? local.paymentStatus : (finalPaid ? 'Pago' : (o.paymentStatus || null)),
+                  paymentStatus: (finalPaid ? 'Pago' : ((local && local.paymentStatus !== undefined) ? local.paymentStatus : (o.paymentStatus || null))),
                   value: displayValue,
                 });
               } catch (e) { enriched.push({ ...o, status: normalizeStatus(o.status) }); }
@@ -471,7 +471,8 @@ export default function OrdensPage() {
             const serviceField = pieceSummary || servicesText || o.service || o.servico || o.servicos || o.serviceText || '';
             const dateOutField = formatIsoToBR(o.data_entrega || o.dateOut || o.date_out || o.previsao || o.dataPrevista || o.delivery) || o.dateOut || '';
 
-            return {
+              const serverPaid = finalPaid; // from earlier logic
+              return {
               ...o,
               status: normalizeStatus(o.status),
               client: clientName,
@@ -481,7 +482,7 @@ export default function OrdensPage() {
               services,
               service: serviceField,
               dateOut: dateOutField,
-              paymentStatus: finalPaid ? 'Pago' : (o.paymentStatus || null),
+              paymentStatus: serverPaid ? 'Pago' : (o.paymentStatus || null),
               value: displayValue,
             };
           } catch (e) { return { ...o, status: normalizeStatus(o.status) }; }
@@ -518,7 +519,7 @@ export default function OrdensPage() {
               const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
               return {
                 ...o,
-                paymentStatus: (local.paymentStatus !== undefined ? local.paymentStatus : (cashPaid ? 'Pago' : o.paymentStatus)),
+                paymentStatus: ((cashPaid || String(o.paymentStatus || '').toLowerCase() === 'pago') ? 'Pago' : (local.paymentStatus !== undefined ? local.paymentStatus : o.paymentStatus)),
                 status: (local.status !== undefined ? normalizeStatus(local.status) : o.status),
                 service: chosenService,
                 dateOut: chosenDateOut,
@@ -538,8 +539,12 @@ export default function OrdensPage() {
                 merged = merged.map((s:any) => {
                   try {
                     const local = (s && s.id && lmById[String(s.id)]) || (s && s.numero && lmByNum[String(s.numero)]) || null;
+                    // Only allow local paymentStatus to override when the server did not report the order as paid.
                     if (local && Object.prototype.hasOwnProperty.call(local, 'paymentStatus')) {
-                      return { ...s, paymentStatus: local.paymentStatus };
+                      try {
+                        const serverPaid = String(s.paymentStatus || '').toLowerCase() === 'pago';
+                        if (!serverPaid) return { ...s, paymentStatus: local.paymentStatus };
+                      } catch(_) { return { ...s, paymentStatus: local.paymentStatus }; }
                     }
                   } catch(_){}
                   return s;
