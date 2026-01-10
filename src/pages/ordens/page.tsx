@@ -83,31 +83,7 @@ const getCashMap = () => {
         if (num) map[String(num)] = c;
       } catch (e) { /* ignore entry */ }
     });
-    return map;
-  } catch (e) { return {}; }
-};
-
-// parse currency helper (similar to Financeiro) to normalize amounts
-function parseCurrency(raw: any) {
-  try {
-    if (raw === null || raw === undefined) return 0;
-    if (typeof raw === 'number') return raw;
-    let s = String(raw).trim();
-    s = s.replace(/R\$/g, '').replace(/\s/g, '');
-    if (s.indexOf('.') !== -1 && s.indexOf(',') !== -1) {
-      s = s.replace(/\./g, '').replace(/,/g, '.');
-    } else if (s.indexOf(',') !== -1 && s.indexOf('.') === -1) {
-      s = s.replace(/,/g, '.');
-    }
-    let n = parseFloat(s);
-    if (isNaN(n)) {
-      const digits = String(raw).replace(/\D/g, '');
-      if (!digits) return 0;
-      if (digits.length <= 2) return parseFloat(digits) / 100;
-      const reais = digits.slice(0, -2);
-      const cents = digits.slice(-2);
-      n = parseFloat(reais + '.' + cents);
-    }
+            
     return isNaN(n) ? 0 : n;
   } catch (e) { return 0; }
 }
@@ -140,6 +116,7 @@ export default function OrdensPage() {
     const [orders, setOrders] = useState<any[]>([]);
     const ordersRef = useRef<any[]>([]);
       const ignoreLocalSaveRef = useRef(false);
+    const lastAutoSyncRef = useRef<number>(0);
     const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
     const [orderServices, setOrderServices] = useState<any[]>([]);
     const [clientes, setClientes] = useState<any[]>([]);
@@ -191,6 +168,25 @@ export default function OrdensPage() {
     const pendingStatusRef = useRef<Set<string>>(new Set());
     const [pendingIds, setPendingIds] = useState<string[]>([]);
     const [toast, setToast] = useState<string | null>(null);
+    const showToast = (msg: string | null, ms = 3000) => {
+      try { setToast(msg); if (msg) setTimeout(() => setToast(null), ms); } catch (_) {}
+    };
+    // Auto-sync on mount and when financeUpdated fires (throttled)
+    useEffect(() => {
+      const doSync = () => {
+        try {
+          const now = Date.now();
+          if (now - (lastAutoSyncRef.current || 0) < 5000) return;
+          lastAutoSyncRef.current = now;
+          syncFromServer();
+        } catch (e) { console.warn('auto sync error', e); }
+      };
+      // run once shortly after mount
+      const t = setTimeout(() => { doSync(); }, 800);
+      const handler = () => { doSync(); };
+      window.addEventListener('financeUpdated', handler as any);
+      return () => { clearTimeout(t); window.removeEventListener('financeUpdated', handler as any); };
+    }, []);
     const [quickTapDebug, setQuickTapDebug] = useState<any>(null);
     const [debugBanner, setDebugBanner] = useState<string | null>(null);
     const APP_VERSION = '332b310';
@@ -216,34 +212,16 @@ export default function OrdensPage() {
     };
 
             const syncFromServer = () => {
-        try {
-          // Clear the primary local cache plus related artifacts that can keep stale payment state
-          const keysToClear = ['orders', 'lastQuickTap', 'cashFlowDetails', 'deletedOrders', 'retiradoTaps'];
-          keysToClear.forEach(k => { try { localStorage.removeItem(k); } catch(_){} });
-          showToast('Sincronização iniciada');
-          try {
-            // Trigger existing handlers to re-fetch from server and update UI
-            window.dispatchEvent(new CustomEvent('refetchOrdersFromServer'));
-            window.dispatchEvent(new CustomEvent('ordersUpdated'));
-            window.dispatchEvent(new CustomEvent('financeUpdated'));
-              return {
-                ...o,
-                // server/cash authoritative for paymentStatus — do not re-apply local overrides
-                paymentStatus: ((cashPaid || String(o.paymentStatus || '').toLowerCase() === 'pago') ? 'Pago' : (o.paymentStatus || null)),
-                status: (local.status !== undefined ? normalizeStatus(local.status) : o.status),
-                service: chosenService,
-                dateOut: chosenDateOut,
-                value: chosenValue,
-              };
-      try { setTimeout(() => setToast(null), ms); } catch(_){}
-            // Do not re-apply local paymentStatus; merged respects server/cash truth.
       try {
-        await applyQuickStatus(order, newStatus);
-      } catch (err) {
-        try { console.warn('handleQuickTap error', err); } catch(_){}
-      } finally {
-        removePendingId(order.id);
-      }
+        const keysToClear = ['orders', 'lastQuickTap', 'cashFlowDetails', 'deletedOrders', 'retiradoTaps'];
+        keysToClear.forEach(k => { try { localStorage.removeItem(k); } catch(_){} });
+        try { showToast('Sincronização iniciada'); } catch(_){}
+        try {
+          window.dispatchEvent(new CustomEvent('refetchOrdersFromServer'));
+          window.dispatchEvent(new CustomEvent('ordersUpdated'));
+          window.dispatchEvent(new CustomEvent('financeUpdated'));
+        } catch(_){}
+      } catch (e) { console.warn('syncFromServer failed', e); }
     };
     const [editDateIn, setEditDateIn] = useState('');
     const [editDateOut, setEditDateOut] = useState('');
@@ -321,13 +299,9 @@ export default function OrdensPage() {
                 const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
                 const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
                 const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
-                const localOverride = localMapById[String(o.id)] || localMapByNumero[String(o.numero)];
                 // Treat server-reported paid (order.paymentStatus or linked cash entry) as authoritative.
                 const serverPaid = currentPaid || cashPaid;
                 let finalPaid = serverPaid;
-                if (!serverPaid && localOverride && Object.prototype.hasOwnProperty.call(localOverride, 'paymentStatus')) {
-                  finalPaid = String((localOverride.paymentStatus || '')).toLowerCase() === 'pago';
-                }
 
                 const rawValue = o.value ?? o.total ?? o.total_valor ?? (cash && (cash.value || cash.valor)) ?? null;
                 const numericVal = Number(String(rawValue).replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
@@ -351,7 +325,7 @@ export default function OrdensPage() {
                   services,
                   service: serviceField,
                   dateOut: dateOutField,
-                  paymentStatus: (finalPaid ? 'Pago' : (o.paymentStatus || null)),
+                  paymentStatus: (finalPaid ? 'Pago' : null),
                   value: displayValue,
                 });
               } catch (e) { enriched.push({ ...o, status: normalizeStatus(o.status) }); }
@@ -374,6 +348,26 @@ export default function OrdensPage() {
         // initial load saved; enrichment will run via `refetchOrdersFromServer` handler
       } catch (e) { console.warn('initial server fetch failed', e); try { setDebugInfo((prev:any)=>({ ...(prev||{}), initialFetchError: String(e) })); } catch(_){} }
     })();
+  }, []);
+
+  // Realtime subscriptions: when `ordens` or `fluxo_caixa` change on the server,
+  // trigger a refetch so the UI always reflects Supabase state.
+  useEffect(() => {
+    if (!(supabase && typeof (supabase as any).channel === 'function')) return;
+    let ordensCh: any = null;
+    let fluxoCh: any = null;
+    try {
+      ordensCh = (supabase as any).channel('realtime:ordens')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'ordens' }, () => { try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(_){} })
+        .subscribe();
+      fluxoCh = (supabase as any).channel('realtime:fluxo_caixa')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'fluxo_caixa' }, () => { try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(_){} })
+        .subscribe();
+    } catch (e) { console.warn('realtime sub failed', e); }
+    return () => {
+      try { if (ordensCh && typeof ordensCh.unsubscribe === 'function') ordensCh.unsubscribe(); } catch(_){}
+      try { if (fluxoCh && typeof fluxoCh.unsubscribe === 'function') fluxoCh.unsubscribe(); } catch(_){}
+    };
   }, []);
 
   // TEMP: remover ordens locais que não existem no banco (manter apenas 22 e 23)
@@ -427,13 +421,7 @@ export default function OrdensPage() {
               const cash = cashMap[String(o.id)] || cashMap[String(o.numero)] || null;
               const currentPaid = String(o.paymentStatus || '').toLowerCase() === 'pago';
               const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
-              const localOverride = localMapById[String(o.id)] || localMapByNumero[String(o.numero)];
-              let finalPaid = false;
-              if (localOverride && Object.prototype.hasOwnProperty.call(localOverride, 'paymentStatus')) {
-                finalPaid = String((localOverride.paymentStatus || '')).toLowerCase() === 'pago';
-              } else {
-                finalPaid = currentPaid || cashPaid;
-              }
+              const finalPaid = currentPaid || cashPaid;
 
             const rawValue = o.value ?? o.total ?? o.total_valor ?? (cash && (cash.value || cash.valor)) ?? null;
             const numericVal = Number(String(rawValue || '').replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
@@ -456,7 +444,7 @@ export default function OrdensPage() {
               services,
               service: serviceField,
               dateOut: dateOutField,
-              paymentStatus: serverPaid ? 'Pago' : (o.paymentStatus || null),
+              paymentStatus: serverPaid ? 'Pago' : null,
               value: displayValue,
             };
           } catch (e) { return { ...o, status: normalizeStatus(o.status) }; }
@@ -493,38 +481,14 @@ export default function OrdensPage() {
               const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
               return {
                 ...o,
-                paymentStatus: ((cashPaid || String(o.paymentStatus || '').toLowerCase() === 'pago') ? 'Pago' : (local.paymentStatus !== undefined ? local.paymentStatus : o.paymentStatus)),
+                paymentStatus: ((cashPaid || String(o.paymentStatus || '').toLowerCase() === 'pago') ? 'Pago' : null),
                 status: (local.status !== undefined ? normalizeStatus(local.status) : o.status),
                 service: chosenService,
                 dateOut: chosenDateOut,
                 value: chosenValue,
               };
             });
-            try {
-              // ensure explicit local paymentStatus values survive this merge as well
-              const localExistingForMerge2 = readOrdersFromStorage();
-              if (Array.isArray(localExistingForMerge2) && localExistingForMerge2.length > 0) {
-                const lmById: Record<string, any> = {};
-                const lmByNum: Record<string, any> = {};
-                localExistingForMerge2.forEach((l:any) => {
-                  try { if (l && l.id) lmById[String(l.id)] = l; } catch(_){}
-                  try { if (l && l.numero) lmByNum[String(l.numero)] = l; } catch(_){}
-                });
-                merged = merged.map((s:any) => {
-                  try {
-                    const local = (s && s.id && lmById[String(s.id)]) || (s && s.numero && lmByNum[String(s.numero)]) || null;
-                    // Only allow local paymentStatus to override when the server did not report the order as paid.
-                    if (local && Object.prototype.hasOwnProperty.call(local, 'paymentStatus')) {
-                      try {
-                        const serverPaid = String(s.paymentStatus || '').toLowerCase() === 'pago';
-                        if (!serverPaid) return { ...s, paymentStatus: local.paymentStatus };
-                      } catch(_) { return { ...s, paymentStatus: local.paymentStatus }; }
-                    }
-                  } catch(_){}
-                  return s;
-                });
-              }
-            } catch (eee) {}
+            
             try { localStorage.setItem('orders', JSON.stringify(merged)); } catch(e){}
             try { setOrders(merged); } catch(e){}
             try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}

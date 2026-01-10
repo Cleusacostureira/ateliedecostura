@@ -214,6 +214,25 @@ export default function FinanceiroPage() {
     };
   }, []);
 
+  // Realtime subscription: trigger refresh when backend fluxo_caixa or ordens change
+  useEffect(() => {
+    if (!(supabase && typeof (supabase as any).channel === 'function')) return;
+    let fluxoCh: any = null;
+    let ordensCh: any = null;
+    try {
+      fluxoCh = (supabase as any).channel('realtime:fluxo_caixa')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'fluxo_caixa' }, () => { try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(_){} })
+        .subscribe();
+      ordensCh = (supabase as any).channel('realtime:ordens')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'ordens' }, () => { try { window.dispatchEvent(new CustomEvent('ordersUpdated')); window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(_){} })
+        .subscribe();
+    } catch (e) { console.warn('realtime sub failed', e); }
+    return () => {
+      try { if (fluxoCh && typeof fluxoCh.unsubscribe === 'function') fluxoCh.unsubscribe(); } catch(_){}
+      try { if (ordensCh && typeof ordensCh.unsubscribe === 'function') ordensCh.unsubscribe(); } catch(_){}
+    };
+  }, []);
+
   const handleCobranca = (client: any) => {
     const message = `Olá ${client.client}! 😊\n\n*Cleusa Ateliê de Costura*\n\nEsperamos que sua peça tenha ficado perfeita!\n\nGostaríamos de lembrá-lo(a) sobre o pagamento pendente do serviço realizado:\n\n*Serviço:* ${client.service}\n*Valor:* R$ ${parseCurrency(client.value ?? client.valor ?? 0).toFixed(2)}\n*Data:* ${client.date}\n\n*DADOS PARA PAGAMENTO PIX:*\n\n*Nome:* Cleusa Belani David\n*Telefone:* 45999126130\n*CPF:* 64166724053\n\nContamos com sua compreensão e aguardamos seu pagamento.\n\nQualquer dúvida, estamos à disposição! ✨`;
     
