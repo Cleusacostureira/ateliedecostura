@@ -338,7 +338,43 @@ export default function FinanceiroPage() {
     if (item.status === 'Pendente') {
       setSelectedClient(item);
       setShowConfirmPaymentModal(true);
+      return;
     }
+    if (item.status === 'Pago') {
+      try {
+        const ok = window.confirm('Marcar esta OS como NÃO PAGO?');
+        if (!ok) return;
+        markOrderNotPaid(item);
+      } catch (e) { console.warn('mark not paid confirm failed', e); }
+    }
+  };
+
+  const markOrderNotPaid = async (grp: any) => {
+    try {
+      const updated = (cashFlowDetails || []).map((c:any) => {
+        try {
+          const cid = String(c.orderId || c.orderid || c.numero || c.id || '');
+          if (String(cid) === String(grp.orderId) || String(cid) === String(grp.numero) || String(cid) === String(grp.key)) {
+            return { ...c, status: 'Não pago' };
+          }
+        } catch (_) {}
+        return c;
+      });
+      setCashFlowDetails(updated);
+      try { localStorage.setItem('cashFlowDetails', JSON.stringify(updated)); } catch(e){}
+      try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(_){}
+
+      if (supabase && typeof supabase.from === 'function') {
+        try {
+          if (grp.orderId) {
+            await supabase.from('ordens').update({ paymentStatus: 'Não pago' }).eq('id', grp.orderId);
+          } else if (grp.numero) {
+            await supabase.from('ordens').update({ paymentStatus: 'Não pago' }).eq('numero', String(grp.numero));
+          }
+          try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(_){}
+        } catch (e) { console.warn('supabase mark not paid failed', e); }
+      }
+    } catch (e) { console.warn('markOrderNotPaid failed', e); }
   };
 
   const copyToClipboard = (text: string) => {
@@ -366,6 +402,7 @@ export default function FinanceiroPage() {
 
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [debugData, setDebugData] = useState<any[]>([]);
+  const [filterPaid, setFilterPaid] = useState(false);
 
   // compute totals from cashFlowDetails
   function parseCurrency(raw: any) {
@@ -699,17 +736,20 @@ export default function FinanceiroPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg p-2.5 lg:p-6 border border-gray-200">
+            <button
+              onClick={() => setFilterPaid(!filterPaid)}
+              className={`rounded-lg p-2.5 lg:p-6 border ${filterPaid ? 'border-indigo-400 ring-1 ring-indigo-200' : 'border-gray-200'} bg-white cursor-pointer text-left`}
+            >
               <div className="flex flex-col gap-1.5 lg:gap-2">
                 <div className="w-7 h-7 lg:w-10 lg:h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
                   <i className="ri-checkbox-circle-line text-base lg:text-xl text-indigo-600 w-4 h-4 lg:w-5 lg:h-5 flex items-center justify-center"></i>
                 </div>
                 <div>
                   <p className="text-sm lg:text-sm text-gray-600 mb-0.5">Recebido</p>
-                  <p className="text-sm lg:text-2xl font-bold text-gray-900">R$ {recebido.toLocaleString('pt-BR')}</p>
+                  <p className={`text-sm lg:text-2xl font-bold ${filterPaid ? 'text-indigo-600' : 'text-gray-900'}`}>R$ {recebido.toLocaleString('pt-BR')}</p>
                 </div>
               </div>
-            </div>
+            </button>
 
             <div className="bg-white rounded-lg p-2.5 lg:p-6 border border-gray-200">
               <div className="flex flex-col gap-1.5 lg:gap-2">
@@ -830,7 +870,8 @@ export default function FinanceiroPage() {
                   return (Number(ad) || 0) - (Number(bd) || 0);
                 });
                 const aggregated = aggregateByOrder(sorted || []);
-                return aggregated.map((grp:any) => (
+                const filtered = filterPaid ? (aggregated || []).filter((g:any) => String(g.status || '').toLowerCase() === 'pago') : aggregated;
+                return filtered.map((grp:any) => (
                   <div key={grp.key} className="bg-white p-3 rounded-lg border">
                     <div className="flex flex-col">
                       <div className="min-w-0">
@@ -851,7 +892,21 @@ export default function FinanceiroPage() {
                         <div />
                         <div className="text-right ml-3">
                           <p className="text-sm font-bold text-green-600">R$ {Number(grp.total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${grp.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{grp.status || ''}</span>
+                          <span
+                            onClick={(e) => {
+                              try { e.stopPropagation(); } catch(_){}
+                              try {
+                                if (String(grp.status || '').toLowerCase() === 'pago') {
+                                  const ok = window.confirm('Marcar esta OS como NÃO PAGO?');
+                                  if (!ok) return;
+                                  markOrderNotPaid(grp);
+                                }
+                              } catch (e) { console.warn(e); }
+                            }}
+                            className={`text-[10px] px-1.5 py-0.5 rounded-full ${grp.status === 'Pago' ? 'bg-green-100 text-green-700 cursor-pointer' : 'bg-amber-100 text-amber-700'}`}
+                          >
+                            {grp.status || ''}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -886,7 +941,8 @@ export default function FinanceiroPage() {
                       return (Number(ad) || 0) - (Number(bd) || 0);
                     });
                     const aggregated = aggregateByOrder(sortedAgg || []);
-                    return aggregated.map((grp:any) => (
+                    const filtered = filterPaid ? (aggregated || []).filter((g:any) => String(g.status || '').toLowerCase() === 'pago') : aggregated;
+                    return filtered.map((grp:any) => (
                           <tr 
                             key={grp.key}
                             onClick={() => handleRowClick(grp)}
