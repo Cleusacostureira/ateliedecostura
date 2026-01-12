@@ -1761,6 +1761,22 @@ export default function OrdensPage() {
     }
   };
 
+    // UI wrapper used by buttons: stops propagation, shows debug, disables button and calls applyQuickStatus
+    const handleQuickTap = async (order: any, newStatus: string, e?: any) => {
+      try { if (e && typeof e.stopPropagation === 'function') e.stopPropagation(); } catch(_){}
+      try { setQuickTapDebug({ id: order?.id, newStatus }); } catch(_){}
+      try { setPendingIds(prev => Array.from(new Set([...(prev||[]), String(order?.id)]))); } catch(_){}
+      try {
+        await applyQuickStatus(order, newStatus);
+      } catch (err) {
+        try { console.warn('handleQuickTap applyQuickStatus failed', err); } catch(_){}
+        try { showToast('Falha ao alterar status'); } catch(_){}
+      } finally {
+        try { setPendingIds(prev => (prev||[]).filter((id:string) => String(id) !== String(order?.id))); } catch(_){}
+        try { setQuickTapDebug(null); } catch(_){}
+      }
+    };
+
   const togglePaymentStatus = async (order: any) => {
     // Disallow changing payment status from the Ordens UI to avoid conflicts.
     try { showToast('Marcação de pagamento só pelo Financeiro'); } catch (e) {}
