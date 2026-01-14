@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { safeSetItem } from './storageHelpers';
 
 const ORDERS_KEY = 'orders';
 
@@ -92,7 +93,7 @@ export default async function syncOrders(): Promise<void> {
               } catch (e) { result.push(row); }
             }
             arr = result;
-            localStorage.setItem(ORDERS_KEY, JSON.stringify(arr));
+            try { safeSetItem(ORDERS_KEY, arr, 'ordersUpdated', 'syncOrders'); } catch(_) { try { safeSetItem(ORDERS_KEY, arr, 'ordersUpdated', 'syncOrders'); } catch(__){} }
           } catch(_){ try { localStorage.setItem(ORDERS_KEY, JSON.stringify(arr)); } catch(__){} }
           try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(_){ }
         }
@@ -134,8 +135,7 @@ export default async function syncOrders(): Promise<void> {
           }
         }
         if (cashChanged) {
-          try { localStorage.setItem('cashFlowDetails', JSON.stringify(cashArr)); } catch(_){}
-          try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(_){}
+          try { safeSetItem('cashFlowDetails', cashArr, 'financeUpdated', 'syncOrders'); } catch(_){ try { safeSetItem('cashFlowDetails', cashArr, 'financeUpdated', 'syncOrders'); } catch(__){} }
         }
       }
     } catch (e) { try { localStorage.setItem('lastServerError', JSON.stringify({ message: String(e) })); } catch(_){} }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
-import { readOrdersFromStorage } from '../../lib/storageHelpers';
+import { readOrdersFromStorage, safeSetItem } from '../../lib/storageHelpers';
 
 function parseDateStr(d: string) {
   if (!d) return null;
@@ -10,11 +10,11 @@ function parseDateStr(d: string) {
 
 export default function AgendaPage() {
   const [orders, setOrders] = useState<any[]>(() => {
-    try { return readOrdersFromStorage(); } catch (e) { return []; }
+    try { return readOrdersFromStorage(); } catch { return []; }
   });
   const [tab, setTab] = useState<'today'|'tomorrow'|'week'|'kanban'>('today');
 
-  useEffect(() => { try { localStorage.setItem('orders', JSON.stringify(orders)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {} }, [orders]);
+  useEffect(() => { try { safeSetItem('orders', orders, 'ordersUpdated', 'AgendaPage'); } catch { void 0; } }, [orders]);
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const tomorrow = useMemo(() => { const d = new Date(); d.setDate(d.getDate()+1); d.setHours(0,0,0,0); return d; }, []);

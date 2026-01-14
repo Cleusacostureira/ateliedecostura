@@ -40,6 +40,7 @@ export default function DashboardPage() {
 
   const computeCounts = () => {
     const list = orders || [];
+    try { console.debug('[dashboard] computeCounts running - orders.length=', (list || []).length, 'clients.length=', (clients||[]).length); } catch(e){}
     const now = new Date(); now.setHours(0,0,0,0);
     const inProg = list.filter((o: any) => (o.status || '').toString() === 'Em costura').length;
     const ready = list.filter((o: any) => (o.status || '').toString() === 'Pronto').length;
@@ -96,6 +97,23 @@ export default function DashboardPage() {
   useEffect(() => {
     // fetch orders and clients from Supabase (fallback to localStorage)
     let mounted = true;
+
+    // read cached orders/clients synchronously to avoid empty dashboard on initial mount
+    try {
+      const cachedOrders = readOrdersFromStorage();
+      if (Array.isArray(cachedOrders) && cachedOrders.length > 0) setOrders(cachedOrders);
+    } catch (e) {}
+    try {
+      const rawClients = localStorage.getItem('clientes');
+      if (rawClients) {
+        const parsed = JSON.parse(rawClients || '[]');
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const sortedClients = parsed.slice().sort((a:any,b:any) => (String(a.nome||'').localeCompare(String(b.nome||''))));
+          setClients(sortedClients);
+        }
+      }
+    } catch (e) {}
+
     async function fetchData() {
       try {
         if (supabase && typeof supabase.from === 'function') {
@@ -106,7 +124,8 @@ export default function DashboardPage() {
               dateOut: formatDate(o.data_entrega || o.dataEntrega || o.dateOut),
               dateIn: formatDate(o.data_criacao || o.created_at || o.dateIn),
             }));
-            setOrders(mapped);
+                try { console.debug('[dashboard] fetched orders from supabase, count=', mapped.length); } catch(e){}
+                setOrders(mapped);
           }
           const cRes = await supabase.from('clientes').select('*');
           const oiRes = await supabase.from('ordem_itens').select('*');
@@ -115,6 +134,7 @@ export default function DashboardPage() {
             // ensure alphabetical order by client name
             try {
               const sortedClients = (cRes as any).data.slice().sort((a:any,b:any) => (String(a.nome||'').localeCompare(String(b.nome||''))));
+              try { console.debug('[dashboard] fetched clients from supabase, count=', sortedClients.length); } catch(e){}
               setClients(sortedClients);
             } catch (e) { setClients((cRes as any).data); }
           }
@@ -137,11 +157,18 @@ export default function DashboardPage() {
     }
 
     fetchData();
+    // log runtime changes for debugging flicker
+    const logOrdersChange = () => { try { console.debug('[dashboard] runtime orders snapshot length=', (orders||[]).length); } catch(e){} };
+    window.addEventListener('ordersUpdated', logOrdersChange);
+    window.addEventListener('clientsUpdated', logOrdersChange);
     const h = () => computeCounts();
     window.addEventListener('ordersUpdated', h);
     window.addEventListener('clientsUpdated', h);
-    return () => { mounted = false; window.removeEventListener('ordersUpdated', h); window.removeEventListener('clientsUpdated', h); };
+    return () => { mounted = false; window.removeEventListener('ordersUpdated', h); window.removeEventListener('clientsUpdated', h); window.removeEventListener('ordersUpdated', logOrdersChange); window.removeEventListener('clientsUpdated', logOrdersChange); };
   }, []);
+
+  useEffect(() => { try { console.debug('[dashboard] orders state changed ->', (orders||[]).length); } catch(e){} }, [orders]);
+  useEffect(() => { try { console.debug('[dashboard] clients state changed ->', (clients||[]).length); } catch(e){} }, [clients]);
 
   // compute metrics whenever core data changes
   useEffect(() => {

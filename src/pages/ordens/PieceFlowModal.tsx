@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import PiecePreview from '../../components/PiecePreview';
 
@@ -26,8 +26,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
   const [newServicePrice, setNewServicePrice] = useState('');
   const [serviceSearch, setServiceSearch] = useState('');
 
-  useEffect(()=>{ if (open) reset(); },[open]);
-  const reset = () => {
+    const reset = useCallback(() => {
     setStep(1);
     setSelectedTipo(initialTipo || '');
     setSelectedCor(initialCor || '');
@@ -36,7 +35,9 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
     setSelectedServices([]);
     setNewServiceName(''); setNewServicePrice('');
     setPieceQuantity('');
-  }
+    }, [initialTipo, initialCor, initialModelo]);
+
+    useEffect(()=>{ if (open) reset(); },[open, reset]);
 
   const PREDEFINED: Array<{ key:string; nome:string; icone:string }> = (allTipos && Array.isArray(allTipos) ? (allTipos as any).map((t:any,i:number)=>({ key: String(i), nome: t.nome, icone: t.icone })) : [
     { key:'calca', nome:'Calça', icone:'👖' },
@@ -69,11 +70,11 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
 
   // debug: log when selectedTipo/selectedCor change
   React.useEffect(()=>{
-    try { console.log('[PieceFlowModal] state change', { selectedTipo, selectedCor, otherColor }); } catch(e) {}
+    try { console.log('[PieceFlowModal] state change', { selectedTipo, selectedCor, otherColor }); } catch { void 0; }
   }, [selectedTipo, selectedCor, otherColor]);
 
   const handleSelectTipo = (nome: string) => {
-    try { console.log('[PieceFlowModal] handleSelectTipo', nome); } catch(e) {}
+    try { console.log('[PieceFlowModal] handleSelectTipo', nome); } catch { void 0; }
     setSelectedTipo(nome);
     setPieceQuantity('');
     // show immediate quantity prompt before color selection
@@ -110,16 +111,16 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
       // try localStorage first
       const raw = localStorage.getItem('services');
       if (raw) {
-        try { const parsed = JSON.parse(raw); if (Array.isArray(parsed) && parsed.length>0) { setAvailableServices(parsed); return; } } catch (e) {}
+        try { const parsed = JSON.parse(raw); if (Array.isArray(parsed) && parsed.length>0) { setAvailableServices(parsed); return; } } catch { void 0; }
       }
       // try Supabase if available (also provide explicit reload button in UI)
       (async () => {
         try {
           const configured = Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
-          if (!configured) {
+            if (!configured) {
             // don't attempt server fetch when not configured
             const sampleServices = [ { id: `s-${Date.now()}-1`, titulo: 'Bainha', preco: 35 }, { id: `s-${Date.now()}-2`, titulo: 'Ajuste de cintura', preco: 50 } ];
-            try { setAvailableServices(sampleServices); localStorage.setItem('services', JSON.stringify(sampleServices)); } catch (e) {}
+            try { setAvailableServices(sampleServices); localStorage.setItem('services', JSON.stringify(sampleServices)); } catch { void 0; }
             return;
           }
           setServerLoading(true); setServerError(null);
@@ -129,24 +130,24 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
             setServerError(String((res as any).error.message || (res as any).error));
           } else if (Array.isArray((res as any).data) && (res as any).data.length > 0) {
             setAvailableServices((res as any).data || []);
-            try { localStorage.setItem('services', JSON.stringify((res as any).data || [])); } catch(_){}
+            try { localStorage.setItem('services', JSON.stringify((res as any).data || [])); } catch { void 0; }
             return;
-          } else {
+            } else {
             const sampleServices = [ { id: `s-${Date.now()}-1`, titulo: 'Bainha', preco: 35 }, { id: `s-${Date.now()}-2`, titulo: 'Ajuste de cintura', preco: 50 } ];
-            try { setAvailableServices(sampleServices); localStorage.setItem('services', JSON.stringify(sampleServices)); } catch (e) {}
+            try { setAvailableServices(sampleServices); localStorage.setItem('services', JSON.stringify(sampleServices)); } catch { void 0; }
           }
         } catch (e) {
           setServerLoading(false);
           setServerError(String(e));
         }
       })();
-    } catch (e) { }
+    } catch { void 0; }
   }, [servicesCatalog, open]);
 
   // ensure we attempt server load when modal opens (explicit fetch is available too)
   useEffect(() => {
     if (open) {
-      try { fetchServicesFromServer(); } catch (e) {}
+      try { fetchServicesFromServer(); } catch { void 0; }
     }
   }, [open]);
 
@@ -161,7 +162,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
       }
       if (Array.isArray((res as any).data)) {
         setAvailableServices((res as any).data || []);
-        try { localStorage.setItem('services', JSON.stringify((res as any).data || [])); } catch(_){}
+        try { localStorage.setItem('services', JSON.stringify((res as any).data || [])); } catch { void 0; }
       }
     } catch (e:any) { setServerLoading(false); setServerError(String(e || 'unknown')); }
   }
@@ -175,6 +176,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
       '🧥': '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 3v18h16v-18l-3 2-5-1-5 1-3-2z"/></svg>',
       '🧵': '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8"/></svg>'
     };
+    void SVG_ICONS;
   const subtotal = () => selectedServices.reduce((s,svc)=> s + Number(svc.price || 0), 0);
 
   const iconsize = 'text-4xl';
@@ -246,7 +248,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
                 <h3 className="text-lg font-semibold mb-3">Qual a cor da peça?</h3>
                 <div className="flex flex-wrap gap-3 mb-4">
                   {COLORS.map(c=> (
-                    <button key={c} type="button" onClick={()=>{ setSelectedCor(c); setOtherColor(''); setStep(3); try{ console.log('[PieceFlowModal] color clicked', c, COLOR_MAP[c]||c); }catch(e){} }} className="w-12 h-12 rounded-full flex items-center justify-center border" aria-label={c} title={c} style={{ backgroundColor: COLOR_MAP[c] || undefined }}>
+                    <button key={c} type="button" onClick={()=>{ setSelectedCor(c); setOtherColor(''); setStep(3); try{ console.log('[PieceFlowModal] color clicked', c, COLOR_MAP[c]||c); }catch{ void 0; } }} className="w-12 h-12 rounded-full flex items-center justify-center border" aria-label={c} title={c} style={{ backgroundColor: COLOR_MAP[c] || undefined }}>
                       {!COLOR_MAP[c] || (COLOR_MAP[c] && COLOR_MAP[c].toLowerCase() === '#ffffff') ? <div className="w-3 h-3 rounded-full border"></div> : null}
                     </button>
                   ))}
@@ -296,7 +298,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
                           <div className="flex gap-2 items-center">
                             <input type="text" value={pendingPriceInput} onChange={e=>setPendingPriceInput(e.target.value)} className="border p-1 rounded w-28" />
                             <button type="button" onClick={()=>{
-                              const parsed = Number((pendingPriceInput||'').replace(/[^0-9.\-]/g,''));
+                              const parsed = Number((pendingPriceInput||'').replace(/[^0-9.-]/g,''));
                               const svc = pendingService;
                               const priceToUse = (!isNaN(parsed) && parsed >= 0) ? parsed : Number(pendingCatalogPrice||0);
                               const newSvc = { id: svc.id || `s-${Date.now()}`, name: svc.titulo || svc.name || svc.title || svc.nome || svc.name, price: Number(priceToUse || 0) };
@@ -409,7 +411,7 @@ export default function PieceFlowModal({ open, onClose, onDone, servicesCatalog,
             <div>
               {(() => {
                 const previewColor = (COLOR_MAP && selectedCor) ? (COLOR_MAP[selectedCor] || selectedCor) : (otherColor || undefined);
-                try { console.debug('[PieceFlowModal] preview props', { selectedTipo, selectedCor, otherColor, previewColor, selectedServicesCount: (selectedServices||[]).length }); } catch(e) {}
+                try { console.debug('[PieceFlowModal] preview props', { selectedTipo, selectedCor, otherColor, previewColor, selectedServicesCount: (selectedServices||[]).length }); } catch { void 0; }
                 return <PiecePreview pieceType={selectedTipo} color={previewColor} services={selectedServices} />
               })()}
               <div className="mt-3 text-sm"><strong>Tipo:</strong> {selectedTipo || '-'}</div>

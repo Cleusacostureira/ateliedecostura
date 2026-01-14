@@ -5,6 +5,7 @@ import { addPointsForOrder, loadClients, upsertClient, getClientById } from '../
 import { formatMessageForStatus } from '../../lib/messages';
 import { supabase } from '../../lib/supabaseClient';
 import { debugLog } from '../../lib/debugLogger';
+import { safeSetItem } from '../../lib/storageHelpers';
 
 // small constants used by the piece/color pickers when DB lists are missing
 const COLORS = ['Preta','Branca','Azul','Vermelha','Verde','Amarela','Rosa','Bege','Cinza','Marrom'];
@@ -83,8 +84,7 @@ const getCashMap = () => {
         if (num) map[String(num)] = c;
       } catch (e) { /* ignore entry */ }
     });
-            
-    return isNaN(n) ? 0 : n;
+    return map;
   } catch (e) { return 0; }
 }
 
@@ -157,6 +157,21 @@ export default function OrdensPage() {
     const [pecasSearch, setPecasSearch] = useState('');
     const [pieceTipo, setPieceTipo] = useState('');
     const [pieceCor, setPieceCor] = useState('');
+    // material/service helper states (some were missing and caused TS errors)
+    const [materialQuantity, setMaterialQuantity] = useState('1');
+    const [orderMaterials, setOrderMaterials] = useState<any[]>([]);
+    const [selectedServiceId, setSelectedServiceId] = useState<any>('');
+    const [serviceValue, setServiceValue] = useState('');
+    const [serviceObservation, setServiceObservation] = useState('');
+    const [selectedPieceForService, setSelectedPieceForService] = useState<string | null>(null);
+    const [pieces, setPieces] = useState<any[]>([]);
+    const [quickClientName, setQuickClientName] = useState('');
+    const [quickClientPhone, setQuickClientPhone] = useState('');
+    const [newOrderClientId, setNewOrderClientId] = useState<any>(null);
+    const [newOrderObservacoes, setNewOrderObservacoes] = useState('');
+    const [newOrderStatus, setNewOrderStatus] = useState('');
+    const [newOrderDate, setNewOrderDate] = useState('');
+    const [newOrderPaymentStatus, setNewOrderPaymentStatus] = useState('');
 
     // edit modal inputs (added to fix non-opening Edit modal)
     const [editClient, setEditClient] = useState('');
@@ -178,7 +193,7 @@ export default function OrdensPage() {
           const now = Date.now();
           if (now - (lastAutoSyncRef.current || 0) < 5000) return;
           lastAutoSyncRef.current = now;
-          syncFromServer();
+              syncFromServer(); // Sync with the server
         } catch (e) { console.warn('auto sync error', e); }
       };
       // run once shortly after mount
@@ -211,6 +226,24 @@ export default function OrdensPage() {
       } catch (e) { alert('Falha ao exportar debug: ' + String(e)); }
     };
 
+      const fetchDebugInfo = async () => {
+        try {
+          const localOrders = readOrdersFromStorage();
+          const localCash = getCashMap();
+          let serverOrders: any = null;
+          try {
+            if (supabase && typeof supabase.from === 'function') {
+              const r = await supabase.from('ordens').select('*').limit(500);
+              if ((r as any).error) serverOrders = { error: (r as any).error };
+              else serverOrders = (r as any).data;
+            }
+          } catch (e) { serverOrders = { error: String(e) }; }
+          setDebugInfo({ localOrders, localCash, serverOrders });
+        } catch (e) {
+          setDebugInfo({ error: String(e) });
+        }
+      };
+
             const syncFromServer = () => {
       try {
         const keysToClear = ['orders', 'lastQuickTap', 'cashFlowDetails', 'deletedOrders', 'retiradoTaps'];
@@ -230,7 +263,7 @@ export default function OrdensPage() {
     // NOTE: removed temporary forced import data to avoid injecting fake records
     // (this block previously added sample orders N00024 and N00025).
 
-  // Initial server fetch: if Supabase is available, try to load canonical orders
+        
   useEffect(() => {
     (async () => {
       try {
@@ -326,14 +359,16 @@ export default function OrdensPage() {
                   service: serviceField,
                   dateOut: dateOutField,
                   paymentStatus: (finalPaid ? 'Pago' : null),
+                  // keep both localized display `value` and numeric `total` to avoid
+                  // ambiguity when other pages (Financeiro) prefer canonical totals
                   value: displayValue,
+                  total: numericVal,
                 });
               } catch (e) { enriched.push({ ...o, status: normalizeStatus(o.status) }); }
             }
 
             // Do not preserve explicit local paymentStatus values; rely on server/cash as source of truth.
-            const forced = { __force: true, payload: enriched };
-            localStorage.setItem('orders', JSON.stringify(forced));
+            try { safeSetItem('orders', enriched, 'ordersUpdated', 'OrdensPage'); } catch(_) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: enriched })); } catch(__){} }
             try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){}
           } else {
             try { setDebugInfo((prev:any)=>({ ...(prev||{}), initialFetchInfo: 'server returned no orders; preserving local storage' })); } catch(e){}
@@ -342,7 +377,14 @@ export default function OrdensPage() {
           // fallback: if forced write fails, only write raw when local is empty
           try {
               const existingArr = readOrdersFromStorage();
-              if (!existingArr || existingArr.length === 0) { localStorage.setItem('orders', JSON.stringify(raw)); try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e){} }
+              if (!existingArr || existingArr.length === 0) {
+                if (Array.isArray(raw) && raw.length > 0) {
+                  try { safeSetItem('orders', raw, 'ordersUpdated', 'OrdensPage'); } catch(_) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: raw })); } catch(__){} }
+                  try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(e) {}
+                } else {
+                  // skip writing empty `raw` to avoid accidental wipes
+                }
+              }
           } catch (_) {}
         }
         // initial load saved; enrichment will run via `refetchOrdersFromServer` handler
@@ -489,7 +531,7 @@ export default function OrdensPage() {
               };
             });
             
-            try { localStorage.setItem('orders', JSON.stringify(merged)); } catch(e){}
+            try { safeSetItem('orders', merged, 'ordersUpdated', 'OrdensPage'); } catch(e){ try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: merged })); } catch(__){} }
             try { setOrders(merged); } catch(e){}
             try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
           }
@@ -546,7 +588,7 @@ export default function OrdensPage() {
       const valNum = Number(String(valCandidate).replace(/[^0-9.-]/g,'').replace(',', '.')) || 0;
       const merged = { ...existing, ...server, _local: false, _unsynced: false, value: valNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) };
       if (idx >= 0) arr[idx] = merged; else arr.unshift(merged);
-      localStorage.setItem('orders', JSON.stringify(arr));
+      try { safeSetItem('orders', arr, 'ordersUpdated', 'OrdensPage'); } catch(_) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: arr })); } catch(__){} }
       window.dispatchEvent(new CustomEvent('ordersUpdated'));
       window.dispatchEvent(new CustomEvent('financeUpdated'));
       alert('Ordem reconciliada: ' + (server.numero || server.id));
@@ -609,7 +651,7 @@ export default function OrdensPage() {
         });
 
         if (toRemove.length > 0) {
-                  try { localStorage.setItem('orders', JSON.stringify(filtered)); } catch (e) {}
+                  try { safeSetItem('orders', filtered, 'ordersUpdated', 'OrdensPage'); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: filtered })); } catch(__){} }
           try {
             const rawDeleted = localStorage.getItem('deletedOrders');
             const deletedList = rawDeleted ? JSON.parse(rawDeleted) : [];
@@ -631,8 +673,7 @@ export default function OrdensPage() {
                 return false;
               } catch (e) { return false; }
             });
-            localStorage.setItem('cashFlowDetails', JSON.stringify(filteredC));
-            try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(e){}
+            try { safeSetItem('cashFlowDetails', filteredC, 'financeUpdated', 'OrdensPage'); } catch(e){}
           } catch (e) {}
         }
       } catch (e) {
@@ -756,7 +797,7 @@ export default function OrdensPage() {
       } catch (e) { return true; }
     });
     setOrders(next);
-    try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); } catch (e) {}
+    try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); } catch(__){} }
     setShowDeleteModal(false);
     setSelectedOrder(null);
     const isLocalId = (id: any) => {
@@ -857,8 +898,7 @@ export default function OrdensPage() {
               return true;
             } catch (e) { return true; }
           });
-          localStorage.setItem('cashFlowDetails', JSON.stringify(filtered));
-          window.dispatchEvent(new CustomEvent('financeUpdated'));
+          try { safeSetItem('cashFlowDetails', filtered, 'financeUpdated', 'OrdensPage'); } catch(e){}
         } catch (eee) {}
       }
     })();
@@ -882,7 +922,7 @@ export default function OrdensPage() {
   const confirmAdvancePayment = () => {
     const next = orders.map(o => o.id === selectedOrder.id ? { ...o, paymentStatus: 'Pago' } : o);
     setOrders(next);
-    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+    try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
     (async () => {
       try {
         if (supabase && typeof supabase.from === 'function') {
@@ -988,7 +1028,7 @@ export default function OrdensPage() {
                     const raw2 = localStorage.getItem('cashFlowDetails');
                     const parsed2 = raw2 ? JSON.parse(raw2) : [];
                     parsed2.unshift(respRow);
-                    localStorage.setItem('cashFlowDetails', JSON.stringify(parsed2));
+                    try { safeSetItem('cashFlowDetails', parsed2, 'financeUpdated', 'OrdensPage'); } catch(e){}
                   } catch (ee) { /* ignore local save errors */ }
                 }
                 window.dispatchEvent(new CustomEvent('financeUpdated'));
@@ -1005,8 +1045,7 @@ export default function OrdensPage() {
             } else {
               parsed.unshift({ ...cashEntry, id: `cash-${Date.now()}` });
             }
-            localStorage.setItem('cashFlowDetails', JSON.stringify(parsed));
-            window.dispatchEvent(new CustomEvent('financeUpdated'));
+            try { safeSetItem('cashFlowDetails', parsed, 'financeUpdated', 'OrdensPage'); } catch(e){}
           } catch (ee) { console.warn('failed to save cash entry locally on advance payment', ee); }
         }
       } catch (e) { console.warn('ensure fluxo_caixa payment sync failed', e); }
@@ -1027,7 +1066,7 @@ export default function OrdensPage() {
     const updatedOrder = { ...selectedOrder, status: 'Pronto', deliveryDate: dateStr, deliveryTime: timeStr };
     const next = orders.map(o => o.id === selectedOrder.id ? updatedOrder : o);
     setOrders(next);
-    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+    try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
     (async () => {
       try {
         if (supabase && typeof supabase.from === 'function') {
@@ -1318,7 +1357,7 @@ export default function OrdensPage() {
 
     const newOrdersList = [...orders, newOrder];
     setOrders(newOrdersList);
-    try { localStorage.setItem('orders', JSON.stringify(newOrdersList)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+    try { safeSetItem('orders', newOrdersList, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: newOrdersList })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
 
     // --- Adicionar entrada no histórico financeiro (fluxo_caixa) ---
     const cashEntry: any = {
@@ -1365,7 +1404,7 @@ export default function OrdensPage() {
               const rawLocal = localStorage.getItem('cashFlowDetails');
               const parsedLocal = rawLocal ? JSON.parse(rawLocal) : [];
               parsedLocal.unshift(resp);
-              localStorage.setItem('cashFlowDetails', JSON.stringify(parsedLocal));
+              try { safeSetItem('cashFlowDetails', parsedLocal, 'financeUpdated', 'OrdensPage'); } catch(e){}
             } catch (ee) {}
           }
         } catch (eee) {}
@@ -1383,9 +1422,8 @@ export default function OrdensPage() {
         } else {
           parsed.unshift(cashEntry);
         }
-        localStorage.setItem('cashFlowDetails', JSON.stringify(parsed));
+        try { safeSetItem('cashFlowDetails', parsed, 'financeUpdated', 'OrdensPage'); } catch(e){}
         try { console.info('fluxo_caixa: saved locally, total entries', (parsed || []).length); } catch (ee) {}
-        window.dispatchEvent(new CustomEvent('financeUpdated'));
       } catch (ee) { console.warn('failed to save cash entry locally', ee); }
     }
 
@@ -1437,7 +1475,7 @@ export default function OrdensPage() {
       const updatedOrder = { ...order, status: 'Retirado' };
       const next = orders.map(o => o.id === order.id ? updatedOrder : o);
       setOrders(next);
-      try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+      try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
       (async () => {
         try {
           if (supabase && typeof supabase.from === 'function') {
@@ -1460,7 +1498,7 @@ export default function OrdensPage() {
       const updatedOrder = { ...order, status: 'Retirado', paymentStatus: order.paymentStatus || 'Pendente' };
       const next = orders.map(o => o.id === order.id ? updatedOrder : o);
       setOrders(next);
-      try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+      try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
       (async () => {
         try {
           if (supabase && typeof supabase.from === 'function') {
@@ -1489,7 +1527,7 @@ export default function OrdensPage() {
     const updatedOrder = { ...baseOrder, status: 'Retirado', paymentStatus: isPaid ? 'Pago' : 'Pendente' };
     const next = orders.map(o => o.id === baseOrder.id ? updatedOrder : o);
     setOrders(next);
-    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+    try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
     (async () => {
       try {
         if (supabase && typeof supabase.from === 'function') {
@@ -1651,7 +1689,7 @@ export default function OrdensPage() {
       return { ...o, sentMessages: sent };
     });
     setOrders(next);
-    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+    try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
   };
 
   const sendMessageManual = (order: any, status: string) => {
@@ -1684,7 +1722,7 @@ export default function OrdensPage() {
         const updatedOrder = { ...order, status: 'Retirado' };
         const next = orders.map(o => o.id === order.id ? updatedOrder : o);
         setOrders(next);
-        try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+        try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
         (async () => { try { if (supabase && typeof supabase.from === 'function') await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id); } catch(e){console.warn('Failed to persist quick status to Supabase', e);} })();
         // mensagem de agradecimento e pontos
         setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n✅ *Pagamento já realizado!*\n\nEsperamos que tenha ficado perfeita!`);
@@ -1716,17 +1754,17 @@ export default function OrdensPage() {
     const updatedOrder = { ...order, status: newStatus };
     const next = orders.map(o => o.id === order.id ? updatedOrder : o);
     setOrders(next);
-    try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+    try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
     (async () => {
       try {
         if (supabase && typeof supabase.from === 'function') {
           const resp = await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id);
-          try {
+            try {
             const existing = localStorage.getItem('retiradoTaps');
             const arr = existing ? JSON.parse(existing) : [];
             arr.unshift({ id: updatedOrder.id, numero: updatedOrder.numero, newStatus: updatedOrder.status, ts: Date.now(), source: 'applyQuickStatus.persist', supabaseResponse: resp && (resp.error ? String(resp.error) : 'ok') });
-            try { localStorage.setItem('retiradoTaps', JSON.stringify(arr.slice(0,200))); } catch(_){}
-          } catch(_){}
+            try { safeSetItem('retiradoTaps', arr.slice(0,200), undefined, 'OrdensPage'); } catch(_){ }
+          } catch(_){ }
         }
       } catch (e) { console.warn('Failed to persist order status to Supabase', e); }
     })();
@@ -1777,7 +1815,7 @@ export default function OrdensPage() {
       }
     };
 
-  const togglePaymentStatus = async (order: any) => {
+  const togglePaymentStatus = async (order: any, newStatus?: string) => {
     // Disallow changing payment status from the Ordens UI to avoid conflicts.
     try { showToast('Marcação de pagamento só pelo Financeiro'); } catch (e) {}
     return;
@@ -1851,7 +1889,7 @@ export default function OrdensPage() {
                 const rawLocal2 = localStorage.getItem('cashFlowDetails');
                 const parsedLocal2 = rawLocal2 ? JSON.parse(rawLocal2) : [];
                 parsedLocal2.unshift(resp);
-                localStorage.setItem('cashFlowDetails', JSON.stringify(parsedLocal2));
+                try { safeSetItem('cashFlowDetails', parsedLocal2, 'financeUpdated', 'OrdensPage'); } catch(e){}
               } catch (ee) {}
             }
             window.dispatchEvent(new CustomEvent('financeUpdated'));
@@ -1869,8 +1907,7 @@ export default function OrdensPage() {
             } else {
               parsed.unshift({ ...cashEntry, id: `cash-${Date.now()}` });
             }
-            localStorage.setItem('cashFlowDetails', JSON.stringify(parsed));
-            window.dispatchEvent(new CustomEvent('financeUpdated'));
+            try { safeSetItem('cashFlowDetails', parsed, 'financeUpdated', 'OrdensPage'); } catch(e){}
           } catch (ee) { console.warn('failed to save cash entry locally', ee); }
         }
           // ensure ordens.paymentStatus is updated to 'Não pago' when unmarking
@@ -1957,8 +1994,7 @@ export default function OrdensPage() {
               } catch (err) {}
               return c;
             });
-            localStorage.setItem('cashFlowDetails', JSON.stringify(updated));
-            window.dispatchEvent(new CustomEvent('financeUpdated'));
+            try { safeSetItem('cashFlowDetails', updated, 'financeUpdated', 'OrdensPage'); } catch(e){}
           } catch (ee) { console.warn('failed to mark local cash entries as unpaid', ee); }
         }
       }
@@ -2082,7 +2118,7 @@ export default function OrdensPage() {
     try { console.debug('[OrdensPage] orders state changed — count:', (orders||[]).length, (orders||[]).slice(0,3)); } catch(e) {}
     try {
       if (ignoreLocalSaveRef.current) { ignoreLocalSaveRef.current = false; return; }
-      localStorage.setItem('orders', JSON.stringify(orders));
+      try { safeSetItem('orders', orders, 'ordersUpdated', 'OrdensPage'); } catch(_) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: orders })); } catch(__){} }
       // `localStorage.setItem` is wrapped in `src/main.tsx` which already
       // dispatches the `ordersUpdated` event. Do not re-dispatch here to
       // avoid update loops between components.
@@ -2264,7 +2300,7 @@ export default function OrdensPage() {
           phone: o.phone || o.telefone || '',
           status: normalizeStatus(o.status),
         }));
-        try { localStorage.setItem('orders', JSON.stringify(enriched)); } catch(e){}
+        try { safeSetItem('orders', enriched, 'ordersUpdated', 'OrdensPage'); } catch(e){ try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: enriched })); } catch(__){} }
         try { setOrders(enriched); } catch(e){}
         try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
       }
@@ -2399,9 +2435,11 @@ export default function OrdensPage() {
                           try {
                             const backup = localStorage.getItem('orders_backup_pre_refetch') || null;
                             if (!backup) { alert('Nenhum backup encontrado'); return; }
-                            localStorage.setItem('orders', backup);
-                            window.dispatchEvent(new CustomEvent('ordersUpdated'));
-                            alert('Restaurado a partir de orders_backup_pre_refetch');
+                            try {
+                              const parsed = JSON.parse(backup);
+                              try { safeSetItem('orders', parsed, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: parsed })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
+                              alert('Restaurado a partir de orders_backup_pre_refetch');
+                            } catch (e) { alert('Backup inválido: ' + String(e)); }
                           } catch (e) { alert('Falha ao restaurar: ' + String(e)); }
                         }}
                         className="px-2 py-1 bg-gray-100 text-gray-800 rounded"
@@ -2686,9 +2724,9 @@ export default function OrdensPage() {
                               ]
                             };
                             // Use the global wrapper's forced-write format to replace (not merge) orders
-                            localStorage.setItem('orders', JSON.stringify({ __force: true, payload: attached.orders }));
-                            localStorage.setItem('deletedOrders', JSON.stringify(attached.deletedOrders));
-                            localStorage.setItem('orders_forced_by_agent', '1');
+                                                try { safeSetItem('orders', attached.orders, 'ordersUpdated', 'OrdensPage'); } catch(e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: attached.orders })); } catch(__){} }
+                                                localStorage.setItem('deletedOrders', JSON.stringify(attached.deletedOrders));
+                                                localStorage.setItem('orders_forced_by_agent', '1');
                             try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
                             try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch (e) {}
                             alert('Anexo aplicado com sucesso. Recarregue a página.');
@@ -2713,7 +2751,7 @@ export default function OrdensPage() {
                           try {
                             const obj = storageImportText ? JSON.parse(storageImportText) : null;
                             if (!obj || typeof obj !== 'object') { alert('JSON inválido'); return; }
-                            if (obj.orders) localStorage.setItem('orders', JSON.stringify(obj.orders));
+                            if (obj.orders) try { safeSetItem('orders', obj.orders, 'ordersUpdated', 'OrdensPage'); } catch(e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: obj.orders })); } catch(__){} }
                             if (obj.deletedOrders) localStorage.setItem('deletedOrders', JSON.stringify(obj.deletedOrders));
                             window.dispatchEvent(new CustomEvent('ordersUpdated'));
                             window.dispatchEvent(new CustomEvent('financeUpdated'));
@@ -2751,7 +2789,7 @@ export default function OrdensPage() {
                               } catch (e) { return o; }
                             });
                             // forced write to replace existing orders fully
-                            try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: enriched })); } catch(e){ alert('Falha ao escrever orders: '+String(e)); return; }
+                            try { safeSetItem('orders', enriched, 'ordersUpdated', 'OrdensPage'); } catch(e){ try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: enriched })); } catch(err){ alert('Falha ao escrever orders: '+String(err)); return; } }
                             try { localStorage.setItem('orders_sanitized_by_agent', '1'); } catch(e){}
                             try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
                             try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(e){}
@@ -2918,19 +2956,20 @@ export default function OrdensPage() {
                 ))}
               </div>
 
+                <div className="sm:hidden mb-3 px-3">
+                  <button
+                    onClick={() => {
+                      try { const first = orders.find((o:any) => o.status === 'Pronto'); if (!first) { showToast('Nenhuma OS com status Pronto'); return; } handleQuickTap(first, 'Retirado' as any); } catch(e){ console.warn(e); }
+                    }}
+                    onTouchStart={(e)=>{ try{ (e as any).stopPropagation(); }catch(_){}; try{ const first=orders.find((o:any)=>o.status==='Pronto'); if(first) handleQuickTap(first,'Retirado' as any);}catch(_){} }}
+                    className="w-full bg-indigo-600 text-white py-3 rounded-md text-center font-medium"
+                  >
+                    Test Retirar (inline)
+                  </button>
+                </div>
+
                 <div className="hidden sm:block w-full">
-                <table className="w-full table-auto border-collapse">
-                  <div className="sm:hidden mb-3 px-3">
-                    <button
-                      onClick={() => {
-                        try { const first = orders.find((o:any) => o.status === 'Pronto'); if (!first) { showToast('Nenhuma OS com status Pronto'); return; } handleQuickTap(first, 'Retirado' as any); } catch(e){ console.warn(e); }
-                      }}
-                      onTouchStart={(e)=>{ try{ (e as any).stopPropagation(); }catch(_){}; try{ const first=orders.find((o:any)=>o.status==='Pronto'); if(first) handleQuickTap(first,'Retirado' as any);}catch(_){} }}
-                      className="w-full bg-indigo-600 text-white py-3 rounded-md text-center font-medium"
-                    >
-                      Test Retirar (inline)
-                    </button>
-                  </div>
+                  <table className="w-full table-auto border-collapse">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-2 text-left text-xs text-gray-600">Cliente</th>
@@ -3147,7 +3186,7 @@ export default function OrdensPage() {
                           const existing = localStorage.getItem('retiradoTaps');
                           const arr = existing ? JSON.parse(existing) : [];
                           arr.unshift({ testClick: true, ts: Date.now(), ua: typeof navigator !== 'undefined' ? navigator.userAgent : null });
-                          try { localStorage.setItem('retiradoTaps', JSON.stringify(arr.slice(0,200))); } catch(_){}
+                          try { safeSetItem('retiradoTaps', arr.slice(0,200), undefined, 'OrdensPage'); } catch(_){ }
                           try { showToast('Teste registrado'); } catch(_){}
                         } catch (e) { try { console.warn('intrusive test click failed', e); } catch(_){} }
                       }}
@@ -3261,8 +3300,8 @@ export default function OrdensPage() {
                     deduped.push(o);
                   } catch (e) { deduped.push(o); }
                 }
-                // persist cleaned list back to localStorage
-                try { localStorage.setItem('orders', JSON.stringify(deduped)); } catch (e) {}
+                // persist cleaned list back to localStorage (use safe wrapper)
+                try { safeSetItem('orders', deduped, 'ordersUpdated', 'OrdensPage'); } catch (e) {}
                 setOrders(deduped);
                 // try to find the freshly created order by id or numero digits
                 const saved = deduped.find((o:any) => (order && order.id && String(o.id) === String(order.id)) || (order && order.numero && numeroDigits(o.numero) === numeroDigits(order.numero))) || deduped[0] || order;
@@ -3533,7 +3572,7 @@ export default function OrdensPage() {
                   };
                   const next = orders.map(o => o.id === selectedOrder.id ? updatedOrder : o);
                   setOrders(next);
-                  try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+                  try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); } catch (e) {}
                   (async () => {
                     try {
                       if (supabase && typeof supabase.from === 'function') {
@@ -3599,7 +3638,7 @@ export default function OrdensPage() {
                             const updatedOrder = { ...selectedOrder, status: 'Retirado' };
                             const next = orders.map(o => o.id === selectedOrder.id ? updatedOrder : o);
                             setOrders(next);
-                            try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+                            try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); } catch (e) {}
                             (async () => { try { if (supabase && typeof supabase.from === 'function') await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id); } catch(e){console.warn('Failed to persist status-only Retirado to Supabase', e);} })();
                             const msg = composeStatusMessage(updatedOrder, 'Retirado');
                             setStatusChangeMessage(msg);
@@ -3619,7 +3658,7 @@ export default function OrdensPage() {
                         const updatedOrder = { ...selectedOrder, status: statusSelection };
                         const next = orders.map(o => o.id === selectedOrder.id ? updatedOrder : o);
                         setOrders(next);
-                        try { localStorage.setItem('orders', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) {}
+                        try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); } catch (e) {}
                         (async () => { try { if (supabase && typeof supabase.from === 'function') await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id); } catch(e){console.warn('Failed to persist status-only change to Supabase', e);} })();
                         const msg = composeStatusMessage(updatedOrder, statusSelection);
                         setStatusChangeMessage(msg);

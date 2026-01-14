@@ -1,0 +1,48 @@
+﻿**********************
+Início da transcrição do Windows PowerShell
+Hora de início: 20260113130842
+Nome de Usuário: BOMFUTURO\DIONE.WALKER
+Executar como Usuário: BOMFUTURO\DIONE.WALKER
+Nome da Configuração: 
+Computador: NT-SAL-GER01 (Microsoft Windows NT 10.0.26100.0)
+Aplicativo Host: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command & { Start-Transcript -Path script-log.txt; .\scripts\fix_esbuild_and_install.ps1; Stop-Transcript }
+ID do Processo: 13112
+PSVersion: 5.1.26100.6899
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.6899
+BuildVersion: 10.0.26100.6899
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcrição iniciada, o arquivo de saída é script-log.txt
+AVISO: This script is not running as Administrator. Some removal steps may fail with EPERM. Consider re-running PowerShell as Administrator.
+Stopping node and vite processes (if any)...
+Attempting to remove node_modules\@esbuild\win32-x64\esbuild.exe
+Removed node_modules\@esbuild\win32-x64\esbuild.exe
+Attempting to remove problematic npm cache index folder...
+Found cache folder: C:\Users\dione.walker\AppData\Local\npm-cache\_cacache\index-v5\9a
+Removed cache folder: C:\Users\dione.walker\AppData\Local\npm-cache\_cacache\index-v5\9a
+Cleaning npm cache and installing dependencies (npm ci)...
+NpmInstallClean : npm ci failed with exit code 1
+No C:\Users\dione.walker\dyad-apps\costureira\scripts\fix_esbuild_and_install.ps1:111 caractere:7
++ $ok = NpmInstallClean
++       ~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
+    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException,NpmInstallClean
+NpmInstallClean : npm ci failed with exit code 1
+No C:\Users\dione.walker\dyad-apps\costureira\scripts\fix_esbuild_and_install.ps1:111
+caractere:7
++ $ok = NpmInstallClean
++       ~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
+    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException,NpmIn
+   stallClean
+
+\nDone. If VSCode still shows TypeScript errors, in VSCode select: Command Palette -> 'TypeScript: Select TypeScript Version' -> 'Use Workspace Version', then 'TypeScript: Restart TS Server' or reload the window.
+If you want, run this script as Administrator after a reboot for best chance to clear locked files.
+**********************
+Fim da transcrição do Windows PowerShell
+Hora de término: 20260113130845
+**********************

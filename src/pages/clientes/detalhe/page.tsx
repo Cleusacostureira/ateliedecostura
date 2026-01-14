@@ -19,16 +19,18 @@ export default function ClienteDetalhe() {
 
   useEffect(() => {
     if (!id) return;
-    const c = getClientById(id);
-    setClient(c);
-    const all = loadOrders().filter((o: any) => o.client === (c?.nome));
-    const sorted = all.slice().sort((a:any,b:any) => {
-      const pa = a.dateOut?.split('/').reverse().join('-') || '';
-      const pb = b.dateOut?.split('/').reverse().join('-') || '';
-      return pb.localeCompare(pa);
-    });
-    setOrders(sorted);
-    setEditObservacoes(c?.observacoes || '');
+    (async () => {
+      const c = await getClientById(id);
+      setClient(c);
+      const all = loadOrders().filter((o: any) => o.client === (c?.nome));
+      const sorted = all.slice().sort((a:any,b:any) => {
+        const pa = a.dateOut?.split('/').reverse().join('-') || '';
+        const pb = b.dateOut?.split('/').reverse().join('-') || '';
+        return pb.localeCompare(pa);
+      });
+      setOrders(sorted);
+      setEditObservacoes(c?.observacoes || '');
+    })();
   }, [id]);
 
   if (!client) return (

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { readOrdersFromStorage } from '../../lib/storageHelpers';
+import { readOrdersFromStorage, safeSetItem } from '../../lib/storageHelpers';
 import { loadClients, upsertClient } from '../../lib/clients';
 import PieceFlowModal from './PieceFlowModal';
 
@@ -10,6 +10,7 @@ type Piece = {
   cor?: string;
   modelo?: string;
   services: Array<{ id?: string; name: string; price: number }>
+  discount?: number;
   icone?: string;
 }
 
@@ -35,6 +36,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   const [currentPieceModelo, setCurrentPieceModelo] = useState('');
   const [selectedPieceForService, setSelectedPieceForService] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const tempOrderIdRef = useRef<string | null>(null);
 
   const [servicesList, setServicesList] = useState<any[]>([]);
   const [serviceSearch, setServiceSearch] = useState('');
@@ -447,8 +449,9 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
     }
 
     // keep dates as local date strings (YYYY-MM-DD) to avoid timezone shift
-    const order = {
-      id: `local-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+    if (!tempOrderIdRef.current) tempOrderIdRef.current = `local-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    const order: any = {
+      id: tempOrderIdRef.current,
       numero,
       cliente: selectedClient?.nome || '',
       client: selectedClient?.nome || '',
@@ -471,7 +474,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
     try {
       const arr = readOrdersFromStorage();
       arr.unshift(order);
-      localStorage.setItem('orders', JSON.stringify(arr));
+      try { safeSetItem('orders', arr, 'ordersUpdated', 'NewOsWizard'); } catch(e){}
     } catch (e) {}
 
     // try saving to Supabase (best-effort) and always add a fluxo_caixa row (Pago/Não pago)
@@ -571,7 +574,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
               }
             } catch (ee) { /* ignore */ }
           } catch (ee) { /* ignore dedupe errors */ }
-          try { localStorage.setItem('orders', JSON.stringify(arr)); } catch(e){}
+          try { safeSetItem('orders', arr, 'ordersUpdated', 'NewOsWizard'); } catch(e){}
           try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
         } catch(e) { /* ignore local update errors */ }
       }
@@ -985,7 +988,11 @@ Total: R$ ${Number(order.total||0).toFixed(2)}.`;
           </div>
           <div>
             {step < 10 && <button onClick={next} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Avançar</button>}
-            {step === 10 && <button onClick={handleConfirm} className="px-4 py-2 bg-rose-500 text-white rounded">Confirmar OS</button>}
+            {step === 10 && (
+              <button onClick={handleConfirm} disabled={isSubmitting} className={`px-4 py-2 rounded ${isSubmitting ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-rose-500 text-white'}`}>
+                {isSubmitting ? 'Enviando...' : 'Confirmar OS'}
+              </button>
+            )}
           </div>
         </div>
         {showAddAnotherModal && (

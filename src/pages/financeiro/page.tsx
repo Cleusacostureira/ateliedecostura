@@ -1,7 +1,32 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
-import { readOrdersFromStorage } from '../../lib/storageHelpers';
+import { readOrdersFromStorage, safeSetItem } from '../../lib/storageHelpers';
 import { supabase } from '../../lib/supabaseClient';
+
+// Simple in-memory cache for fetched clientes to avoid repeated network requests
+const CLIENTES_CACHE_TTL = 1000 * 60 * 5; // 5 minutes
+function getClientesCache() {
+  if (!(window as any).__clientesCache) (window as any).__clientesCache = { map: {}, ts: 0 };
+  return (window as any).__clientesCache as { map: Record<string,string>, ts: number };
+}
+async function getClientesMap(clienteIds: string[]) {
+  try {
+    if (!Array.isArray(clienteIds) || clienteIds.length === 0) return {};
+    const cache = getClientesCache();
+    const now = Date.now();
+    const missing = clienteIds.filter(id => !cache.map[String(id)] || (now - cache.ts) > CLIENTES_CACHE_TTL);
+    if (missing.length > 0 && supabase && typeof supabase.from === 'function') {
+      try {
+        const cliRes = await supabase.from('clientes').select('id,nome').in('id', missing);
+        if (!(cliRes as any).error && Array.isArray((cliRes as any).data)) {
+          (cliRes as any).data.forEach((c:any) => { if (c && c.id) cache.map[String(c.id)] = c.nome || ''; });
+          cache.ts = Date.now();
+        }
+      } catch (_) {}
+    }
+    return { ...cache.map };
+  } catch (e) { return {}; }
+}
 
 export default function FinanceiroPage() {
   // runtime flag to avoid repeated failing requests when the `fluxo_caixa` table is missing
@@ -36,6 +61,7 @@ export default function FinanceiroPage() {
 
     async function fetchFinanceiro() {
       try { setFluxoStatus('Carregando...'); } catch (e) {}
+      try { console.debug('[financeiro] fetchFinanceiro start'); } catch(e){}
       try {
         if (isFluxoAvailable() && supabase && typeof supabase.from === 'function') {
           const res = await supabase.from('fluxo_caixa').select('*');
@@ -48,10 +74,23 @@ export default function FinanceiroPage() {
             let data = (res as any).data as any[];
             // build set of active orders (ids and numeros) to filter fluxo_caixa
             let activeSet = new Set<string>();
+            // prefer server-side orders when available so we don't rely on possibly stale localStorage
+            let serverOrders: any[] | null = null;
             try {
-              const ordRes = await supabase.from('ordens').select('id,numero');
+              const ordRes = await supabase.from('ordens').select('id,numero,cliente_id,total,status');
               if (!(ordRes as any).error && Array.isArray((ordRes as any).data)) {
-                (ordRes as any).data.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
+                serverOrders = (ordRes as any).data as any[];
+                // attach client names using cached helper to avoid repeated requests
+                try {
+                  const clienteIds = Array.from(new Set((serverOrders || []).map((o:any) => o && o.cliente_id).filter(Boolean)));
+                  if (clienteIds.length > 0) {
+                    try {
+                      const cliMap = await getClientesMap(clienteIds as string[]);
+                      serverOrders = (serverOrders || []).map((o:any) => ({ ...o, client: (o && o.cliente_id) ? (cliMap[String(o.cliente_id)] || o.client || o.nome || o.cliente || '') : (o.client || o.nome || o.cliente || '') }));
+                    } catch (_) { /* ignore */ }
+                  }
+                } catch (ee) { /* ignore client attach failures, keep serverOrders as-is */ }
+                serverOrders.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
               }
             } catch (e) {
               const parsedOrders = readOrdersFromStorage();
@@ -81,11 +120,19 @@ export default function FinanceiroPage() {
               let normalized = normalizeEntries(data);
               // correlate with local orders to prefer local client names when available
               try {
-                const orders = readOrdersFromStorage();
+                const orders = serverOrders && Array.isArray(serverOrders) && serverOrders.length > 0 ? serverOrders : readOrdersFromStorage();
                 if (Array.isArray(orders) && orders.length > 0) {
                   normalized = normalized.map((d:any) => {
                     try {
-                      const match = orders.find((o:any) => String(o.id) === String(d.orderId || d.orderid) || String(o.numero) === String(d.numero));
+                      const match = orders.find((o:any) => {
+                        try {
+                          if (o && o.id && String(o.id) === String(d.orderId || d.orderid)) return true;
+                          const oNum = String(o.numero || '').replace(/\D/g, '');
+                          const dNum = String(d.numero || '').replace(/\D/g, '');
+                          if (oNum && dNum && oNum === dNum) return true;
+                        } catch (ee) { /* ignore */ }
+                        return false;
+                      });
                       if (match && (match.client || match.nome || match.cliente)) {
                         return { ...d, client: match.client || match.nome || match.cliente };
                       }
@@ -94,8 +141,10 @@ export default function FinanceiroPage() {
                   });
                 }
               } catch (e) {}
+              try { console.debug('[financeiro] reconciled entries count=', (reconciled||[]).length); } catch(e){}
               const reconciled = reconcileCashWithOrders(normalized);
               setCashFlowDetails(reconciled.map((dd:any)=> ({ ...dd, status: (dd.status === 'Pendente' ? 'Não pago' : dd.status) } )));
+              try { console.debug('[financeiro] setting cashFlowDetails from server raw data count=', (data||[]).length); } catch(e){}
               setPendingPayments(reconciled.filter((d:any) => (d.status === 'Pendente' || d.status === 'Não pago')));
               try { setFluxoStatus(`Sincronizado ${normalized.length} entradas`); } catch (e) {}
               try { setLocalEntriesPreview((normalized || []).slice(0,50)); } catch (e) {}
@@ -133,7 +182,15 @@ export default function FinanceiroPage() {
                 if (Array.isArray(orders) && orders.length > 0) {
                   normalized = normalized.map((d:any) => {
                     try {
-                      const match = orders.find((o:any) => String(o.id) === String(d.orderId || d.orderid) || String(o.numero) === String(d.numero));
+                      const match = orders.find((o:any) => {
+                        try {
+                          if (o && o.id && String(o.id) === String(d.orderId || d.orderid)) return true;
+                          const oNum = String(o.numero || '').replace(/\D/g, '');
+                          const dNum = String(d.numero || '').replace(/\D/g, '');
+                          if (oNum && dNum && oNum === dNum) return true;
+                        } catch (ee) { /* ignore */ }
+                        return false;
+                      });
                       if (match && (match.client || match.nome || match.cliente)) {
                         return { ...d, client: match.client || match.nome || match.cliente };
                       }
@@ -142,6 +199,7 @@ export default function FinanceiroPage() {
                   });
                 }
               } catch (e) {}
+              try { console.debug('[financeiro] fallback local reconciled count=', (reconciled||[]).length); } catch(e){}
               const reconciled = reconcileCashWithOrders(normalized);
               setCashFlowDetails(reconciled.map((dd:any)=> ({ ...dd, status: (dd.status === 'Pendente' ? 'Não pago' : dd.status) } )));
               setPendingPayments(reconciled.filter((d:any) => (d.status === 'Pendente' || d.status === 'Não pago')));
@@ -152,9 +210,18 @@ export default function FinanceiroPage() {
         }
       } catch (e) { console.warn('localStorage parse failed', e); try { setFluxoStatus('Erro parse local: ' + String(e)); } catch (ee) {} }
 
-      if (mounted) { setCashFlowDetails([]); setPendingPayments([]); try { setFluxoStatus('Nenhuma entrada'); } catch (e) {} }
+      if (mounted) { try { setFluxoStatus('Nenhuma entrada'); } catch (e) {} }
     }
     fetchFinanceiro();
+
+    // debounce scheduler to avoid firing many concurrent fetches when multiple events arrive
+    let scheduledFetch: any = null;
+    const scheduleFetch = () => {
+      try {
+        if (scheduledFetch) clearTimeout(scheduledFetch);
+        scheduledFetch = setTimeout(() => { try { fetchFinanceiro(); } catch(e){} }, 300);
+      } catch (e) {}
+    };
 
     const onFinanceUpdated = () => {
       try {
@@ -176,12 +243,25 @@ export default function FinanceiroPage() {
             }
           }
         } catch (e) { console.warn('onFinanceUpdated local read failed', e); }
-        (async () => { try { await fetchFinanceiro(); } catch (e) { console.warn('onFinanceUpdated fetch failed', e); } })();
+        // schedule a single fetch instead of firing immediately to avoid duplicated requests
+        scheduleFetch();
       } catch (e) { console.warn('onFinanceUpdated handler error', e); }
     };
 
+    let ordersUpdateRetries = 0;
     const onOrdersUpdated = () => {
       try {
+        // avoid reacting to transient empty orders state (causes flicker)
+        try {
+          const maybeOrders = readOrdersFromStorage();
+          if (Array.isArray(maybeOrders) && maybeOrders.length === 0 && ordersUpdateRetries < 3) {
+            ordersUpdateRetries += 1;
+            setTimeout(() => { try { onOrdersUpdated(); } catch(_){} }, 250);
+            return;
+          }
+          ordersUpdateRetries = 0;
+        } catch (_) {}
+
         const raw = localStorage.getItem('cashFlowDetails');
         let parsed = raw ? JSON.parse(raw) : [];
         try { parsed = Array.isArray(parsed) ? parsed.filter((d:any) => { const num = String(d.numero||'').toLowerCase(); const digits = String(d.numero||'').replace(/\D/g,''); if (num === 'n000002') return false; if (digits === '2') return false; return true; }) : parsed; } catch(e) {}
@@ -196,6 +276,8 @@ export default function FinanceiroPage() {
           setCashFlowDetails(filtered);
           setPendingPayments(filtered.filter((d:any) => d.status === 'Pendente'));
         }
+        // schedule a server refetch but debounce to avoid spikes
+        scheduleFetch();
       } catch (e) {}
     };
 
@@ -266,9 +348,8 @@ export default function FinanceiroPage() {
         // if not found by id, try to append/update by numero
         parsed.unshift({ ...selectedClient, status: 'Pago' });
       }
-      localStorage.setItem('cashFlowDetails', JSON.stringify(parsed));
+      try { safeSetItem('cashFlowDetails', parsed, 'financeUpdated', 'FinanceiroPage'); } catch(e){}
       try { console.info('fluxo_caixa: local updated on confirmPayment, total', (parsed||[]).length); } catch(e){}
-      window.dispatchEvent(new CustomEvent('financeUpdated'));
     } catch (e) { console.warn('failed to persist cashFlowDetails locally on confirmPayment', e); }
 
     // try to persist to Supabase
@@ -325,8 +406,7 @@ export default function FinanceiroPage() {
         const fallbackIdx = ordersArr.findIndex((o:any) => (o.client === selectedClient.client || o.client === selectedClient.client_name) && (String(o.value).includes(String(selectedClient.value)) || Number(o.value) === Number(selectedClient.value)));
         if (fallbackIdx >= 0) ordersArr[fallbackIdx].paymentStatus = 'Pago';
       }
-      localStorage.setItem('orders', JSON.stringify(ordersArr));
-      window.dispatchEvent(new CustomEvent('ordersUpdated'));
+      try { safeSetItem('orders', ordersArr, 'ordersUpdated', 'FinanceiroPage'); } catch(e){}
     } catch (e) { console.warn('failed to update orders locally on confirmPayment', e); }
     // Do NOT update `ordens` table with `paymentStatus` here — update is handled via `fluxo_caixa` and local merge.
 
@@ -361,9 +441,7 @@ export default function FinanceiroPage() {
         return c;
       });
       setCashFlowDetails(updated);
-      try { localStorage.setItem('cashFlowDetails', JSON.stringify(updated)); } catch(e){}
-      try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch(_){}
-
+      try { safeSetItem('cashFlowDetails', updated, 'financeUpdated', 'FinanceiroPage'); } catch(e){}
       if (supabase && typeof supabase.from === 'function') {
         try {
           if (grp.orderId) {
@@ -401,7 +479,7 @@ export default function FinanceiroPage() {
   }, 0);
 
   const [showDebugModal, setShowDebugModal] = useState(false);
-  const [debugData, setDebugData] = useState<any[]>([]);
+  const [debugData, setDebugData] = useState<any>({});
   const [filterPaid, setFilterPaid] = useState(false);
 
   // compute totals from cashFlowDetails
@@ -583,9 +661,20 @@ export default function FinanceiroPage() {
               const keyNum = String(g.numero || g.orderId || '').replace(/\D/g,'');
               const match = orders.find((o:any) => String(o.id) === String(g.orderId) || String((o.numero||'')).replace(/\D/g,'') === keyNum || String(o.numero) === String(g.numero));
               if (match) {
-                const ot = parseCurrency(match.total ?? match.value ?? match.valor ?? match.total_valor ?? 0);
-                if (ot && ot > 0) g.total = ot;
-              }
+                    const ot = parseCurrency(match.total ?? match.value ?? match.valor ?? match.total_valor ?? 0);
+                    if (ot && ot > 0) {
+                      // prefer canonical order total and use order's service summary
+                      g.total = ot;
+                      try {
+                        const svcLabel = formatPiecesSummary(match) || (match.service || match.servico || match.description || '');
+                        const lineLabel = svcLabel || 'Serviço';
+                        // replace aggregated lines with a canonical single-line summary from the order
+                        g.lines = [{ label: lineLabel, value: ot }];
+                        g.client = match.client || match.nome || match.cliente || g.client;
+                        g.status = (String(match.paymentStatus || '').toLowerCase() === 'pago') ? 'Pago' : (g.status || '');
+                      } catch (e) { /* keep existing lines on failure */ }
+                    }
+                  }
             } catch (e) {}
           });
         }
@@ -661,7 +750,7 @@ export default function FinanceiroPage() {
               <div className="flex items-center gap-2">
               
               {typeof window !== 'undefined' && window.location.search.includes('debug') && (
-                <div className="hidden lg:block flex items-center gap-2">
+                <div className="hidden lg:flex items-center gap-2">
                   <button onClick={() => { try { const localRaw = localStorage.getItem('cashFlowDetails'); const local = localRaw ? JSON.parse(localRaw) : []; const orders = readOrdersFromStorage(); const correlations = (cashFlowDetails||[]).map((d:any)=> ({ entry: d, matchedOrder: (orders||[]).find((o:any)=> String(o.id) === String(d.orderId || d.orderid) || String(o.numero) === String(d.numero)) || null })); setDebugData({ cashFlowDetails, localStorageEntries: local, orders, correlations }); setShowDebugModal(true); } catch(e){ console.warn('show debug failed', e); } }} className="ml-2 px-2 py-1 text-xs bg-gray-100 text-gray-800 border rounded">Mostrar dados (debug)</button>
                   <button onClick={() => {
                       try {

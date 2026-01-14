@@ -301,7 +301,7 @@ export default function ServicosPage() {
                   // try infer from defaultServices by name match
                   const n = normalize(name);
                   const found = defaultServices.find(d => normalize(d.name) === n);
-                  if (found) category = found.category || found.categoria || '';
+                  if (found) category = found.category || (found as any).categoria || '';
                 }
                 if (!category) category = 'outros';
                 return {

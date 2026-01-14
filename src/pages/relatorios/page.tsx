@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import { supabase } from '../../lib/supabaseClient';
-import { readOrdersFromStorage } from '../../lib/storageHelpers';
+import { readOrdersFromStorage, safeSetItem } from '../../lib/storageHelpers';
 
 export default function RelatoriosPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
@@ -17,7 +17,7 @@ export default function RelatoriosPage() {
         { id: 'ord-000033', numero: '000033', client: 'Cliente Teste', total: 120.5, value: 120.5, pecas: [{ tipo: 'Camisa', nome: 'Camisa'},{ tipo: 'Camisa', nome: 'Camisa'}], service: 'Ajuste Geral', data: new Date().toISOString(), created_at: new Date().toISOString() },
         { id: 'ord-000034', numero: '000034', client: 'Cliente Dois', total: 80, value: 80, pecas: [{ tipo: 'Vestido', nome: 'Vestido'}], service: 'Bainha', data: new Date().toISOString(), created_at: new Date().toISOString() }
       ];
-      try { localStorage.setItem('orders', JSON.stringify(sample)); } catch (e) {}
+      try { safeSetItem('orders', sample, 'ordersUpdated', 'RelatoriosPage'); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: sample })); } catch(__){} }
       setOrders(sample);
       alert('Dados de teste adicionados em localStorage');
     } catch (e) { console.warn('seed failed', e); }
@@ -88,7 +88,7 @@ export default function RelatoriosPage() {
               created_at: new Date().toISOString()
             }
           ];
-          try { localStorage.setItem('orders', JSON.stringify(sample)); } catch(e) {}
+          try { safeSetItem('orders', sample, 'ordersUpdated', 'RelatoriosPage'); } catch(e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: sample })); } catch(__){} }
           if (mounted) setOrders(sample);
           return;
         }
@@ -123,7 +123,7 @@ export default function RelatoriosPage() {
                 created_at: new Date().toISOString()
               }
             ];
-            try { localStorage.setItem('orders', JSON.stringify(sample)); } catch(e) {}
+            try { safeSetItem('orders', sample, 'ordersUpdated', 'RelatoriosPage'); } catch(e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: sample })); } catch(__){} }
             setOrders(sample);
           } catch(e) { setOrders([]); }
         } else {
