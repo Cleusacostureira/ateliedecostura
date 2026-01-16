@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import Sidebar from '../../components/layout/Sidebar';
 import { readOrdersFromStorage, safeSetItem } from '../../lib/storageHelpers';
+import { listCompras } from '../../lib/compras';
 import { supabase } from '../../lib/supabaseClient';
 
 // Simple in-memory cache for fetched clientes to avoid repeated network requests
@@ -137,6 +138,30 @@ export default function FinanceiroPage() {
               }
             }
             try { /* keep all entries — previous special-case filter removed */ data = data; } catch (e) {}
+            try {
+              // include compras (purchases) as despesas when present in DB
+              try {
+                if (supabase && typeof supabase.from === 'function') {
+                  const compras = await listCompras();
+                  if (Array.isArray(compras) && compras.length > 0) {
+                    compras.forEach((c:any) => {
+                      try {
+                        const exists = (data || []).some((d:any) => {
+                          try {
+                            const idMatch = String(d.orderId || d.orderid || d.id || d.numero || '').replace(/\D/g,'');
+                            const cId = String(c.id || '').replace(/\D/g,'');
+                            return idMatch && cId && idMatch === cId;
+                          } catch(_) { return false; }
+                        });
+                        if (!exists) {
+                          (data as any[]).unshift({ id: `compra-${c.id}`, orderId: c.id, date: c.data || c.created_at || '', client: c.fornecedor || '', service: 'Compra', value: c.valor_total ?? c.valor || 0, status: c.status || 'Pendente', tipo: 'despesa' });
+                        }
+                      } catch(_){}
+                    });
+                  }
+                }
+              } catch(_){}
+            } catch(e) {}
             try {
               const rawDel = localStorage.getItem('deletedOrders');
               const dels = rawDel ? JSON.parse(rawDel) : [];
