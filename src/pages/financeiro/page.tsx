@@ -110,7 +110,12 @@ export default function FinanceiroPage() {
                   const oid = d.orderId || d.orderid;
                   const num = d.numero || d.id;
                   if (oid && activeSet.has(String(oid))) return true;
-                  if (num && activeSet.has(String(num))) return true;
+                  if (num) {
+                    // compare both raw and digits-only forms to match formats like 'N000001' vs '1'
+                    if (activeSet.has(String(num))) return true;
+                    const numDigits = String(num || '').replace(/\D/g, '');
+                    if (numDigits && activeSet.has(numDigits)) return true;
+                  }
                   return false;
                 } catch (e) { return false; }
               });
@@ -196,7 +201,17 @@ export default function FinanceiroPage() {
               const rawDel = localStorage.getItem('deletedOrders');
               const dels = rawDel ? JSON.parse(rawDel) : [];
               const filtered = Array.isArray(dels) && dels.length > 0 ? parsed.filter((p:any) => !dels.includes(String(p.orderId) || String(p.numero) || String(p.id))) : parsed;
-              const finalFiltered = activeSetLocal.size > 0 ? filtered.filter((p:any) => activeSetLocal.has(String(p.orderId) || String(p.orderid) || String(p.numero) || String(p.id))) : [];
+              const finalFiltered = activeSetLocal.size > 0 ? filtered.filter((p:any) => {
+                try {
+                  const oid = String(p.orderId || p.orderid || '');
+                  if (oid && activeSetLocal.has(oid)) return true;
+                  const rawNum = String(p.numero || p.id || '');
+                  if (rawNum && activeSetLocal.has(rawNum)) return true;
+                  const digits = rawNum.replace(/\D/g, '');
+                  if (digits && activeSetLocal.has(digits)) return true;
+                  return false;
+                } catch (e) { return false; }
+              }) : [];
               let normalized = normalizeEntries(finalFiltered);
               try {
                 const orders = readOrdersFromStorage();
