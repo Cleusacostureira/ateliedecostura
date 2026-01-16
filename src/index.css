@@ -17,3 +17,61 @@ main {
 	overflow-x: auto;
 	-webkit-overflow-scrolling: touch;
 }
+
+/* Dark mode variables + sensible overrides for common Tailwind utility classes */
+:root {
+	--bg: #f8fafc;
+	--card: #ffffff;
+	--text: #0f172a;
+	--muted: #6b7280;
+	--border: #e5e7eb;
+}
+.dark {
+	--bg: #071023;
+	--card: #0b1220;
+	--text: #ffffff;
+	--muted: #9ca3af;
+	--border: rgba(255,255,255,0.06);
+}
+
+body { background-color: var(--bg); color: var(--text); }
+
+/* Override frequently used light utilities when dark mode is active */
+.dark .bg-white { background-color: var(--card) !important; }
+.dark .text-gray-900 { color: var(--text) !important; }
+.dark .text-gray-700 { color: var(--muted) !important; }
+.dark .border-gray-200 { border-color: var(--border) !important; }
+.dark .bg-gray-50 { background-color: rgba(255,255,255,0.02) !important; }
+.dark .bg-rose-50 { background-color: rgba(255,240,240,0.03) !important; }
+.dark .bg-purple-50 { background-color: rgba(240,240,255,0.02) !important; }
+.dark .bg-green-100 { background-color: rgba(0,0,0,0.04) !important; }
+
+/* Make inputs and selects more readable in dark */
+.dark input, .dark textarea, .dark select {
+	background: transparent; color: var(--text); border-color: var(--border) !important;
+}
+
+/* Sidebar text in dark should be fully white */
+.dark aside, .dark aside a, .dark .ri-menu-line, .dark .ri-close-line {
+	color: #ffffff !important;
+}
+
+/* Standard input styling used across forms */
+.input {
+	width: 100%;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid #d1d5db;
+	border-radius: 0.5rem;
+	background: transparent;
+	color: inherit;
+}
+.input:focus {
+	outline: none;
+	box-shadow: 0 0 0 3px rgba(249,115,22,0.08);
+	border-color: #fb923c;
+}
+/* show a soft contour for empty fields (placeholder shown) to guide the user */
+.input::placeholder { color: #9ca3af; }
+.input:placeholder-shown { border-style: dashed; border-color: rgba(251,146,60,0.5); }
+.dark .input { border-color: rgba(255,255,255,0.06); }
+.dark .input:placeholder-shown { border-color: rgba(251,146,60,0.25); }

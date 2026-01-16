@@ -8,6 +8,14 @@ import OfflineBanner from '../OfflineBanner';
 export default function Sidebar() {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(() => location.pathname.startsWith('/compras'));
+  const [theme, setTheme] = useState<'light'|'dark'>(() => {
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('theme') : null;
+      if (stored === 'dark' || stored === 'light') return stored as 'dark'|'light';
+      if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+    } catch (e) {}
+    return 'light';
+  });
 
   // Ensure menu opens when navigating to /compras (covers navigation from other pages)
   useEffect(() => {
@@ -92,10 +100,23 @@ export default function Sidebar() {
             <i className="ri-settings-3-line text-xl w-5 h-5 flex items-center justify-center"></i>
             <span className="text-sm font-medium">Configurações</span>
           </Link>
-          <button className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-50 w-full transition-all whitespace-nowrap cursor-pointer mt-1">
-            <i className="ri-logout-box-line text-xl w-5 h-5 flex items-center justify-center"></i>
-            <span className="text-sm font-medium">Sair</span>
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => {
+                try { const next = theme === 'dark' ? 'light' : 'dark'; setTheme(next); localStorage.setItem('theme', next); document.documentElement.classList.toggle('dark', next === 'dark'); } catch(e){}
+              }}
+              title="Alternar tema claro/escuro"
+              className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-50 w-full transition-all whitespace-nowrap cursor-pointer mt-1"
+            >
+              <i className={`${theme === 'dark' ? 'ri-sun-line' : 'ri-moon-line'} text-xl w-5 h-5 flex items-center justify-center`}></i>
+              <span className="text-sm font-medium">{theme === 'dark' ? 'Modo claro' : 'Modo escuro'}</span>
+            </button>
+
+            <button className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-50 w-full transition-all whitespace-nowrap cursor-pointer mt-1">
+              <i className="ri-logout-box-line text-xl w-5 h-5 flex items-center justify-center"></i>
+              <span className="text-sm font-medium">Sair</span>
+            </button>
+          </div>
         </div>
       </aside>
     </>

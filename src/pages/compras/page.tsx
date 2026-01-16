@@ -8,6 +8,7 @@ export default function ComprasPage() {
   const [compras, setCompras] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [editingCompra, setEditingCompra] = useState<any | null>(null);
 
   async function load() {
     setLoading(true);
@@ -69,10 +70,11 @@ export default function ComprasPage() {
             </div>
           </div>
 
-          <ComprasTable compras={compras} loading={loading} onRefresh={load} />
+          <ComprasTable compras={compras} loading={loading} onRefresh={load} onEdit={(c: any) => setEditingCompra(c)} />
         </div>
 
         {showNew && <NewCompraModal onClose={() => { setShowNew(false); load(); }} />}
+        {editingCompra && <NewCompraModal compra={editingCompra} onClose={() => { setEditingCompra(null); load(); }} />}
       </main>
     </div>
   );

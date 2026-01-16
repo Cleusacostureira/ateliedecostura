@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { deleteCompra } from '../../../lib/compras';
 
-export default function ComprasTable({ compras, loading, onRefresh }: { compras: any[]; loading: boolean; onRefresh: () => void }) {
+export default function ComprasTable({ compras, loading, onRefresh, onEdit }: { compras: any[]; loading: boolean; onRefresh: () => void; onEdit: (c:any)=>void }) {
   const [filter, setFilter] = useState('');
 
   async function onDelete(id: string) {
@@ -52,7 +52,7 @@ export default function ComprasTable({ compras, loading, onRefresh }: { compras:
                 <td className="p-2 align-top">{c.status}</td>
                 <td className="p-2 align-top">
                   <div className="flex gap-2">
-                    <button className="text-blue-600" onClick={()=>alert(JSON.stringify(c, null, 2))}>Detalhes</button>
+                    <button className="text-blue-600 flex items-center gap-1" onClick={()=>onEdit(c)}>✏️ Editar</button>
                     <button className="text-red-600" onClick={()=>onDelete(c.id)}>Excluir</button>
                   </div>
                 </td>

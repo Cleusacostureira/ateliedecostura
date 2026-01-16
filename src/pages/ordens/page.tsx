@@ -2958,17 +2958,19 @@ export default function OrdensPage() {
                 ))}
               </div>
 
-                <div className="sm:hidden mb-3 px-3">
-                  <button
-                    onClick={() => {
-                      try { const first = orders.find((o:any) => o.status === 'Pronto'); if (!first) { showToast('Nenhuma OS com status Pronto'); return; } handleQuickTap(first, 'Retirado' as any); } catch(e){ console.warn(e); }
-                    }}
-                    onTouchStart={(e)=>{ try{ (e as any).stopPropagation(); }catch(_){}; try{ const first=orders.find((o:any)=>o.status==='Pronto'); if(first) handleQuickTap(first,'Retirado' as any);}catch(_){} }}
-                    className="w-full bg-indigo-600 text-white py-3 rounded-md text-center font-medium"
-                  >
-                    Test Retirar (inline)
-                  </button>
-                </div>
+                {debugMode && (
+                  <div className="sm:hidden mb-3 px-3">
+                    <button
+                      onClick={() => {
+                        try { const first = orders.find((o:any) => o.status === 'Pronto'); if (!first) { showToast('Nenhuma OS com status Pronto'); return; } handleQuickTap(first, 'Retirado' as any); } catch(e){ console.warn(e); }
+                      }}
+                      onTouchStart={(e)=>{ try{ (e as any).stopPropagation(); }catch(_){}; try{ const first=orders.find((o:any)=>o.status==='Pronto'); if(first) handleQuickTap(first,'Retirado' as any);}catch(_){} }}
+                      className="w-full bg-indigo-600 text-white py-3 rounded-md text-center font-medium"
+                    >
+                      Test Retirar (inline)
+                    </button>
+                  </div>
+                )}
 
                 <div className="hidden sm:block w-full">
                   <table className="w-full table-auto border-collapse">
@@ -3145,6 +3147,8 @@ export default function OrdensPage() {
                     </div>
                   )}
                   <div className="fixed bottom-6 right-4 z-[9999] pointer-events-auto">
+                    {debugMode && (
+                    <>
                     <button
                       id="test-retirar-btn"
                       onClick={() => {
@@ -3194,6 +3198,8 @@ export default function OrdensPage() {
                     >
                       BOTÃO TESTE
                     </button>
+                    </>
+                    )}
                   </div>
                   {debugBanner && (
                     <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-50">

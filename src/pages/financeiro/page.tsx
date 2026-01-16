@@ -94,13 +94,7 @@ export default function FinanceiroPage() {
                 } catch (ee) { /* ignore client attach failures, keep serverOrders as-is */ }
                 serverOrders.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
               }
-              // also include compras ids so purchases' fluxo_caixa entries are considered as despesas
-              try {
-                const compRes = await supabase.from('compras').select('id');
-                if (!(compRes as any).error && Array.isArray((compRes as any).data)) {
-                  (compRes as any).data.forEach((c:any) => { if (c && c.id) activeSet.add(String(c.id)); });
-                }
-              } catch (e) { /* ignore missing table or permission issues */ }
+              // compras will be accounted for as despesas separately; do not add compra ids to activeSet
             } catch (e) {
               const parsedOrders = readOrdersFromStorage();
               if (Array.isArray(parsedOrders)) parsedOrders.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
@@ -140,34 +134,24 @@ export default function FinanceiroPage() {
             try { /* keep all entries — previous special-case filter removed */ data = data; } catch (e) {}
             try {
               // include compras (purchases) as despesas when present in DB
-              try {
-                if (supabase && typeof supabase.from === 'function') {
-                  const compras = await listCompras();
-                  if (Array.isArray(compras) && compras.length > 0) {
-                    compras.forEach((c:any) => {
-                      try {
-                        const exists = (data || []).some((d:any) => {
-                          try {
-                            const idMatch = String(d.orderId || d.orderid || d.id || d.numero || '').replace(/\D/g,'');
-                            const cId = String(c.id || '').replace(/\D/g,'');
-                            return idMatch && cId && idMatch === cId;
-                          } catch(_) { return false; }
-                        });
-                        if (!exists) {
-                          (data as any[]).unshift({ id: `compra-${c.id}`, orderId: c.id, date: c.data || c.created_at || '', client: c.fornecedor || '', service: 'Compra', value: c.valor_total ?? c.valor || 0, status: c.status || 'Pendente', tipo: 'despesa' });
-                        }
-                      } catch(_){}
-                    });
-                  }
-                }
-              } catch(_){}
+              // Do not insert compras into `data` (detailed fluxo). We'll sum compras separately into despesas.
             } catch(e) {}
             try {
               const rawDel = localStorage.getItem('deletedOrders');
               const dels = rawDel ? JSON.parse(rawDel) : [];
               if (Array.isArray(dels) && dels.length > 0) data = data.filter((d:any) => !dels.includes(String(d.orderId) || String(d.id) || String(d.numero)));
             } catch (e) {}
-            try {
+              try {
+                // compute compras sum for despesas
+                try {
+                  const comprasArr = await listCompras();
+                  if (Array.isArray(comprasArr) && comprasArr.length > 0) {
+                    try { (window as any).__comprasTotalCached = (comprasArr || []).reduce((s:any,c:any)=> s + Number(c.valor_total ?? c.valor ?? 0), 0); } catch(_) { }
+                  } else {
+                    try { (window as any).__comprasTotalCached = 0; } catch(_){}
+                  }
+                } catch(_) { try { (window as any).__comprasTotalCached = 0; } catch(_){} }
+              
               let normalized = normalizeEntries(data);
               // correlate with local orders to prefer local client names when available
               try {
@@ -841,6 +825,8 @@ export default function FinanceiroPage() {
       try { (cashFlowDetails || []).forEach(addIfDespesa); } catch (e) {}
       // include merged entries (may contain synthetic paid orders) but skip duplicates
       try { (_mergedEntries || []).forEach(addIfDespesa); } catch (e) {}
+      // include compras total (do not add individual compras to fluxo detalhado)
+      try { total += Number((window as any).__comprasTotalCached || 0); } catch(_) {}
       return total;
     } catch (e) { return 0; }
   })();

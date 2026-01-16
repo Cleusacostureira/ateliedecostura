@@ -234,57 +234,58 @@ export default function DashboardPage() {
       setTicketAverage(totalOrdersCount > 0 ? Number((totalRevenue / totalOrdersCount).toFixed(2)) : 0);
 
       // compute expenses (fluxo_caixa + compras) and liquid values
-      try {
-        const parseCurrency = (window as any).parseCurrency || ((v:any)=> Number(String(v||0)));
-        let allExpenses = 0;
-        const monthsExpenses = new Array(12).fill(0);
-        // read fluxo_caixa from server if available
+      (async () => {
         try {
-          if (supabase && typeof supabase.from === 'function') {
-            const fc = await supabase.from('fluxo_caixa').select('*');
-            if (!(fc as any).error && Array.isArray((fc as any).data)) {
-              (fc as any).data.forEach((r:any) => {
+          const parseCurrency = (window as any).parseCurrency || ((v:any)=> Number(String(v||0)));
+          let allExpenses = 0;
+          const monthsExpenses = new Array(12).fill(0);
+          // read fluxo_caixa from server if available
+          try {
+            if (supabase && typeof supabase.from === 'function') {
+              const fc = await supabase.from('fluxo_caixa').select('*');
+              if (!(fc as any).error && Array.isArray((fc as any).data)) {
+                (fc as any).data.forEach((r:any) => {
+                  try {
+                    const v = parseCurrency(r.value ?? r.valor ?? 0) || 0;
+                    const isDesp = String(r.tipo || r.type || '').toLowerCase() === 'despesa' || (v < 0);
+                    if (!isDesp) return;
+                    const d = r.date || r.data || r.created_at || '';
+                    const dt = d && typeof d === 'string' && d.includes('/') ? (():Date=>{ const p = (d||'').split('/'); return new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0])); })() : new Date(d || null);
+                    const month = dt && !isNaN(dt.getTime()) ? dt.getMonth() : null;
+                    const absV = Math.abs(v);
+                    if (month !== null) monthsExpenses[month] += absV;
+                    allExpenses += absV;
+                  } catch(_){ }
+                });
+              }
+            }
+          } catch(_){ }
+          // include compras
+          try {
+            const compras = await listCompras();
+            if (Array.isArray(compras)) {
+              compras.forEach((c:any) => {
                 try {
-                  // consider despesas by tipo==='despesa' or negative value
-                  const v = parseCurrency(r.value ?? r.valor ?? 0) || 0;
-                  const isDesp = String(r.tipo || r.type || '').toLowerCase() === 'despesa' || (v < 0);
-                  if (!isDesp) return;
-                  const d = r.date || r.data || r.created_at || r.date || '';
+                  const v = parseCurrency(c.valor_total ?? c.valor ?? c.value ?? 0) || 0;
+                  const d = c.data || c.created_at || '';
                   const dt = d && typeof d === 'string' && d.includes('/') ? (():Date=>{ const p = (d||'').split('/'); return new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0])); })() : new Date(d || null);
                   const month = dt && !isNaN(dt.getTime()) ? dt.getMonth() : null;
-                  const absV = Math.abs(v);
-                  if (month !== null) monthsExpenses[month] += absV;
-                  allExpenses += absV;
-                } catch(_){}
+                  if (month !== null) monthsExpenses[month] += v;
+                  allExpenses += v;
+                } catch(_){ }
               });
             }
-          }
-        } catch(_){}
-        // include compras
-        try {
-          const compras = await listCompras();
-          if (Array.isArray(compras)) {
-            compras.forEach((c:any) => {
-              try {
-                const v = parseCurrency(c.valor_total ?? c.valor ?? c.value ?? 0) || 0;
-                const d = c.data || c.created_at || '';
-                const dt = d && typeof d === 'string' && d.includes('/') ? (():Date=>{ const p = (d||'').split('/'); return new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0])); })() : new Date(d || null);
-                const month = dt && !isNaN(dt.getTime()) ? dt.getMonth() : null;
-                if (month !== null) monthsExpenses[month] += v;
-                allExpenses += v;
-              } catch(_){}
-            });
-          }
-        } catch(_){}
+          } catch(_){ }
 
-        const now = new Date();
-        const monthIdx = now.getMonth();
-        const expThis = monthsExpenses[monthIdx] || 0;
-        setExpensesThisMonth(Number(expThis.toFixed(2)));
-        setTotalExpensesAll(Number(allExpenses.toFixed(2)));
-        setLiquidThisMonth(Number((rev - expThis).toFixed(2)));
-        setLiquidTotal(Number((totalRevenue - allExpenses).toFixed(2)));
-      } catch (e) { console.warn('dashboard expenses calc failed', e); }
+          const now = new Date();
+          const monthIdx = now.getMonth();
+          const expThis = monthsExpenses[monthIdx] || 0;
+          setExpensesThisMonth(Number(expThis.toFixed(2)));
+          setTotalExpensesAll(Number(allExpenses.toFixed(2)));
+          setLiquidThisMonth(Number((rev - expThis).toFixed(2)));
+          setLiquidTotal(Number((totalRevenue - allExpenses).toFixed(2)));
+        } catch (e) { console.warn('dashboard expenses calc failed', e); }
+      })();
 
       // active clients: unique cliente_id or client name (exclude unknown/canceled)
       try {

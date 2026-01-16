@@ -262,6 +262,64 @@ export default function ServicosPage() {
     setSelectedService(null);
   };
 
+  const handleAddNewService = async (e?: React.FormEvent<HTMLFormElement>) => {
+    if (e) e.preventDefault();
+    try {
+      const form = e && e.currentTarget ? new FormData(e.currentTarget as HTMLFormElement) : null;
+      const name = (form?.get('name') as string) || '';
+      const category = (form?.get('category') as string) || 'outros';
+      const rawPrice = (form?.get('price') as string) || '0';
+      const price = Number(String(rawPrice).replace(/[^0-9,.]/g, '').replace(',', '.')) || 0;
+      const time = (form?.get('time') as string) || '';
+
+      const newId = services && services.length ? Math.max(...services.map(s => Number(s.id || 0))) + 1 : Date.now();
+      const newService = { id: newId, category, name, price, time, count: 0 } as any;
+      setServices((prev) => [...(prev || []), newService]);
+
+      // try persist to supabase
+      (async () => {
+        try {
+          if (supabase) {
+            const minutes = parseInt(String(time || '').replace(/[^0-9]/g, '')) || null;
+            const payload: any = { titulo: name, preco: price, categoria: category };
+            if (minutes) payload.duracao_minutos = minutes;
+            const ins = await supabase.from('servicos').insert(payload).select().maybeSingle();
+            if (!(ins as any).error && (ins as any).data) {
+              const row = (ins as any).data;
+              const mapped = {
+                id: row.id,
+                category: row.categoria || category || 'outros',
+                name: row.titulo || name,
+                price: Number(row.preco ?? price) || 0,
+                time: row.duracao_minutos ? `${row.duracao_minutos} min` : time,
+                count: Number(row.popularidade || 0) || 0,
+                __raw: row,
+              };
+              setServices((prev) => (prev || []).map(s => s.id === newId ? mapped : s));
+              try {
+                const raw = localStorage.getItem('services');
+                const arr = raw ? JSON.parse(raw) : (prev || []);
+                const newArr = Array.isArray(arr) ? arr.map((s:any) => s.id === newId ? mapped : s) : (prev || []);
+                localStorage.setItem('services', JSON.stringify(newArr));
+                localStorage.setItem('servicesOrder', JSON.stringify(newArr.map((s:any)=>s.id)));
+              } catch {}
+            }
+          }
+        } catch (err) { console.warn('failed to persist new service', err); }
+      })();
+
+      // persist locally
+      try {
+        const raw = localStorage.getItem('services');
+        const arr = raw ? JSON.parse(raw) : [];
+        const newArr = Array.isArray(arr) ? [...arr, newService] : [newService];
+        localStorage.setItem('services', JSON.stringify(newArr));
+        localStorage.setItem('servicesOrder', JSON.stringify(newArr.map((s:any)=>s.id)));
+      } catch {}
+    } catch (err) { console.warn('add new service failed', err); }
+    setShowNewServiceModal(false);
+  };
+
   const filteredServices = services.filter(service => {
     const name = (service && service.name) ? String(service.name) : '';
     const matchesSearch = name.toLowerCase().includes((searchTerm || '').toLowerCase());
@@ -756,11 +814,13 @@ export default function ServicosPage() {
               </button>
             </div>
 
-            <div className="p-3 lg:p-6 space-y-3 lg:space-y-4">
+            <form onSubmit={handleAddNewService} className="p-3 lg:p-6 space-y-3 lg:space-y-4">
               <div>
                 <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1.5 lg:mb-2">Nome do Serviço</label>
                 <input
+                  name="name"
                   type="text"
+                  required
                   placeholder="Ex: Barra de calça"
                   className="w-full px-3 lg:px-4 py-1.5 lg:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs lg:text-sm"
                 />
@@ -768,8 +828,8 @@ export default function ServicosPage() {
 
               <div>
                 <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1.5 lg:mb-2">Categoria</label>
-                <select className="w-full px-3 lg:px-4 py-1.5 lg:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs lg:text-sm cursor-pointer">
-                  <option>Selecione uma categoria</option>
+                <select name="category" required className="w-full px-3 lg:px-4 py-1.5 lg:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs lg:text-sm cursor-pointer">
+                  <option value="">Selecione uma categoria</option>
                   {serviceCategories.filter(c => c.id !== 'todos').map((cat) => (
                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
@@ -780,6 +840,7 @@ export default function ServicosPage() {
                 <div>
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1.5 lg:mb-2">Valor Padrão</label>
                   <input
+                    name="price"
                     type="text"
                     placeholder="R$ 0,00"
                     className="w-full px-3 lg:px-4 py-1.5 lg:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs lg:text-sm"
@@ -789,6 +850,7 @@ export default function ServicosPage() {
                 <div>
                   <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1.5 lg:mb-2">Tempo Médio</label>
                   <input
+                    name="time"
                     type="text"
                     placeholder="Ex: 30 min"
                     className="w-full px-3 lg:px-4 py-1.5 lg:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs lg:text-sm"
@@ -799,25 +861,27 @@ export default function ServicosPage() {
               <div>
                 <label className="block text-xs lg:text-sm font-medium text-gray-700 mb-1.5 lg:mb-2">Observações</label>
                 <textarea
+                  name="notes"
                   rows={3}
                   placeholder="Detalhes adicionais sobre o serviço..."
                   className="w-full px-3 lg:px-4 py-1.5 lg:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs lg:text-sm resize-none"
                   maxLength={500}
                 ></textarea>
               </div>
-            </div>
 
-            <div className="p-3 lg:p-6 border-t border-gray-200 flex items-center justify-end gap-2 lg:gap-3 sticky bottom-0 bg-white">
-              <button
-                onClick={() => setShowNewServiceModal(false)}
-                className="px-3 lg:px-6 py-1.5 lg:py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all whitespace-nowrap cursor-pointer font-medium text-xs lg:text-sm"
-              >
-                Cancelar
-              </button>
-              <button className="px-3 lg:px-6 py-1.5 lg:py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600 transition-all whitespace-nowrap cursor-pointer font-medium text-xs lg:text-sm">
-                Adicionar Serviço
-              </button>
-            </div>
+              <div className="p-0 lg:p-0 border-t border-gray-200 flex items-center justify-end gap-2 lg:gap-3 sticky bottom-0 bg-white pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowNewServiceModal(false)}
+                  className="px-3 lg:px-6 py-1.5 lg:py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all whitespace-nowrap cursor-pointer font-medium text-xs lg:text-sm"
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="px-3 lg:px-6 py-1.5 lg:py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600 transition-all whitespace-nowrap cursor-pointer font-medium text-xs lg:text-sm">
+                  Adicionar Serviço
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
