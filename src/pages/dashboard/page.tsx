@@ -5,6 +5,7 @@ import StatCard from '../../components/dashboard/StatCard';
 import { clientsSummaryForMonth } from '../../lib/clients';
 import { supabase } from '../../lib/supabaseClient';
 import { readOrdersFromStorage } from '../../lib/storageHelpers';
+import { listCompras } from '../../lib/compras';
 
 const formatDate = (d: any) => {
   if (!d) return '';
@@ -32,6 +33,10 @@ export default function DashboardPage() {
   const [upcomingDeliveries, setUpcomingDeliveries] = useState<any[]>([]);
   const [nextDeliveryName, setNextDeliveryName] = useState<string>('');
   const [totalRevenueAll, setTotalRevenueAll] = useState<number>(0);
+  const [expensesThisMonth, setExpensesThisMonth] = useState<number>(0);
+  const [totalExpensesAll, setTotalExpensesAll] = useState<number>(0);
+  const [liquidThisMonth, setLiquidThisMonth] = useState<number>(0);
+  const [liquidTotal, setLiquidTotal] = useState<number>(0);
   const [totalActiveClients, setTotalActiveClients] = useState<number>(0);
   const [ticketAverage, setTicketAverage] = useState<number>(0);
   const [distributionByCategory, setDistributionByCategory] = useState<any[]>([]);
@@ -228,6 +233,59 @@ export default function DashboardPage() {
       setTotalRevenueAll(Number(totalRevenue.toFixed(2)));
       setTicketAverage(totalOrdersCount > 0 ? Number((totalRevenue / totalOrdersCount).toFixed(2)) : 0);
 
+      // compute expenses (fluxo_caixa + compras) and liquid values
+      try {
+        const parseCurrency = (window as any).parseCurrency || ((v:any)=> Number(String(v||0)));
+        let allExpenses = 0;
+        const monthsExpenses = new Array(12).fill(0);
+        // read fluxo_caixa from server if available
+        try {
+          if (supabase && typeof supabase.from === 'function') {
+            const fc = await supabase.from('fluxo_caixa').select('*');
+            if (!(fc as any).error && Array.isArray((fc as any).data)) {
+              (fc as any).data.forEach((r:any) => {
+                try {
+                  // consider despesas by tipo==='despesa' or negative value
+                  const v = parseCurrency(r.value ?? r.valor ?? 0) || 0;
+                  const isDesp = String(r.tipo || r.type || '').toLowerCase() === 'despesa' || (v < 0);
+                  if (!isDesp) return;
+                  const d = r.date || r.data || r.created_at || r.date || '';
+                  const dt = d && typeof d === 'string' && d.includes('/') ? (():Date=>{ const p = (d||'').split('/'); return new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0])); })() : new Date(d || null);
+                  const month = dt && !isNaN(dt.getTime()) ? dt.getMonth() : null;
+                  const absV = Math.abs(v);
+                  if (month !== null) monthsExpenses[month] += absV;
+                  allExpenses += absV;
+                } catch(_){}
+              });
+            }
+          }
+        } catch(_){}
+        // include compras
+        try {
+          const compras = await listCompras();
+          if (Array.isArray(compras)) {
+            compras.forEach((c:any) => {
+              try {
+                const v = parseCurrency(c.valor_total ?? c.valor ?? c.value ?? 0) || 0;
+                const d = c.data || c.created_at || '';
+                const dt = d && typeof d === 'string' && d.includes('/') ? (():Date=>{ const p = (d||'').split('/'); return new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0])); })() : new Date(d || null);
+                const month = dt && !isNaN(dt.getTime()) ? dt.getMonth() : null;
+                if (month !== null) monthsExpenses[month] += v;
+                allExpenses += v;
+              } catch(_){}
+            });
+          }
+        } catch(_){}
+
+        const now = new Date();
+        const monthIdx = now.getMonth();
+        const expThis = monthsExpenses[monthIdx] || 0;
+        setExpensesThisMonth(Number(expThis.toFixed(2)));
+        setTotalExpensesAll(Number(allExpenses.toFixed(2)));
+        setLiquidThisMonth(Number((rev - expThis).toFixed(2)));
+        setLiquidTotal(Number((totalRevenue - allExpenses).toFixed(2)));
+      } catch (e) { console.warn('dashboard expenses calc failed', e); }
+
       // active clients: unique cliente_id or client name (exclude unknown/canceled)
       try {
         const clientSet = new Set<string>();
@@ -423,10 +481,36 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 lg:gap-6 mb-4 lg:mb-6">
             <div>
-              <StatCard icon="ri-money-dollar-circle-line" label="Faturamento do Mês" value={`R$ ${revenueThisMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} trend="" trendUp={true} color="bg-rose-400" />
+              <div className="bg-white rounded-lg p-3 lg:p-6 border border-gray-200">
+                <div className="flex items-start justify-between mb-2 lg:mb-3">
+                  <div className={`w-8 h-8 lg:w-12 lg:h-12 bg-rose-400 rounded-lg flex items-center justify-center`}>
+                    <i className={`ri-money-dollar-circle-line text-base lg:text-2xl text-white w-4 h-4 lg:w-6 lg:h-6 flex items-center justify-center`}></i>
+                  </div>
+                  <span className={`text-[10px] lg:text-xs font-medium px-1.5 lg:px-2 py-0.5 lg:py-1 rounded-full bg-green-100 text-green-700`}></span>
+                </div>
+                <p className="text-[10px] lg:text-sm text-gray-600 mb-1">Faturamento do Mês</p>
+                <p className="text-base lg:text-2xl font-bold text-gray-900">R$ {revenueThisMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                <div className="mt-2 text-sm text-gray-700">
+                  <div>Despesa: <strong>R$ {expensesThisMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div>
+                  <div>Liquido: <strong>R$ {liquidThisMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div>
+                </div>
+              </div>
             </div>
             <div>
-              <StatCard icon="ri-bank-card-line" label="Faturamento Total" value={`R$ ${totalRevenueAll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} trend="" trendUp={true} color="bg-indigo-400" />
+              <div className="bg-white rounded-lg p-3 lg:p-6 border border-gray-200">
+                <div className="flex items-start justify-between mb-2 lg:mb-3">
+                  <div className={`w-8 h-8 lg:w-12 lg:h-12 bg-indigo-400 rounded-lg flex items-center justify-center`}>
+                    <i className={`ri-bank-card-line text-base lg:text-2xl text-white w-4 h-4 lg:w-6 lg:h-6 flex items-center justify-center`}></i>
+                  </div>
+                  <span className={`text-[10px] lg:text-xs font-medium px-1.5 lg:px-2 py-0.5 lg:py-1 rounded-full bg-green-100 text-green-700`}></span>
+                </div>
+                <p className="text-[10px] lg:text-sm text-gray-600 mb-1">Faturamento Total</p>
+                <p className="text-base lg:text-2xl font-bold text-gray-900">R$ {totalRevenueAll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                <div className="mt-2 text-sm text-gray-700">
+                  <div>Despesa Total: <strong>R$ {totalExpensesAll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div>
+                  <div>Liquido Total: <strong>R$ {liquidTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></div>
+                </div>
+              </div>
             </div>
             <div>
               <StatCard icon="ri-user-3-line" label="Clientes Ativos" value={String(totalActiveClients)} trend="" trendUp={true} color="bg-sky-400" />
