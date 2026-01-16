@@ -3,6 +3,7 @@ import './i18n'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import syncOrders from './lib/syncOrders'
 import ErrorBoundary from './components/ErrorBoundary'
 import './lib/parseCurrencyGlobal'

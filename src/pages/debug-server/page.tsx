@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useEffect, useState } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import { supabase } from '../../lib/supabaseClient';

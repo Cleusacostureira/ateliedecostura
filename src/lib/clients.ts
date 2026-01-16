@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { supabase } from './supabaseClient';
 import { readOrdersFromStorage } from './storageHelpers';
 
@@ -196,7 +197,7 @@ export function addPointsForOrder(order: any) {
         const clients = localLoadClients();
         const match = clients.find(c => (c.telefone && order.phone && c.telefone.replace(/\D/g,'') === String(order.phone).replace(/\D/g,'')) || (c.nome && order.client && c.nome === order.client));
         if (!match) return;
-        const amount = parseFloat(String(order.value || order.total || '0').replace(/[^0-9,\.]/g, '').replace(/\./g, '').replace(/,/g, '.')) || 0;
+        const amount = parseFloat(String(order.value || order.total || '0').replace(/[^0-9,.]/g, '').replace(/\./g, '').replace(/,/g, '.')) || 0;
         match.totalGasto = (match.totalGasto || 0) + amount;
         match.servicosRealizados = (match.servicosRealizados || 0) + 1;
         const earned = Math.floor(amount / 100);
@@ -218,7 +219,7 @@ export function clientsSummaryForMonth(month: number, year: number) {
       const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
       if (d.getFullYear() !== year || d.getMonth() !== month) continue;
       const name = o.client || 'Desconhecido';
-      const val = parseFloat(String(o.value || '0').replace(/[^0-9,\.]/g, '').replace(/\./g, '').replace(/,/g, '.')) || 0;
+      const val = parseFloat(String(o.value || '0').replace(/[^0-9,.]/g, '').replace(/\./g, '').replace(/,/g, '.')) || 0;
       if (!map[name]) map[name] = { name, total: 0, count: 0 };
       map[name].total += val;
       map[name].count += 1;

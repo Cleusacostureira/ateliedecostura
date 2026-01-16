@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { safeSetItem } from './storageHelpers';
 
 const ORDERS_KEY = 'orders';

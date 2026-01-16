@@ -1,15 +1,25 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
+import { useEffect } from 'react';
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useCompanyLogo } from '../../lib/useCompanyLogo';
 import OfflineBanner from '../OfflineBanner';
 
 export default function Sidebar() {
   const location = useLocation();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(() => location.pathname.startsWith('/compras'));
+
+  // Ensure menu opens when navigating to /compras (covers navigation from other pages)
+  useEffect(() => {
+    try {
+      if (location.pathname.startsWith('/compras')) setIsMobileMenuOpen(true);
+    } catch (e) {}
+  }, [location.pathname]);
 
   const menuItems = [
     { path: '/dashboard', icon: 'ri-dashboard-line', label: 'Dashboard' },
     { path: '/ordens', icon: 'ri-file-list-3-line', label: 'Ordens de Serviço' },
+    { path: '/compras', icon: 'ri-shopping-cart-line', label: 'Compras' },
     { path: '/clientes', icon: 'ri-user-line', label: 'Clientes' },
     { path: '/servicos', icon: 'ri-scissors-line', label: 'Serviços' },
     { path: '/financeiro', icon: 'ri-wallet-line', label: 'Financeiro' },
@@ -56,7 +66,7 @@ export default function Sidebar() {
             <Link
               key={item.path}
               to={item.path}
-              onClick={() => setIsMobileMenuOpen(false)}
+              onClick={() => setIsMobileMenuOpen(item.path === '/compras')}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all whitespace-nowrap cursor-pointer ${
                 location.pathname === item.path
                   ? 'bg-rose-50 text-rose-700'

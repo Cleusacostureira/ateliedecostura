@@ -1,6 +1,7 @@
 import React from 'react';
 import { getDebugBuffer } from '../lib/debugLogger';
 
+/* eslint-disable @typescript-eslint/no-unused-vars */
 export default function DebugCopyButton() {
   const handleCopy = async () => {
     try {

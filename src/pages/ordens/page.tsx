@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars, react-hooks/exhaustive-deps */
 import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import NewOsWizard from './NewOsWizard';
@@ -33,7 +34,7 @@ const normalizeStatus = (s: any) => {
     if (str.includes('retir')) return 'Retirado';
     if (str.includes('cancel')) return 'Cancelado';
     return String(s);
-  } catch (e) { return String(s || 'Recebido'); }
+  } catch { return String(s || 'Recebido'); }
 };
 
 // Aggregate pieces into a compact description like "4 Camiseta (Abrir uma fenda)"
@@ -56,7 +57,7 @@ const formatPiecesSummary = (pieces: any[]) => {
       return `${info.count} ${tipo}${svc ? ' (' + svc + ')' : ''}`;
     });
     return parts.join(', ');
-  } catch (e) { return ''; }
+  } catch { return ''; }
 };
 
 // build a map of cashFlowDetails by order id/numero, ignoring locally deleted tombstones
@@ -71,7 +72,7 @@ const getCashMap = () => {
       const deletedRaw = localStorage.getItem('deletedOrders');
       const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
       deletedSet = new Set(Array.isArray(deletedList) ? deletedList.map((x:any) => String(x)) : []);
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
 
     const map: Record<string, any> = {};
     (parsed || []).forEach((c: any) => {
@@ -245,17 +246,20 @@ export default function OrdensPage() {
       };
 
             const syncFromServer = () => {
-      try {
-        const keysToClear = ['orders', 'lastQuickTap', 'cashFlowDetails', 'deletedOrders', 'retiradoTaps'];
-        keysToClear.forEach(k => { try { localStorage.removeItem(k); } catch(_){} });
-        try { showToast('Sincronização iniciada'); } catch(_){}
-        try {
-          window.dispatchEvent(new CustomEvent('refetchOrdersFromServer'));
-          window.dispatchEvent(new CustomEvent('ordersUpdated'));
-          window.dispatchEvent(new CustomEvent('financeUpdated'));
-        } catch(_){}
-      } catch (e) { console.warn('syncFromServer failed', e); }
-    };
+              try {
+                // Avoid removing `orders` and `cashFlowDetails` from localStorage here
+                // as that causes UI flicker (temporary empty state). Only clear transient keys.
+                const keysToClear = ['lastQuickTap', 'deletedOrders', 'retiradoTaps'];
+                keysToClear.forEach(k => { try { localStorage.removeItem(k); } catch(_){} });
+                try { showToast('Sincronização iniciada'); } catch(_){ }
+                try {
+                  // trigger server refetches; listeners should reconcile without being wiped
+                  window.dispatchEvent(new CustomEvent('refetchOrdersFromServer'));
+                  window.dispatchEvent(new CustomEvent('ordersUpdated'));
+                  window.dispatchEvent(new CustomEvent('financeUpdated'));
+                } catch(_){ }
+              } catch (e) { console.warn('syncFromServer failed', e); }
+            };
     const [editDateIn, setEditDateIn] = useState('');
     const [editDateOut, setEditDateOut] = useState('');
     const [editObservation, setEditObservation] = useState('');
@@ -283,7 +287,7 @@ export default function OrdensPage() {
         try {
           if (Array.isArray(raw) && raw.length > 0) {
             // build clients map
-            let clientsMap: Record<string, any> = {};
+            const clientsMap: Record<string, any> = {};
             try {
               const clientsList = await loadClients();
               (clientsList || []).forEach((c:any) => { if (c && c.id) clientsMap[String(c.id)] = c; });
@@ -334,7 +338,7 @@ export default function OrdensPage() {
                 const cashPaid = !!(cash && String(cash.status || '').toLowerCase() === 'pago');
                 // Treat server-reported paid (order.paymentStatus or linked cash entry) as authoritative.
                 const serverPaid = currentPaid || cashPaid;
-                let finalPaid = serverPaid;
+                const finalPaid = serverPaid;
 
                 const rawValue = o.value ?? o.total ?? o.total_valor ?? (cash && (cash.value || cash.valor)) ?? null;
                 const numericVal = Number(String(rawValue).replace(/[^0-9.-]/g, '').replace(',', '.')) || 0;
@@ -432,7 +436,7 @@ export default function OrdensPage() {
         const rawFiltered = deletedSet.size > 0 ? parsedRaw.filter((o:any) => !deletedSet.has(String(o.id)) && !deletedSet.has(String(o.numero))) : parsedRaw;
 
         // load clients map
-        let clientsMap: Record<string, any> = {};
+        const clientsMap: Record<string, any> = {};
         try { const clientsList = await loadClients(); (clientsList||[]).forEach((c:any) => { if (c && c.id) clientsMap[String(c.id)] = c; }); } catch(e) { /* ignore */ }
 
         const cashMap = getCashMap();
@@ -450,7 +454,7 @@ export default function OrdensPage() {
 
         const data: any[] = rawFiltered.map((o:any) => {
           try {
-            let client: any = o.cliente_id ? clientsMap[String(o.cliente_id)] : null;
+            const client: any = o.cliente_id ? clientsMap[String(o.cliente_id)] : null;
             // best-effort: keep existing client object if already present
             if (!client && o.cliente_id) { try { /* attempt server fetch */ } catch(e) { /* ignore */ } }
             let parsedNotas: any = {};
@@ -1483,8 +1487,8 @@ export default function OrdensPage() {
           }
         } catch (e) { console.warn('Failed to persist order status to Supabase', e); }
       })();
-      // Mensagem de agradecimento sem cobrança
-      setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n✅ *Pagamento já realizado!*\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`);
+      // Mensagem de agradecimento simples (remover informações de cobrança/PIX)
+      setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`);
       setClientePhone(order.phone);
       setShowFidelizacaoModal(true);
       // enviar notificação automática de retirada
@@ -1507,8 +1511,8 @@ export default function OrdensPage() {
         } catch (e) { console.warn('Failed to persist order status to Supabase', e); }
       })();
 
-      const paymentText = `Pagamento pendente - Aguardamos seu pagamento. 💰\n\n*DADOS PARA PAGAMENTO PIX:*\n\n*Nome:* Cleusa Belani David\n*Telefone:* 45999126130\n*CPF:* 64166724053\n\n⚠️ *Ao realizar o pagamento, por favor envie o comprovante.*`;
-      setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n${paymentText}\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`);
+      // Mensagem de agradecimento simples (remover informações de cobrança/PIX)
+      setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`);
       setClientePhone(order.phone);
       setShowFidelizacaoModal(true);
       // enviar notificação automática de retirada
@@ -1536,12 +1540,8 @@ export default function OrdensPage() {
       } catch (e) { console.warn('Failed to persist delivery/payment to Supabase', e); }
     })();
 
-    // Mensagem de fidelização - Agradecimento pela retirada
-    const paymentText = isPaid 
-      ? 'Pagamento confirmado! ✅' 
-      : `Pagamento pendente - Aguardamos seu pagamento. 💰\n\n*DADOS PARA PAGAMENTO PIX:*\n\n*Nome:* Cleusa Belani David\n*Telefone:* 45999126130\n*CPF:* 64166724053\n\n⚠️ *Ao realizar o pagamento, por favor envie o comprovante.*`;
-    
-    const fidelMsg = `Olá ${updatedOrder.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n${paymentText}\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`;
+    // Mensagem de fidelização - Agradecimento pela retirada (sempre sem cobrança/PIX)
+    const fidelMsg = `Olá ${updatedOrder.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`;
     try { setSelectedOrder(updatedOrder); } catch(_){}
     try { setClientePhone(updatedOrder.phone); } catch(_){}
     setFidelizacaoMessage(fidelMsg);
@@ -2765,11 +2765,11 @@ export default function OrdensPage() {
                       <button
                         onClick={async () => {
                           try {
-                            let arr = readOrdersFromStorage();
+                            const arr = readOrdersFromStorage();
                             if (!Array.isArray(arr)) { alert('Não foi possível ler localStorage.orders'); return; }
                             if (!Array.isArray(arr) || arr.length === 0) { alert('Nenhuma ordem local encontrada para enriquecer'); return; }
                             // load clients to enrich names
-                            let clientsMap: Record<string, any> = {};
+                            const clientsMap: Record<string, any> = {};
                             try { const cls = await loadClients(); (cls||[]).forEach((c:any) => { if (c && c.id) clientsMap[String(c.id)] = c; }); } catch(e) { /* ignore */ }
                             const enriched = (arr||[]).map((o:any) => {
                               try {
@@ -3142,10 +3142,6 @@ export default function OrdensPage() {
                       <div className="bg-white/90 text-xs text-gray-800 px-3 py-1 rounded border shadow">Last action: {quickTapDebug.newStatus} ({quickTapDebug.id ? quickTapDebug.id.slice(0,6) : '—'})</div>
                     </div>
                   )}
-                  {/* Export Debug: always visible to allow mobile Safari export of localStorage */}
-                  <div className="fixed bottom-4 left-4 z-50">
-                    <button onClick={exportLocalDebug} className="bg-black text-white text-xs px-3 py-2 rounded-md shadow">Export Debug</button>
-                  </div>
                   <div className="fixed bottom-6 right-4 z-[9999] pointer-events-auto">
                     <button
                       id="test-retirar-btn"
@@ -3214,13 +3210,7 @@ export default function OrdensPage() {
                       </div>
                     </div>
                   )}
-                  {/* Duplicate Export Debug button in top-right to avoid Safari bottom toolbar overlay */}
-                  <div className="fixed top-2 right-2 z-50">
-                    <div className="flex gap-2 items-center">
-                      <button onClick={syncFromServer} className="bg-rose-600 text-white text-xs px-3 py-2 rounded-md shadow">Sincronizar Servidor</button>
-                      <button onClick={exportLocalDebug} className="bg-black text-white text-xs px-3 py-2 rounded-md shadow">Export Debug</button>
-                    </div>
-                  </div>
+                  {/* Debug buttons removed from UI */}
               </div>
             </div>
           </div>

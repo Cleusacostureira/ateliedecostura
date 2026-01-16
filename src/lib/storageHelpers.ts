@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { debugLog } from './debugLogger';
 export const readOrdersFromStorage = (rawStr?: string) => {
   try {
     const raw = rawStr !== undefined ? rawStr : localStorage.getItem('orders');

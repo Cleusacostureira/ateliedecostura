@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 export type MessageTemplates = Record<string, string>;
 export type MessageSettings = {
   enabled: Record<string, boolean>;

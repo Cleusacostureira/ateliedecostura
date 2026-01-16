@@ -1,3 +1,19 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Allow horizontal scrolling on narrow/mobile screens to avoid content being clipped */
+html, body, #root {
+	overflow-x: auto;
+}
+
+/* Make main app content allow horizontal scroll and ensure min-width fits content */
+.app-horizontal-safe {
+	min-width: 320px;
+	overflow-x: auto;
+}
+
+main {
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+}

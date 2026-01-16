@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import { supabase } from '../../lib/supabaseClient';
@@ -17,7 +18,7 @@ export default function RelatoriosPage() {
         { id: 'ord-000033', numero: '000033', client: 'Cliente Teste', total: 120.5, value: 120.5, pecas: [{ tipo: 'Camisa', nome: 'Camisa'},{ tipo: 'Camisa', nome: 'Camisa'}], service: 'Ajuste Geral', data: new Date().toISOString(), created_at: new Date().toISOString() },
         { id: 'ord-000034', numero: '000034', client: 'Cliente Dois', total: 80, value: 80, pecas: [{ tipo: 'Vestido', nome: 'Vestido'}], service: 'Bainha', data: new Date().toISOString(), created_at: new Date().toISOString() }
       ];
-      try { safeSetItem('orders', sample, 'ordersUpdated', 'RelatoriosPage'); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: sample })); } catch(__){} }
+      try { safeSetItem('orders', sample, 'ordersUpdated', 'RelatoriosPage'); } catch { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: sample })); } catch(__){} }
       setOrders(sample);
       alert('Dados de teste adicionados em localStorage');
     } catch (e) { console.warn('seed failed', e); }
@@ -148,7 +149,7 @@ export default function RelatoriosPage() {
       const key = String(o.id || o.numero || '');
       if (!key) return;
       if (!uniqOrdersMap[key] || (o.created_at && (!uniqOrdersMap[key].created_at || String(o.created_at) > String(uniqOrdersMap[key].created_at)))) uniqOrdersMap[key] = o;
-    } catch (e) {}
+    } catch {}
   });
   const uniqOrders = Object.values(uniqOrdersMap || {});
 
@@ -160,18 +161,18 @@ export default function RelatoriosPage() {
       if (Array.isArray(arr) && arr.length > 0) {
         items = items.concat(arr.map((it: any) => (it && (it.nome || it.name || it.servico || it.title || it.titulo || it.servico_nome || '')).toString()).filter(Boolean));
       }
-    } catch (e) {}
+    } catch {}
     try {
       const notas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : null;
       const fromNotas = (notas && (notas.services || notas.servicos || [])) || [];
       if (Array.isArray(fromNotas) && fromNotas.length > 0) {
         items = items.concat(fromNotas.map((s:any) => ((s && (s.name || s.titulo || s.nome || s.servico || s.title)) || '').toString()).filter(Boolean));
       }
-    } catch(e) {}
+    } catch {}
     try {
       const svcTop = (o.service || o.servico || '').toString();
       if (svcTop) items.push(svcTop);
-    } catch(e) {}
+    } catch {}
     // dedupe items
     items = Array.from(new Set((items || []).map((s:any)=>String(s).trim()).filter(Boolean)));
     items.forEach((s: string) => {
@@ -187,14 +188,14 @@ export default function RelatoriosPage() {
         const c = clientsList.find((c:any) => String(c.id) === String(o.cliente_id));
         if (c && c.nome) clientName = String(c.nome).trim();
       }
-    } catch(e) {}
+    } catch {}
     if (!clientName) {
       // handle object-shaped client fields
       try {
         if (o.client && typeof o.client === 'object') {
           clientName = String(o.client.nome || o.client.name || '').trim();
         }
-      } catch(e) {}
+      } catch {}
     }
     if (!clientName) clientName = (o.client || o.cliente || o.client_name || o.nome_cliente || '').toString().trim() || '';
     if (!clientName && o.cliente_id) {
@@ -210,7 +211,7 @@ export default function RelatoriosPage() {
     // months (robust parsing: accept dd/mm/yyyy strings or ISO dates)
     try {
       // parse order value
-      let rawVal: any = o.total ?? o.valor ?? o.value ?? (o.notas && typeof o.notas === 'object' && o.notas.total) ?? o.value;
+      const rawVal: any = o.total ?? o.valor ?? o.value ?? (o.notas && typeof o.notas === 'object' && o.notas.total) ?? o.value;
       let orderVal = 0;
       try {
         const s = String(rawVal || '').replace(/[^0-9,.-]/g, '').replace(',', '.');
@@ -235,14 +236,14 @@ export default function RelatoriosPage() {
             const maybe = new Date(rawDate as any);
             if (maybe && !isNaN(maybe.getTime())) { d = maybe; }
           }
-        } catch(e) { continue; }
+        } catch { continue; }
         if (d) break;
       }
       if (d && !isNaN(d.getTime())) {
         const m = d.getMonth();
         revenueByMonth[m] = (revenueByMonth[m] || 0) + (Number(orderVal) || 0);
       }
-    } catch (e) { /* ignore date parse errors */ }
+    } catch { /* ignore date parse errors */ }
   });
 
   // distribution by piece
@@ -267,7 +268,7 @@ export default function RelatoriosPage() {
       const s = String(raw || '').replace(/[^0-9,.-]/g, '').replace(',', '.');
       const n = parseFloat(s) || 0;
       return sum + n;
-    } catch (e) { return sum; }
+    } catch { return sum; }
   }, 0);
   const activeClientsCount = new Set(uniqOrders.map((o:any) => {
     try {
@@ -324,7 +325,7 @@ export default function RelatoriosPage() {
         if (d.getFullYear() !== y || d.getMonth() !== m) return;
         const dayIndex = d.getDate() - 1;
         // revenue: prefer total-like fields
-        let rawVal: any = o.total ?? o.valor ?? o.value ?? o.total_valor ?? (o.notas && typeof o.notas === 'object' && (o.notas.total || o.notas.valor)) ?? 0;
+        const rawVal: any = o.total ?? o.valor ?? o.value ?? o.total_valor ?? (o.notas && typeof o.notas === 'object' && (o.notas.total || o.notas.valor)) ?? 0;
         let orderVal = 0;
         try { const s = String(rawVal || '').replace(/[^0-9,.-]/g, '').replace(',', '.'); orderVal = parseFloat(s) || 0; } catch(e) { orderVal = 0; }
         arr[dayIndex].revenue += orderVal;

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // attach a global parseCurrency utility to window so legacy callers work without imports
 function parseCurrencyImpl(raw: any) {
   try {

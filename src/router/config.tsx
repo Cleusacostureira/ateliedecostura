@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { lazy } from 'react';
 import type { RouteObject } from 'react-router-dom';
 
@@ -12,6 +13,7 @@ const ClientesPage = lazy(() => import('../pages/clientes/page'));
 const ClienteDetalhePage = lazy(() => import('../pages/clientes/detalhe/page'));
 const ServicosPage = lazy(() => import('../pages/servicos/page'));
 const FinanceiroPage = lazy(() => import('../pages/financeiro/page'));
+const ComprasPage = lazy(() => import('../pages/compras/page'));
 const RelatoriosPage = lazy(() => import('../pages/relatorios/page'));
 const DisparosPage = lazy(() => import('../pages/disparos/page'));
 const ConfiguracoesPage = lazy(() => import('../pages/configuracoes/page'));
@@ -56,6 +58,10 @@ const routes: RouteObject[] = [
   {
     path: '/servicos',
     element: <ServicosPage />,
+  },
+  {
+    path: '/compras',
+    element: <ComprasPage />,
   },
   {
     path: '/financeiro',

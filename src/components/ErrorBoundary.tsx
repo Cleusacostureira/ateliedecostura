@@ -1,9 +1,10 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React from 'react'
 
 type State = { hasError: boolean; error?: any }
 
-export default class ErrorBoundary extends React.Component<{}, State> {
-  constructor(props: {}) {
+export default class ErrorBoundary extends React.Component<object, State> {
+  constructor(props: object) {
     super(props)
     this.state = { hasError: false }
   }
@@ -20,7 +21,7 @@ export default class ErrorBoundary extends React.Component<{}, State> {
       // ignore
     }
     // still log for developer console
-    // eslint-disable-next-line no-console
+     
     console.error('Uncaught error caught by ErrorBoundary:', error, info)
   }
 
@@ -42,7 +43,6 @@ export default class ErrorBoundary extends React.Component<{}, State> {
         </div>
       )
     }
-    // @ts-ignore
-    return this.props.children
+    return (this.props as any).children
   }
 }

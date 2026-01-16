@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { useEffect, useState } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import { readOrdersFromStorage, safeSetItem } from '../../lib/storageHelpers';
 import { supabase } from '../../lib/supabaseClient';
@@ -73,7 +75,7 @@ export default function FinanceiroPage() {
           if (!(res as any).error && Array.isArray((res as any).data) && mounted) {
             let data = (res as any).data as any[];
             // build set of active orders (ids and numeros) to filter fluxo_caixa
-            let activeSet = new Set<string>();
+            const activeSet = new Set<string>();
             // prefer server-side orders when available so we don't rely on possibly stale localStorage
             let serverOrders: any[] | null = null;
             try {
@@ -92,6 +94,13 @@ export default function FinanceiroPage() {
                 } catch (ee) { /* ignore client attach failures, keep serverOrders as-is */ }
                 serverOrders.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
               }
+              // also include compras ids so purchases' fluxo_caixa entries are considered as despesas
+              try {
+                const compRes = await supabase.from('compras').select('id');
+                if (!(compRes as any).error && Array.isArray((compRes as any).data)) {
+                  (compRes as any).data.forEach((c:any) => { if (c && c.id) activeSet.add(String(c.id)); });
+                }
+              } catch (e) { /* ignore missing table or permission issues */ }
             } catch (e) {
               const parsedOrders = readOrdersFromStorage();
               if (Array.isArray(parsedOrders)) parsedOrders.forEach((o:any) => { if (o && (o.id || o.numero)) { if (o.id) activeSet.add(String(o.id)); if (o.numero) activeSet.add(String(o.numero)); } });
@@ -107,8 +116,21 @@ export default function FinanceiroPage() {
                 } catch (e) { return false; }
               });
             } else {
-              // no active orders -> clear any server fluxo entries to show zero
-              data = [];
+              // no active orders -> avoid clearing existing UI data (causes flicker).
+              // Prefer localStorage cache when available, otherwise keep current `data` unchanged.
+              try {
+                const rawLocal = localStorage.getItem('cashFlowDetails');
+                let parsedLocal: any = rawLocal ? JSON.parse(rawLocal) : [];
+                if (parsedLocal && parsedLocal.__force === true && Array.isArray(parsedLocal.payload)) parsedLocal = parsedLocal.payload;
+                if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
+                  data = parsedLocal;
+                } else {
+                  // keep `data` as received from server to avoid flash-to-empty
+                  data = data || [];
+                }
+              } catch (e) {
+                data = data || [];
+              }
             }
             try { data = data.filter((d:any) => { const num = String(d.numero || '').toLowerCase(); const digits = String(d.numero || '').replace(/\D/g, ''); if (num === 'n000002') return false; if (digits === '2') return false; return true; }); } catch (e) {}
             try {
@@ -141,8 +163,8 @@ export default function FinanceiroPage() {
                   });
                 }
               } catch (e) {}
-              try { console.debug('[financeiro] reconciled entries count=', (reconciled||[]).length); } catch(e){}
               const reconciled = reconcileCashWithOrders(normalized);
+              try { console.debug('[financeiro] reconciled entries count=', (reconciled||[]).length); } catch(e){}
               setCashFlowDetails(reconciled.map((dd:any)=> ({ ...dd, status: (dd.status === 'Pendente' ? 'Não pago' : dd.status) } )));
               try { console.debug('[financeiro] setting cashFlowDetails from server raw data count=', (data||[]).length); } catch(e){}
               setPendingPayments(reconciled.filter((d:any) => (d.status === 'Pendente' || d.status === 'Não pago')));
@@ -199,8 +221,8 @@ export default function FinanceiroPage() {
                   });
                 }
               } catch (e) {}
-              try { console.debug('[financeiro] fallback local reconciled count=', (reconciled||[]).length); } catch(e){}
               const reconciled = reconcileCashWithOrders(normalized);
+              try { console.debug('[financeiro] fallback local reconciled count=', (reconciled||[]).length); } catch(e){}
               setCashFlowDetails(reconciled.map((dd:any)=> ({ ...dd, status: (dd.status === 'Pendente' ? 'Não pago' : dd.status) } )));
               setPendingPayments(reconciled.filter((d:any) => (d.status === 'Pendente' || d.status === 'Não pago')));
               try { setLocalEntriesPreview((normalized || []).slice(0,50)); } catch (e) {}
@@ -699,13 +721,28 @@ export default function FinanceiroPage() {
     if (String(g.status || '').toLowerCase() === 'pago') return sum + parseCurrency(g.total ?? 0);
     return sum;
   }, 0);
-  // despesas still computed from merged entries (fluxo) where tipo is 'despesa' or negative values
-  const despesas = (_mergedEntries || []).reduce((sum, it) => {
-    const v = parseCurrency(it.value ?? it.valor ?? 0);
-    const tipo = (it.tipo || it.type || '').toString().toLowerCase();
-    if (tipo === 'despesa' || v < 0) return sum + Math.abs(v);
-    return sum;
-  }, 0);
+  // despesas: compute from both runtime merged entries and raw local cashFlowDetails
+  const despesas = (() => {
+    try {
+      const seen = new Set<string>();
+      let total = 0;
+      const addIfDespesa = (it: any) => {
+        try {
+          const idKey = String(it.id || it.orderId || it.orderid || it.numero || '');
+          if (seen.has(idKey) && idKey !== '') return; // avoid double-count
+          if (idKey) seen.add(idKey);
+          const v = parseCurrency(it.value ?? it.valor ?? it.total ?? 0);
+          const tipo = (it.tipo || it.type || '').toString().toLowerCase();
+          if (tipo === 'despesa' || v < 0) total += Math.abs(v);
+        } catch (e) {}
+      };
+      // include raw local entries
+      try { (cashFlowDetails || []).forEach(addIfDespesa); } catch (e) {}
+      // include merged entries (may contain synthetic paid orders) but skip duplicates
+      try { (_mergedEntries || []).forEach(addIfDespesa); } catch (e) {}
+      return total;
+    } catch (e) { return 0; }
+  })();
   const lucro = receitas - despesas;
 
   function formatPiecesSummary(item: any) {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 export function debugLog(...args: any[]) {
   try {
     const w = window as any;

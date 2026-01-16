@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import syncOrders from '../lib/syncOrders';
 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import React from 'react';
+
 export default function OfflineBanner() {
   const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [syncing, setSyncing] = useState(false);

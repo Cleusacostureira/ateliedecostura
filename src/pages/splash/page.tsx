@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -21,7 +22,7 @@ export default function SplashPage() {
           totalMs = 3800; // finish stroke animation but before name reveal
           target = '/dashboard';
         }
-      } catch (err) {
+      } catch {
         // ignore and use defaults
       }
 

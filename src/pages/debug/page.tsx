@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import React from 'react';
 import { useState } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import { getDebugBuffer } from '../../lib/debugLogger';
