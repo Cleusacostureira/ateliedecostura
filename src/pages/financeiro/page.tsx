@@ -167,7 +167,28 @@ export default function FinanceiroPage() {
                   });
                 }
               } catch (e) {}
-              const reconciled = reconcileCashWithOrders(normalized);
+              let reconciled = reconcileCashWithOrders(normalized);
+              try {
+                // ensure orders that have no fluxo_caixa entry but are unpaid appear as pending
+                const ordersList = serverOrders && Array.isArray(serverOrders) && serverOrders.length > 0 ? serverOrders : readOrdersFromStorage();
+                if (Array.isArray(ordersList) && ordersList.length > 0) {
+                  const existingKeys = new Set<string>((reconciled||[]).map((r:any) => String(r.orderId || r.orderid || r.numero || r.id || '').replace(/\D/g, '')));
+                  (ordersList || []).forEach((o:any) => {
+                    try {
+                      const key = String(o.id || o.numero || '').replace(/\D/g, '');
+                      if (!key) return;
+                      if (existingKeys.has(key)) return;
+                      const isPaid = String(o.paymentStatus || '').toLowerCase() === 'pago' || !!o.finalPaid;
+                      if (isPaid) return; // only show unpaid orders as pending
+                      const value = parseCurrency(o.value ?? o.total ?? o.total_valor ?? 0);
+                      const synth = { id: `order-synth-${o.id||o.numero}`, orderId: o.id, numero: o.numero, client: o.client || o.nome || o.cliente || '', service: '', pieces: o.pecas || o.pieces || [], value, status: 'Pendente', date: o.date || o.data || o.created_at || '' };
+                      try { synth.service = formatPiecesSummary(o) || ''; } catch(_){}
+                      reconciled.push(synth);
+                      existingKeys.add(key);
+                    } catch(_){}
+                  });
+                }
+              } catch(e) {}
               try { console.debug('[financeiro] reconciled entries count=', (reconciled||[]).length); } catch(e){}
               setCashFlowDetails(reconciled.map((dd:any)=> ({ ...dd, status: (dd.status === 'Pendente' ? 'Não pago' : dd.status) } )));
               try { console.debug('[financeiro] setting cashFlowDetails from server raw data count=', (data||[]).length); } catch(e){}
@@ -235,7 +256,28 @@ export default function FinanceiroPage() {
                   });
                 }
               } catch (e) {}
-              const reconciled = reconcileCashWithOrders(normalized);
+              let reconciled = reconcileCashWithOrders(normalized);
+              try {
+                // include local orders that lack fluxo entries as pending so they show in A Receber
+                const parsedOrders = readOrdersFromStorage();
+                if (Array.isArray(parsedOrders) && parsedOrders.length > 0) {
+                  const existingKeys = new Set<string>((reconciled||[]).map((r:any) => String(r.orderId || r.orderid || r.numero || r.id || '').replace(/\D/g, '')));
+                  (parsedOrders || []).forEach((o:any) => {
+                    try {
+                      const key = String(o.id || o.numero || '').replace(/\D/g, '');
+                      if (!key) return;
+                      if (existingKeys.has(key)) return;
+                      const isPaid = String(o.paymentStatus || '').toLowerCase() === 'pago' || !!o.finalPaid;
+                      if (isPaid) return;
+                      const value = parseCurrency(o.value ?? o.total ?? o.total_valor ?? 0);
+                      const synth = { id: `order-synth-${o.id||o.numero}`, orderId: o.id, numero: o.numero, client: o.client || o.nome || o.cliente || '', service: '', pieces: o.pecas || o.pieces || [], value, status: 'Pendente', date: o.date || o.data || o.created_at || '' };
+                      try { synth.service = formatPiecesSummary(o) || ''; } catch(_){}
+                      reconciled.push(synth);
+                      existingKeys.add(key);
+                    } catch(_){}
+                  });
+                }
+              } catch(e) {}
               try { console.debug('[financeiro] fallback local reconciled count=', (reconciled||[]).length); } catch(e){}
               setCashFlowDetails(reconciled.map((dd:any)=> ({ ...dd, status: (dd.status === 'Pendente' ? 'Não pago' : dd.status) } )));
               setPendingPayments(reconciled.filter((d:any) => (d.status === 'Pendente' || d.status === 'Não pago')));
