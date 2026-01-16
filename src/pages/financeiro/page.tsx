@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { useEffect, useState } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import { readOrdersFromStorage, safeSetItem } from '../../lib/storageHelpers';
 import { supabase } from '../../lib/supabaseClient';

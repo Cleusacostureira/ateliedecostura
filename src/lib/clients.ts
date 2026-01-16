@@ -35,29 +35,57 @@ function localSaveClients(list: Cliente[]) {
 }
 
 export async function loadClients(): Promise<Cliente[]> {
+  // Simple in-memory cache + single-flight guard to avoid bursts of concurrent
+  // Supabase requests when multiple components trigger `loadClients()` at once.
+  // Cache TTL: 30 seconds.
   try {
+    type CacheShape = { data: Cliente[]; ts: number };
+    // module-scoped cache/inflight holders (attach to function to avoid extra top-level vars)
+    const holder: any = (loadClients as any)._holder || ((loadClients as any)._holder = {});
+    const now = Date.now();
+    const TTL = 30 * 1000;
+    if (holder.cache && (now - holder.cache.ts) < TTL && Array.isArray(holder.cache.data)) {
+      return holder.cache.data;
+    }
+    if (holder.inflight && typeof holder.inflight.then === 'function') {
+      return holder.inflight;
+    }
+
     if (supabase && typeof supabase.from === 'function') {
-      const res = await supabase.from('clientes').select('*');
-      if (!(res as any).error && Array.isArray((res as any).data)) {
-        // map DB fields to UI shape
-        return (res as any).data.map((r: any) => ({
-          id: r.id,
-          nome: r.nome,
-          telefone: r.telefone,
-          cpf: r.cpf_cnpj || r.cpf,
-          endereco: r.endereco,
-          observacoes: r.notas || r.observacoes || '',
-          // optional analytics fields if present in DB
-          totalGasto: (r.totalGasto !== undefined ? Number(r.totalGasto) : (r.total_gasto !== undefined ? Number(r.total_gasto) : undefined)),
-          servicosRealizados: (r.servicosRealizados !== undefined ? Number(r.servicosRealizados) : (r.servicos_realizados !== undefined ? Number(r.servicos_realizados) : undefined)),
-          pontos: (r.pontos !== undefined ? Number(r.pontos) : undefined),
-        }));
-      }
+      const p = (async () => {
+        try {
+          const res = await supabase.from('clientes').select('*');
+          if (!(res as any).error && Array.isArray((res as any).data)) {
+            const mapped = (res as any).data.map((r: any) => ({
+              id: r.id,
+              nome: r.nome,
+              telefone: r.telefone,
+              cpf: r.cpf_cnpj || r.cpf,
+              endereco: r.endereco,
+              observacoes: r.notas || r.observacoes || '',
+              totalGasto: (r.totalGasto !== undefined ? Number(r.totalGasto) : (r.total_gasto !== undefined ? Number(r.total_gasto) : undefined)),
+              servicosRealizados: (r.servicosRealizados !== undefined ? Number(r.servicosRealizados) : (r.servicos_realizados !== undefined ? Number(r.servicos_realizados) : undefined)),
+              pontos: (r.pontos !== undefined ? Number(r.pontos) : undefined),
+            }));
+            holder.cache = { data: mapped, ts: Date.now() } as CacheShape;
+            return mapped;
+          }
+        } catch (e) {
+          console.warn('supabase loadClients failed', e);
+        }
+        // fallback to local if supabase call fails or returns unexpected shape
+        const local = localLoadClients();
+        holder.cache = { data: local, ts: Date.now() } as CacheShape;
+        return local;
+      })();
+      holder.inflight = p;
+      // ensure inflight is cleared once resolved
+      p.finally(() => { try { holder.inflight = null; } catch (_) {} });
+      return p;
     }
   } catch (e) {
-    console.warn('supabase loadClients failed', e);
+    console.warn('loadClients wrapper failed', e);
   }
-  // fallback to local
   return localLoadClients();
 }
 

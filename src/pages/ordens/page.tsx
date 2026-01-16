@@ -2130,12 +2130,14 @@ export default function OrdensPage() {
 
   // Listen for external ordersUpdated events (e.g., from Financeiro) and reload local orders
   useEffect(() => {
+    // debounce rapid ordersUpdated events to avoid recursive refetch -> write -> refetch loops
+    let _lastOrdersUpdated = 0;
     const onOrdersUpdated = () => {
       try {
-        // When external parts of the app (Financeiro) signal ordersChanged,
-        // prefer to re-fetch canonical rows from the server rather than rely
-        // on potentially stale localStorage values.
-        try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); return; } catch(_){}
+        const now = Date.now();
+        if (now - _lastOrdersUpdated < 1000) return;
+        _lastOrdersUpdated = now;
+        try { window.dispatchEvent(new CustomEvent('refetchOrdersFromServer')); } catch(_){}
       } catch (e) {
         // ignore listener errors
       }
