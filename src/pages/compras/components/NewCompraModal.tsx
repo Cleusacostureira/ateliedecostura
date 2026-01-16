@@ -7,7 +7,7 @@ export default function NewCompraModal({ onClose, compra }: { onClose: () => voi
   const [forma, setForma] = useState('dinheiro');
   const [status, setStatus] = useState('pago');
   const [observacoes, setObservacoes] = useState('');
-  const [itens, setItens] = useState<CompraItem[]>([{ produto: '', tipo_material: '', quantidade: 1, unidade: 'Un', valor_unitario: '', valor_total: 0 } as any]);
+  const [itens, setItens] = useState<CompraItem[]>([{ produto: '', tipo_material: '', quantidade: '' as any, unidade: 'Un', valor_unitario: '', valor_total: 0 } as any]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -17,8 +17,8 @@ export default function NewCompraModal({ onClose, compra }: { onClose: () => voi
     setForma(compra.forma_pagamento || 'dinheiro');
     setStatus(compra.status || 'pago');
     setObservacoes(compra.observacoes || '');
-    const mapped = (compra.compras_itens || compra.itens || []).map((it:any) => ({ produto: it.produto || '', tipo_material: it.tipo_material || '', quantidade: Number(it.quantidade||1), unidade: it.unidade || 'Un', valor_unitario: Number(it.valor_unitario||0), valor_total: Number(it.valor_total||0) }));
-    setItens(mapped.length ? mapped : [{ produto: '', tipo_material: '', quantidade: 1, unidade: 'Un', valor_unitario: 0, valor_total: 0 }]);
+    const mapped = (compra.compras_itens || compra.itens || []).map((it:any) => ({ produto: it.produto || '', tipo_material: it.tipo_material || '', quantidade: it.quantidade != null ? Number(it.quantidade) : '' as any, unidade: it.unidade || 'Un', valor_unitario: Number(it.valor_unitario||0), valor_total: Number(it.valor_total||0) }));
+    setItens(mapped.length ? mapped : [{ produto: '', tipo_material: '', quantidade: '' as any, unidade: 'Un', valor_unitario: 0, valor_total: 0 }]);
   }, [compra]);
 
   function updateItem(idx: number, patch: Partial<CompraItem>) {
