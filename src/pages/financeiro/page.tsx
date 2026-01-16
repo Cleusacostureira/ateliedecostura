@@ -136,7 +136,7 @@ export default function FinanceiroPage() {
                 data = data || [];
               }
             }
-            try { data = data.filter((d:any) => { const num = String(d.numero || '').toLowerCase(); const digits = String(d.numero || '').replace(/\D/g, ''); if (num === 'n000002') return false; if (digits === '2') return false; return true; }); } catch (e) {}
+            try { /* keep all entries — previous special-case filter removed */ data = data; } catch (e) {}
             try {
               const rawDel = localStorage.getItem('deletedOrders');
               const dels = rawDel ? JSON.parse(rawDel) : [];
@@ -192,7 +192,7 @@ export default function FinanceiroPage() {
         if (raw) {
           let parsed = JSON.parse(raw) as any[];
           if (Array.isArray(parsed) && mounted) {
-            try { parsed = parsed.filter((d:any) => { const num = String(d.numero||'').toLowerCase(); const digits = String(d.numero||'').replace(/\D/g,''); if (num === 'n000002') return false; if (digits === '2') return false; return true; }); } catch (e) {}
+            try { /* keep parsed entries as-is — removed special-case filter for n000002 */ parsed = parsed; } catch (e) {}
             try {
               // also ensure cash entries correspond to existing orders (local fallback)
               const parsedOrders = readOrdersFromStorage();
@@ -266,7 +266,7 @@ export default function FinanceiroPage() {
           if (raw) {
             let parsed = JSON.parse(raw) as any[];
             if (Array.isArray(parsed)) {
-              try { parsed = parsed.filter((d:any) => { const num = String(d.numero||'').toLowerCase(); const digits = String(d.numero||'').replace(/\D/g,''); if (num === 'n000002') return false; if (digits === '2') return false; return true; }); } catch(e) {}
+              try { /* keep parsed entries as-is — removed special-case filter for n000002 */ parsed = parsed; } catch(e) {}
               try {
                 const rawDel = localStorage.getItem('deletedOrders');
                 const dels = rawDel ? JSON.parse(rawDel) : [];
@@ -300,7 +300,7 @@ export default function FinanceiroPage() {
 
         const raw = localStorage.getItem('cashFlowDetails');
         let parsed = raw ? JSON.parse(raw) : [];
-        try { parsed = Array.isArray(parsed) ? parsed.filter((d:any) => { const num = String(d.numero||'').toLowerCase(); const digits = String(d.numero||'').replace(/\D/g,''); if (num === 'n000002') return false; if (digits === '2') return false; return true; }) : parsed; } catch(e) {}
+        try { parsed = Array.isArray(parsed) ? parsed : parsed; } catch(e) {}
         const rawDel = localStorage.getItem('deletedOrders');
         const dels = rawDel ? JSON.parse(rawDel) : [];
         const filtered = Array.isArray(dels) && dels.length > 0 ? (parsed || []).filter((p:any) => !dels.includes(String(p.orderId) || String(p.numero) || String(p.id))) : parsed;
@@ -556,9 +556,20 @@ export default function FinanceiroPage() {
       if (!Array.isArray(orders) || orders.length === 0) return entries;
       return (entries || []).map((e:any) => {
         try {
-          const match = orders.find((o:any) => String(o.id) === String(e.orderId || e.orderid) || String(o.numero) === String(e.numero));
+          const match = orders.find((o:any) => {
+            try {
+              if (o && (o.id || o.numero)) {
+                if (String(o.id) === String(e.orderId || e.orderid)) return true;
+                // compare numero both raw and digits-only
+                const oNum = String(o.numero || '').replace(/\D/g, '');
+                const eNum = String(e.numero || '').replace(/\D/g, '');
+                if (oNum && eNum && oNum === eNum) return true;
+                if (String(o.numero) === String(e.numero)) return true;
+              }
+            } catch (_) {}
+            return false;
+          });
           if (match) {
-            // if the order explicitly is not paid, prefer that and mark cash entry as not paid locally
             const orderPaid = String(match.paymentStatus || '').toLowerCase() === 'pago';
             if (!orderPaid) {
               return { ...e, status: 'Não pago' };
@@ -664,11 +675,20 @@ export default function FinanceiroPage() {
       try {
         const orders = readOrdersFromStorage();
         if (Array.isArray(orders) && orders.length > 0) {
-          Object.keys(map).forEach(k => {
+              Object.keys(map).forEach(k => {
             try {
               if (map[k].date) return;
               const keyNum = String(map[k].numero || map[k].orderId || '');
-              const match = orders.find((o:any) => String(o.id) === String(map[k].orderId) || String(o.numero) === String(map[k].numero) || String(o.numero) === String(keyNum));
+              const match = orders.find((o:any) => {
+                try {
+                  if (String(o.id) === String(map[k].orderId)) return true;
+                  const oNum = String(o.numero || '').replace(/\D/g, '');
+                  const kNum = String(keyNum || '').replace(/\D/g, '');
+                  if (oNum && kNum && oNum === kNum) return true;
+                  if (String(o.numero) === String(keyNum)) return true;
+                } catch (e) {}
+                return false;
+              });
               if (match) map[k].date = match.data || match.date || match.created_at || match.createdAt || match.data_entrega || match.dataEntrega || '';
             } catch (e) {}
           });
