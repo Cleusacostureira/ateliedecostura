@@ -7,7 +7,7 @@ export default function NewCompraModal({ onClose, compra }: { onClose: () => voi
   const [forma, setForma] = useState('dinheiro');
   const [status, setStatus] = useState('pago');
   const [observacoes, setObservacoes] = useState('');
-  const [itens, setItens] = useState<CompraItem[]>([{ produto: '', tipo_material: '', quantidade: 1, unidade: 'un', valor_unitario: 0, valor_total: 0 }]);
+  const [itens, setItens] = useState<CompraItem[]>([{ produto: '', tipo_material: '', quantidade: 1, unidade: 'Un', valor_unitario: '', valor_total: 0 } as any]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -17,15 +17,22 @@ export default function NewCompraModal({ onClose, compra }: { onClose: () => voi
     setForma(compra.forma_pagamento || 'dinheiro');
     setStatus(compra.status || 'pago');
     setObservacoes(compra.observacoes || '');
-    const mapped = (compra.compras_itens || compra.itens || []).map((it:any) => ({ produto: it.produto || '', tipo_material: it.tipo_material || '', quantidade: Number(it.quantidade||1), unidade: it.unidade || 'un', valor_unitario: Number(it.valor_unitario||0), valor_total: Number(it.valor_total||0) }));
-    setItens(mapped.length ? mapped : [{ produto: '', tipo_material: '', quantidade: 1, unidade: 'un', valor_unitario: 0, valor_total: 0 }]);
+    const mapped = (compra.compras_itens || compra.itens || []).map((it:any) => ({ produto: it.produto || '', tipo_material: it.tipo_material || '', quantidade: Number(it.quantidade||1), unidade: it.unidade || 'Un', valor_unitario: Number(it.valor_unitario||0), valor_total: Number(it.valor_total||0) }));
+    setItens(mapped.length ? mapped : [{ produto: '', tipo_material: '', quantidade: 1, unidade: 'Un', valor_unitario: 0, valor_total: 0 }]);
   }, [compra]);
 
   function updateItem(idx: number, patch: Partial<CompraItem>) {
-    setItens((prev) => prev.map((it, i) => i === idx ? { ...it, ...patch, valor_total: (patch.quantidade ?? it.quantidade) * (patch.valor_unitario ?? it.valor_unitario) } : it));
+    setItens((prev) => prev.map((it, i) => {
+      if (i !== idx) return it;
+      const next = { ...it, ...patch } as any;
+      const q = Number(next.quantidade || 0);
+      const vu = Number(next.valor_unitario || 0);
+      next.valor_total = q * vu;
+      return next;
+    }));
   }
 
-  function addItem() { setItens((s) => [...s, { produto: '', tipo_material: '', quantidade: 1, unidade: 'un', valor_unitario: 0, valor_total: 0 }]); }
+  function addItem() { setItens((s) => [...s, { produto: '', tipo_material: '', quantidade: 1, unidade: 'Un', valor_unitario: '', valor_total: 0 } as any]); }
 
   function removeItem(idx: number) { setItens((s) => s.filter((_, i) => i !== idx)); }
 
@@ -34,10 +41,19 @@ export default function NewCompraModal({ onClose, compra }: { onClose: () => voi
   async function onSave() {
     setSaving(true);
     try {
+      const itensNormalized = (itens || []).map((it:any) => ({
+        produto: it.produto || '',
+        tipo_material: it.tipo_material || '',
+        quantidade: Number(it.quantidade) || 0,
+        unidade: it.unidade || 'un',
+        valor_unitario: Number(it.valor_unitario) || 0,
+        valor_total: Number(it.valor_total) || (Number(it.quantidade)||0) * (Number(it.valor_unitario)||0),
+      }));
+
       if (compra && compra.id) {
-        await updateCompra(compra.id, { data, fornecedor, valor_total: total, forma_pagamento: forma, status, observacoes, itens });
+        await updateCompra(compra.id, { data, fornecedor, valor_total: total, forma_pagamento: forma, status, observacoes, itens: itensNormalized });
       } else {
-        await createCompra({ data, fornecedor, valor_total: total, forma_pagamento: forma, status, observacoes, itens });
+        await createCompra({ data, fornecedor, valor_total: total, forma_pagamento: forma, status, observacoes, itens: itensNormalized });
       }
       onClose();
     } catch (e) { console.error(e); alert('Erro ao salvar compra'); }
@@ -72,17 +88,23 @@ export default function NewCompraModal({ onClose, compra }: { onClose: () => voi
                 <div className="text-sm font-medium">Item {idx+1}</div>
                 <button className="text-red-500 text-sm" onClick={() => removeItem(idx)}>Remover</button>
               </div>
-              <div>
+                <div>
                 <input placeholder="Produto / descrição" className="input" value={it.produto} onChange={(e) => updateItem(idx, { produto: e.target.value })} />
               </div>
               <div className="grid grid-cols-3 gap-2">
-                <input placeholder="Valor unitário" type="number" className="input" value={it.valor_unitario} onChange={(e) => updateItem(idx, { valor_unitario: Number(e.target.value) })} />
-                <input placeholder="Quantidade" type="number" className="input" value={it.quantidade} onChange={(e) => updateItem(idx, { quantidade: Number(e.target.value) })} />
-                <input placeholder="Unidade" className="input" value={it.unidade} onChange={(e) => updateItem(idx, { unidade: e.target.value })} />
+                <input placeholder="Valor" type="number" inputMode="decimal" className="input" value={it.valor_unitario as any} onChange={(e) => updateItem(idx, { valor_unitario: e.target.value as any })} />
+                <input placeholder="Quantidade" type="number" className="input" value={it.quantidade as any} onChange={(e) => updateItem(idx, { quantidade: Number(e.target.value) })} />
+                <select className="input" value={it.unidade} onChange={(e) => updateItem(idx, { unidade: e.target.value })}>
+                  <option value="Un">Un</option>
+                  <option value="MT">MT</option>
+                  <option value="Rolo">Rolo</option>
+                  <option value="Kg">Kg</option>
+                  <option value="Cm">Cm</option>
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <input placeholder="Tipo / categoria" className="input" value={it.tipo_material} onChange={(e) => updateItem(idx, { tipo_material: e.target.value })} />
-                <div className="flex items-center justify-end">R$ {it.valor_total?.toFixed(2)}</div>
+                <div className="flex items-center justify-end">R$ {(Number(it.valor_total) || 0).toFixed(2)}</div>
               </div>
             </div>
           ))}
