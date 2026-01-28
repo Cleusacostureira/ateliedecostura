@@ -240,10 +240,12 @@ export default function DashboardPage() {
           let allExpenses = 0;
           const monthsExpenses = new Array(12).fill(0);
           // read fluxo_caixa from server if available
+          let fcData: any[] = [];
           try {
             if (supabase && typeof supabase.from === 'function') {
               const fc = await supabase.from('fluxo_caixa').select('*');
               if (!(fc as any).error && Array.isArray((fc as any).data)) {
+                fcData = (fc as any).data;
                 (fc as any).data.forEach((r:any) => {
                   try {
                     const v = parseCurrency(r.value ?? r.valor ?? 0) || 0;
@@ -265,15 +267,18 @@ export default function DashboardPage() {
             const compras = await listCompras();
             if (Array.isArray(compras)) {
               compras.forEach((c:any) => {
-                try {
-                  const v = parseCurrency(c.valor_total ?? c.valor ?? c.value ?? 0) || 0;
-                  const d = c.data || c.created_at || '';
-                  const dt = d && typeof d === 'string' && d.includes('/') ? (():Date=>{ const p = (d||'').split('/'); return new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0])); })() : new Date(d || null);
-                  const month = dt && !isNaN(dt.getTime()) ? dt.getMonth() : null;
-                  if (month !== null) monthsExpenses[month] += v;
-                  allExpenses += v;
-                } catch(_){ }
-              });
+                  try {
+                    // skip compra if there is already a linked fluxo_caixa entry (linked via orderid)
+                    const hasFc = fcData && Array.isArray(fcData) && fcData.some((f:any) => String(f.orderid || f.orderId || f.id) === String(c.id));
+                    if (hasFc) return; // avoid double-counting compras that already created a fluxo_caixa row
+                    const v = parseCurrency(c.valor_total ?? c.valor ?? c.value ?? 0) || 0;
+                    const d = c.data || c.created_at || '';
+                    const dt = d && typeof d === 'string' && d.includes('/') ? (():Date=>{ const p = (d||'').split('/'); return new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0])); })() : new Date(d || null);
+                    const month = dt && !isNaN(dt.getTime()) ? dt.getMonth() : null;
+                    if (month !== null) monthsExpenses[month] += v;
+                    allExpenses += v;
+                  } catch(_){ }
+                });
             }
           } catch(_){ }
 

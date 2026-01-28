@@ -113,6 +113,24 @@ export async function getClientById(id: string) {
 export async function upsertClient(c: Cliente) {
   try {
     if (supabase && typeof supabase.from === 'function') {
+      // Prevent duplicate clients on create: try to find by telefone or cpf
+      if (!c.id) {
+        try {
+          if (c.cpf) {
+            const q = await supabase.from('clientes').select('id').eq('cpf_cnpj', c.cpf).limit(1).maybeSingle();
+            if (!(q as any).error && (q as any).data) throw new Error('Cliente já cadastrado');
+          }
+          if (c.telefone) {
+            const phoneNorm = String(c.telefone).replace(/\D/g, '');
+            // attempt an ilike search as phone formatting may vary
+            const r = await supabase.from('clientes').select('id,telefone').ilike('telefone', `%${phoneNorm}%`).limit(1).maybeSingle();
+            if (!(r as any).error && (r as any).data) throw new Error('Cliente já cadastrado');
+          }
+        } catch (e) {
+          if ((e as any)?.message === 'Cliente já cadastrado') throw e;
+          // otherwise ignore lookup failures and continue to upsert path
+        }
+      }
       const payload = {
         nome: c.nome,
         telefone: c.telefone || null,
@@ -140,6 +158,11 @@ export async function upsertClient(c: Cliente) {
   const exists = clients.findIndex(x => String(x.id) === String(c.id));
   const now = new Date().toLocaleDateString('pt-BR');
   const toSave = { pontos: 0, totalGasto: 0, servicosRealizados: 0, status: 'ativo', createdAt: now, ...c } as Cliente;
+  // local duplicate protection when creating
+  if (!c.id) {
+    const dup = clients.find(x => (x.cpf && c.cpf && String(x.cpf) === String(c.cpf)) || (x.telefone && c.telefone && String(x.telefone).replace(/\D/g,'') === String(c.telefone).replace(/\D/g,'')));
+    if (dup) throw new Error('Cliente já cadastrado');
+  }
   if (exists >= 0) {
     clients[exists] = { ...clients[exists], ...toSave };
   } else {

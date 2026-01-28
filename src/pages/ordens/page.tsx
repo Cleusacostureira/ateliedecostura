@@ -8,19 +8,6 @@ import { supabase } from '../../lib/supabaseClient';
 import { debugLog } from '../../lib/debugLogger';
 import { safeSetItem } from '../../lib/storageHelpers';
 
-// small constants used by the piece/color pickers when DB lists are missing
-const COLORS = ['Preta','Branca','Azul','Vermelha','Verde','Amarela','Rosa','Bege','Cinza','Marrom'];
-const DEFAULT_PECAS = [
-  { id: 'calca', nome: 'Calça', icone: '👖', categoria: 'calcas' },
-  { id: 'camisa', nome: 'Camisa', icone: '👕', categoria: 'camisas' },
-  { id: 'vestido', nome: 'Vestido', icone: '👗', categoria: 'vestidos' },
-];
-
-// runtime flag to avoid repeated failing requests when the `fluxo_caixa` table is missing
-const isFluxoAvailable = () => !((window as any).__fluxoCaixaMissing === true);
-const markFluxoMissing = () => { (window as any).__fluxoCaixaMissing = true; console.info('fluxo_caixa table missing — falling back to localStorage'); };
-
-// Normalize various status representations into canonical display strings
 const normalizeStatus = (s: any) => {
   try {
     if (s === null || s === undefined) return 'Recebido';
@@ -89,6 +76,23 @@ const getCashMap = () => {
   } catch (e) { return 0; }
 }
 
+const isLocalId = (id: any) => {
+  try { return String(id || '').startsWith('local-'); } catch (_) { return false; }
+};
+
+const safeUpdateOrder = async (payload: any, id: any) => {
+  try {
+    if (isLocalId(id)) {
+      console.info('safeUpdateOrder: skipping server update for local id', id);
+      return null;
+    }
+    if (supabase && typeof supabase.from === 'function') {
+      return await supabase.from('ordens').update(payload).eq('id', id);
+    }
+  } catch (e) { console.warn('safeUpdateOrder failed', e); }
+  return null;
+};
+
 // safely read `orders` from localStorage; supports forced write shape { __force: true, payload: [...] }
 const readOrdersFromStorage = (rawStr?: string) => {
   try {
@@ -150,6 +154,7 @@ export default function OrdensPage() {
     // small UI inputs
     const [statusFilter, setStatusFilter] = useState('Todos');
     const [statusSelection, setStatusSelection] = useState<any>(null);
+    const [pinnedIds, setPinnedIds] = useState<string[]>([]);
     const [selectedMaterialId, setSelectedMaterialId] = useState<any>(null);
     const [materialPrice, setMaterialPrice] = useState('');
     const [fidelizacaoMessage, setFidelizacaoMessage] = useState('');
@@ -219,7 +224,6 @@ export default function OrdensPage() {
           await navigator.clipboard.writeText(txt);
           alert('Debug copiado para a área de transferência. Cole aqui a mensagem.');
         } else {
-          // fallback: open new window with the JSON so user can long-press to copy on mobile
           const w = window.open('', '_blank');
           if (w) { w.document.write('<pre>' + txt.replace(/</g, '&lt;') + '</pre>'); w.document.close(); }
           alert('Abra a nova aba e copie o JSON.');
@@ -227,38 +231,20 @@ export default function OrdensPage() {
       } catch (e) { alert('Falha ao exportar debug: ' + String(e)); }
     };
 
-      const fetchDebugInfo = async () => {
+    const syncFromServer = () => {
+      try {
+        // Avoid removing `orders` and `cashFlowDetails` from localStorage here
+        // as that causes UI flicker (temporary empty state). Only clear transient keys.
+        const keysToClear = ['lastQuickTap', 'deletedOrders', 'retiradoTaps'];
+        keysToClear.forEach(k => { try { localStorage.removeItem(k); } catch(_){} });
+        try { showToast('Sincronização iniciada'); } catch(_){ }
         try {
-          const localOrders = readOrdersFromStorage();
-          const localCash = getCashMap();
-          let serverOrders: any = null;
-          try {
-            if (supabase && typeof supabase.from === 'function') {
-              const r = await supabase.from('ordens').select('*').limit(500);
-              if ((r as any).error) serverOrders = { error: (r as any).error };
-              else serverOrders = (r as any).data;
-            }
-          } catch (e) { serverOrders = { error: String(e) }; }
-          setDebugInfo({ localOrders, localCash, serverOrders });
-        } catch (e) {
-          setDebugInfo({ error: String(e) });
-        }
-      };
-
-            const syncFromServer = () => {
-              try {
-                // Avoid removing `orders` and `cashFlowDetails` from localStorage here
-                // as that causes UI flicker (temporary empty state). Only clear transient keys.
-                const keysToClear = ['lastQuickTap', 'deletedOrders', 'retiradoTaps'];
-                keysToClear.forEach(k => { try { localStorage.removeItem(k); } catch(_){} });
-                try { showToast('Sincronização iniciada'); } catch(_){ }
-                try {
-                  // trigger server refetches; listeners should reconcile without being wiped
-                  window.dispatchEvent(new CustomEvent('refetchOrdersFromServer'));
-                  window.dispatchEvent(new CustomEvent('ordersUpdated'));
-                  window.dispatchEvent(new CustomEvent('financeUpdated'));
-                } catch(_){ }
-              } catch (e) { console.warn('syncFromServer failed', e); }
+          // trigger server refetches; listeners should reconcile without being wiped
+          window.dispatchEvent(new CustomEvent('refetchOrdersFromServer'));
+          window.dispatchEvent(new CustomEvent('ordersUpdated'));
+          window.dispatchEvent(new CustomEvent('financeUpdated'));
+        } catch(_){ }
+      } catch (e) { console.warn('syncFromServer failed', e); }
             };
     const [editDateIn, setEditDateIn] = useState('');
     const [editDateOut, setEditDateOut] = useState('');
@@ -930,7 +916,7 @@ export default function OrdensPage() {
     (async () => {
       try {
         if (supabase && typeof supabase.from === 'function') {
-          await supabase.from('ordens').update({ paymentStatus: 'Pago' }).eq('id', selectedOrder.id);
+          await safeUpdateOrder({ paymentStatus: 'Pago' }, selectedOrder.id);
         }
       } catch (e) { console.warn('Failed to persist advance payment to Supabase', e); }
 
@@ -1503,13 +1489,13 @@ export default function OrdensPage() {
       const next = orders.map(o => o.id === order.id ? updatedOrder : o);
       setOrders(next);
       try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
-      (async () => {
-        try {
-          if (supabase && typeof supabase.from === 'function') {
-            await supabase.from('ordens').update({ status: updatedOrder.status, paymentStatus: updatedOrder.paymentStatus }).eq('id', updatedOrder.id);
-          }
-        } catch (e) { console.warn('Failed to persist order status to Supabase', e); }
-      })();
+        (async () => {
+      try {
+        if (supabase && typeof supabase.from === 'function') {
+          await safeUpdateOrder({ status: updatedOrder.status, paymentStatus: updatedOrder.paymentStatus }, updatedOrder.id);
+        }
+      } catch (e) { console.warn('Failed to persist order status to Supabase', e); }
+    })();
 
       // Mensagem de agradecimento simples (remover informações de cobrança/PIX)
       setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\nEsperamos que tenha ficado perfeita! Conte sempre conosco para seus ajustes e costuras.\n\nAté a próxima! ✨`);
@@ -1723,7 +1709,7 @@ export default function OrdensPage() {
         const next = orders.map(o => o.id === order.id ? updatedOrder : o);
         setOrders(next);
         try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
-        (async () => { try { if (supabase && typeof supabase.from === 'function') await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id); } catch(e){console.warn('Failed to persist quick status to Supabase', e);} })();
+        (async () => { try { if (supabase && typeof supabase.from === 'function') await safeUpdateOrder({ status: updatedOrder.status }, updatedOrder.id); } catch(e){console.warn('Failed to persist quick status to Supabase', e);} })();
         // mensagem de agradecimento e pontos
         setFidelizacaoMessage(`Olá ${order.client}! 💝\n\n*Cleusa Ateliê de Costura*\n\nObrigada por retirar sua peça!\n\n✅ *Pagamento já realizado!*\n\nEsperamos que tenha ficado perfeita!`);
         setClientePhone(order.phone);
@@ -1754,11 +1740,22 @@ export default function OrdensPage() {
     const updatedOrder = { ...order, status: newStatus };
     const next = orders.map(o => o.id === order.id ? updatedOrder : o);
     setOrders(next);
+    // If current filter would hide the order after status change, pin it temporarily so it doesn't disappear
+    try {
+      if (statusFilter !== 'Todos' && newStatus !== statusFilter) {
+        const idStr = String(order.id);
+        setPinnedIds(prev => Array.from(new Set([...(prev||[]), idStr])));
+        // remove pin after 10 seconds
+        setTimeout(() => {
+          try { setPinnedIds(prev => (prev || []).filter(p => p !== idStr)); } catch(_){}
+        }, 10000);
+      }
+    } catch (e) {}
     try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: next })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
     (async () => {
       try {
         if (supabase && typeof supabase.from === 'function') {
-          const resp = await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id);
+          const resp = await safeUpdateOrder({ status: updatedOrder.status }, updatedOrder.id);
             try {
             const existing = localStorage.getItem('retiradoTaps');
             const arr = existing ? JSON.parse(existing) : [];
@@ -2060,7 +2057,9 @@ export default function OrdensPage() {
     const term = (searchTerm || '').toLowerCase();
     const matchesSearch = !term || order.client.toLowerCase().includes(term) || order.service.toLowerCase().includes(term) || order.id.toLowerCase().includes(term);
     // Por padrão (Todos) não exibimos ordens já retiradas — elas ficam na página de entregues
-    const matchesStatus = statusFilter === 'Todos' ? order.status !== 'Retirado' : order.status === statusFilter;
+    const matchesStatus = statusFilter === 'Todos'
+      ? order.status !== 'Retirado'
+      : (order.status === statusFilter || (pinnedIds || []).includes(String(order.id)));
     return matchesSearch && matchesStatus;
   });
 
@@ -2371,6 +2370,7 @@ export default function OrdensPage() {
               <i className="ri-add-line text-xl w-5 h-5 flex items-center justify-center"></i>
               Nova Ordem
             </button>
+            {/* botão 'Trazer Em costura do banco' removido */}
           </div>
           <div className="flex flex-wrap gap-2 mb-6 items-center">
             {Object.entries(statusCounts).map(([status, count]) => {

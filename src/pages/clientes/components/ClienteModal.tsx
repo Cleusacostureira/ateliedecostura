@@ -4,7 +4,7 @@ interface ClienteModalProps {
   isOpen: boolean;
   onClose: () => void;
   cliente?: any;
-  onSave: (cliente: any) => void;
+  onSave: (cliente: any) => Promise<boolean | void> | boolean | void;
 }
 
 export default function ClienteModal({ isOpen, onClose, cliente, onSave }: ClienteModalProps) {
@@ -27,7 +27,7 @@ export default function ClienteModal({ isOpen, onClose, cliente, onSave }: Clien
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const formData = new FormData(e.target as HTMLFormElement);
     const clienteData = {
@@ -46,8 +46,15 @@ export default function ClienteModal({ isOpen, onClose, cliente, onSave }: Clien
       status: status,
       createdAt: createdAt,
     };
-    onSave(clienteData);
-    onClose();
+    try {
+      const res = await onSave(clienteData as any);
+      // if onSave returns false explicitly, don't close
+      if (res === false) return;
+      onClose();
+    } catch (err: any) {
+      // if save failed (e.g., duplicate), keep modal open and show alert
+      try { alert(err?.message || 'Falha ao salvar cliente'); } catch(e){}
+    }
   };
 
   return (

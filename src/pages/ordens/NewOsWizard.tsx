@@ -61,7 +61,7 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
   const formatFidelizacaoMessage = (o: any) => {
     try {
       const cliente = o?.cliente || o?.client || selectedClient?.nome || '';
-      const numero = o?.numero || '';
+      const numero = o?.numero || '—';
       const servicesText = (o?.pieces || []).flatMap((p:any) => (p.services||[]).map((s:any) => s.name || s.titulo || s.title || '')).join(', ') || '-';
       const total = Number(o?.total || 0).toFixed(2);
       const dataRetirada = o?.dateOut ? formatDate(o.dateOut) : '-';
@@ -420,34 +420,10 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
     if (isSubmitting) return;
     setIsSubmitting(true);
     // generate sequential numero: try Supabase latest, fallback to localStorage
-    let numero = 'N00001';
-    try {
-      const res = await supabase.from('ordens').select('numero').order('created_at', { ascending: false }).limit(1);
-      if (!(res as any).error && Array.isArray((res as any).data) && (res as any).data.length > 0) {
-        const last = (res as any).data[0].numero || '';
-        const m = String(last).match(/(\d+)$/);
-        const next = m ? (parseInt(m[1],10) + 1) : 1;
-        numero = 'N' + String(next).padStart(5,'0');
-      } else {
-        // fallback to localStorage
-        try {
-          const arr = readOrdersFromStorage();
-          let max = 0;
-          (arr || []).forEach((o:any) => {
-            try { const m = String(o.numero||'').match(/(\d+)$/); if (m) max = Math.max(max, Number(m[1])); } catch(_){}
-          });
-          numero = 'N' + String(max+1).padStart(5,'0');
-        } catch(_) { numero = 'N00001'; }
-      }
-    } catch (e) {
-      // ignore and fallback
-      try {
-        const arr = readOrdersFromStorage();
-        let max = 0;
-        (arr || []).forEach((o:any) => { try { const m = String(o.numero||'').match(/(\d+)$/); if (m) max = Math.max(max, Number(m[1])); } catch(_){} });
-        numero = 'N' + String(max+1).padStart(5,'0');
-      } catch(_) { numero = 'N00001'; }
-    }
+    // Do not precompute or display a client-side `numero` here.
+    // The database sequence (`ordens_numero_seq`) is authoritative and will assign the canonical value.
+    // Set numero undefined locally so the UI shows a placeholder until the server returns the created row.
+    let numero: any = undefined;
 
     // keep dates as local date strings (YYYY-MM-DD) to avoid timezone shift
     if (!tempOrderIdRef.current) tempOrderIdRef.current = `local-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
@@ -502,10 +478,35 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
         // explicitly set status to avoid DB defaulting to 'draft'
         status: 'Recebido'
       };
-      const numericNumero = normalizeNumero(order.numero);
-      if (numericNumero !== undefined) insertObj.numero = numericNumero;
+      // Do not send `numero` to the server: let DB sequence (`ordens_numero_seq`) assign a unique value
+      // (sending a client-generated numero causes duplicate-key conflicts when sequence advanced server-side)
 
-      const { data, error } = await supabase.from('ordens').insert([insertObj]).select();
+      let data: any = null;
+      let error: any = null;
+      // Try insert with retries on duplicate-key (23505) which can happen when DB sequence
+      // is temporarily out of sync. Retry a few times with small backoff.
+      const maxAttempts = 4;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const res = await supabase.from('ordens').insert([insertObj]).select();
+          data = (res as any).data;
+          error = (res as any).error;
+          if (!error) break; // success
+          // If duplicate numero conflict, wait and retry
+          const code = (error as any)?.code || (error as any)?.status || '';
+          const msg = (error as any)?.message || '';
+          if (String(code) === '23505' || String(msg).toLowerCase().includes('duplicate key') || String(msg).toLowerCase().includes('ordens_numero_key')) {
+            // small backoff
+            await new Promise(r => setTimeout(r, 250 * attempt));
+            continue;
+          }
+          // non-retryable error
+          break;
+        } catch (e) {
+          error = e;
+          await new Promise(r => setTimeout(r, 200 * attempt));
+        }
+      }
       if (error) {
         const errPayload = {
           message: (error as any)?.message || String(error),
@@ -518,6 +519,8 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
         };
         try { console.error('supabase ordens insert error:', errPayload); } catch(e){}
         try { localStorage.setItem('lastServerError', JSON.stringify(errPayload)); } catch(e){}
+        // notify user of failure
+        try { alert('Falha ao criar OS no servidor. A OS foi salva localmente e será sincronizada depois.'); } catch(_){}
       } else if (Array.isArray(data) && data[0]) {
         // server returned created row; merge it into local storage replacing the temp order
         const serverRow = data[0];
@@ -577,6 +580,57 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
           } catch (ee) { /* ignore dedupe errors */ }
           try { safeSetItem('orders', arr, 'ordersUpdated', 'NewOsWizard'); } catch(e){}
           try { window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(e){}
+          // Try to fix any local cashFlowDetails entries that were created earlier
+          try {
+            const serverNumRaw = serverRow && serverRow.numero ? String(serverRow.numero) : '';
+            const normalizedKeyRaw = serverNumRaw.replace(/\D/g,'');
+            const normalizedNum = normalizedKeyRaw ? Number(normalizedKeyRaw) : null;
+            const formattedNum = normalizedNum !== null ? 'N' + String(normalizedNum).padStart(5,'0') : null;
+            const rawCash = localStorage.getItem('cashFlowDetails');
+            const parsedCash = rawCash ? JSON.parse(rawCash) : [];
+            const orderCreatedMs = serverRow && serverRow.created_at ? new Date(serverRow.created_at).getTime() : (order.created_at ? new Date(order.created_at).getTime() : Date.now());
+            let changed = false;
+            (parsedCash || []).forEach((c:any) => {
+              try {
+                const cClient = String(c.client || '').trim();
+                const cVal = Number(c.value || c.valor || 0);
+                const oVal = Number(order.paidAmount || order.total || 0);
+                const cDateMs = c && c.date ? (new Date(c.date).getTime() || 0) : (c.created_at ? (new Date(c.created_at).getTime() || 0) : 0);
+                const createdDiff = Math.abs((cDateMs || 0) - (orderCreatedMs || 0));
+                if ((!c.orderId && !c.orderid) && (!c.numero || c.numero === null || String(c.numero).trim() === '')) {
+                  if (cClient && String(serverRow.cliente || serverRow.client || '').trim() && String(cClient) === String(serverRow.cliente || serverRow.client || '') && Math.abs((cVal || 0) - (oVal || 0)) < 0.01 && createdDiff < 30000) {
+                    c.orderid = serverRow.id;
+                    if (normalizedNum !== null) c.numero = normalizedNum;
+                    if (c.service && typeof c.service === 'string' && formattedNum) {
+                      // append formatted number if not already present
+                      if (!c.service.includes(formattedNum)) c.service = c.service.trim().replace(/\s*—\s*N?\d+$/, '') + ' — ' + formattedNum;
+                    }
+                    changed = true;
+                  }
+                }
+              } catch (_) {}
+            });
+            if (changed) {
+              try { safeSetItem('cashFlowDetails', parsedCash, 'financeUpdated', 'NewOsWizard.postMerge'); } catch(e){ localStorage.setItem('cashFlowDetails', JSON.stringify(parsedCash)); }
+            }
+            // Best-effort: update server fluxo_caixa entries that match (orderid null)
+            try {
+              if (normalizedNum !== null && supabase && typeof supabase.from === 'function') {
+                const q = await supabase.from('fluxo_caixa').select('*').ilike('client', `%${(serverRow.cliente||serverRow.client||'').toString().slice(0,30)}%`).eq('value', Number(order.paidAmount || order.total || 0)).limit(5);
+                if (!(q as any).error && Array.isArray((q as any).data)) {
+                  const candidates = (q as any).data || [];
+                  for (const cand of candidates) {
+                    try {
+                      if ((!cand.orderid || cand.orderid === null) && (!cand.numero || cand.numero === null)) {
+                        await supabase.from('fluxo_caixa').update({ orderid: serverRow.id, numero: normalizedNum }).eq('id', cand.id);
+                        break;
+                      }
+                    } catch (ee) { /* ignore */ }
+                  }
+                }
+              }
+            } catch (ee) { /* ignore */ }
+          } catch (ee) { /* ignore */ }
         } catch(e) { /* ignore local update errors */ }
       }
 
@@ -584,15 +638,20 @@ export default function NewOsWizard({ onClose, onCreated } : { onClose: ()=>void
       try {
         // build services text from pieces.services
         const servicesText = (order.pieces || []).flatMap((p:any) => (p.services||[]).map((s:any) => s.name || s.titulo || s.title || s.name)).join(', ');
+        // prefer canonical number from server (finalOrder), then from returned data, then local order
+        const rawNumero = (finalOrder && finalOrder.numero) || ((Array.isArray(data) && data[0] && data[0].numero) ? data[0].numero : order.numero);
+        const normalizedNumero = (() => { const n = normalizeNumero(rawNumero); return n !== undefined ? n : null; })();
+        const formattedNumero = (() => { try { if (normalizedNumero !== null && normalizedNumero !== undefined) return 'N' + String(normalizedNumero).padStart(5, '0'); return null; } catch (e) { return null; } })();
+
         const fluxoObj: any = {
           date: order.dateIn,
           client: order.cliente,
-          service: servicesText || 'OS',
+          service: (servicesText || 'OS') + (formattedNumero ? ` — ${formattedNumero}` : ''),
           // ensure numeric value
           value: Number(Number(order.paidAmount || order.total || 0).toFixed(2)),
           status: order.paymentStatus === 'Pago' ? 'Pago' : 'Não pago',
           // normalize numero for fluxo_caixa to avoid bigint parse errors
-          numero: (() => { const n = normalizeNumero(order.numero); return n !== undefined ? n : null; })(),
+          numero: normalizedNumero,
           pecas: order.pieces
         };
         if (insertedId) fluxoObj.orderid = insertedId;

@@ -122,26 +122,45 @@ export default function ClientesPage() {
 
   const confirmDelete = () => {
     (async () => {
-      try {
-        if (selectedCliente?.id) await deleteClient(String(selectedCliente.id));
-      } catch (e) { console.warn('delete client failed', e); }
-      const list = await loadClients();
-      setClientes(list || []);
+      if (!selectedCliente?.id) return;
+      const id = String(selectedCliente.id);
+      // optimistic UI: remove immediately
+      setClientes(prev => (prev || []).filter(c => String(c.id) !== id));
       setShowDeleteModal(false);
       setSelectedCliente(null);
+      try {
+        await deleteClient(id);
+        // refresh from server/fallback to ensure consistency
+        const list = await loadClients();
+        setClientes(list || []);
+        try { window.dispatchEvent(new CustomEvent('clientsUpdated')); } catch(_){}
+      } catch (e) {
+        console.warn('delete client failed', e);
+        alert('Falha ao excluir cliente');
+        const list = await loadClients();
+        setClientes(list || []);
+      }
     })();
   };
 
   const handleSave = (clienteData: any) => {
-    (async () => {
+    return (async () => {
       try {
         await upsertClient(clienteData as any);
         alert('Cliente Cadastrado com Sucesso');
-      } catch (e) { console.warn('upsert client failed', e); }
-      const list = await loadClients();
-      setClientes(list || []);
-      setSelectedCliente(null);
-      setShowModal(false);
+        const list = await loadClients();
+        setClientes(list || []);
+        setSelectedCliente(null);
+        return true;
+      } catch (e: any) {
+        if (e?.message === 'Cliente já cadastrado') {
+          alert('Já existe um cliente com esse telefone/CPF.');
+          return false;
+        }
+        console.warn('upsert client failed', e);
+        alert('Falha ao salvar cliente');
+        return false;
+      }
     })();
   };
 
