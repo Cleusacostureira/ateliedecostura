@@ -1345,7 +1345,35 @@ export default function OrdensPage() {
       priority: 'normal'
     };
 
-    const newOrdersList = [...orders, newOrder];
+    // Avoid creating duplicate orders: try to match existing by server id, numero or a fingerprint
+    let newOrdersList: any[] = [];
+    try {
+      const findIdx = (orders || []).findIndex((o: any) => {
+        try {
+          if (!o) return false;
+          if (savedId && String(o.id) === String(savedId)) return true;
+          const oNum = String(o.numero || '').replace(/\D/g, '');
+          const dispNum = String(displayNumber || '').replace(/\D/g, '');
+          if (oNum && dispNum && oNum === dispNum) return true;
+          const oClient = String(o.client || o.nome || o.cliente || '');
+          const oValue = (window as any).parseCurrency ? (window as any).parseCurrency(o.value ?? o.total ?? 0) : Number(String(o.value ?? o.total ?? 0).replace(/[^0-9.-]/g, '')) || 0;
+          const newValue = Number(totalValue) || 0;
+          const oDateOut = String(o.dateOut || o.data || '').trim();
+          const newDateOut = String(formatDate(newOrderDate) || '').trim();
+          if (oClient && oClient === clientName && Math.abs(Number(oValue) - Number(newValue)) < 0.01 && oDateOut === newDateOut) return true;
+        } catch (e) { }
+        return false;
+      });
+      if (findIdx >= 0) {
+        const updated = (orders || []).slice();
+        updated[findIdx] = { ...updated[findIdx], ...newOrder, id: savedId || updated[findIdx].id, numero: displayNumber || updated[findIdx].numero };
+        newOrdersList = updated;
+      } else {
+        newOrdersList = [...orders, newOrder];
+      }
+    } catch (e) {
+      newOrdersList = [...orders, newOrder];
+    }
     setOrders(newOrdersList);
     try { safeSetItem('orders', newOrdersList, 'ordersUpdated', 'OrdensPage'); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch (e) { try { localStorage.setItem('orders', JSON.stringify({ __force: true, payload: newOrdersList })); window.dispatchEvent(new CustomEvent('ordersUpdated')); } catch(__){} }
 
@@ -1387,17 +1415,38 @@ export default function OrdensPage() {
           throw (r as any).error;
         }
         // persist locally for immediate UI reflection, then notify financeiro
-        try {
-          if (!(r as any).error) {
             try {
-              const resp = (r as any).data && (r as any).data[0] ? (r as any).data[0] : serverCashEntry;
-              const rawLocal = localStorage.getItem('cashFlowDetails');
-              const parsedLocal = rawLocal ? JSON.parse(rawLocal) : [];
-              parsedLocal.unshift(resp);
-              try { safeSetItem('cashFlowDetails', parsedLocal, 'financeUpdated', 'OrdensPage'); } catch(e){}
-            } catch (ee) {}
-          }
-        } catch (eee) {}
+              if (!(r as any).error) {
+                try {
+                  const resp = (r as any).data && (r as any).data[0] ? (r as any).data[0] : serverCashEntry;
+                  const rawLocal = localStorage.getItem('cashFlowDetails');
+                  const parsedLocal = rawLocal ? JSON.parse(rawLocal) : [];
+                  try {
+                    const respOrderId = String(resp.orderId || resp.orderid || resp.id || '');
+                    const respNumero = String(resp.numero || '').replace(/\D/g, '');
+                    const existsIdx = (parsedLocal || []).findIndex((c:any) => {
+                      try {
+                        if (!c) return false;
+                        if (String(c.id) && String(c.id) === String(resp.id)) return true;
+                        const cOrder = String(c.orderId || c.orderid || '');
+                        if (cOrder && respOrderId && String(cOrder) === respOrderId) return true;
+                        const cNum = String(c.numero || c.id || '').replace(/\D/g, '');
+                        if (cNum && respNumero && cNum === respNumero) return true;
+                        return false;
+                      } catch (_) { return false; }
+                    });
+                    if (existsIdx >= 0) {
+                      parsedLocal[existsIdx] = { ...parsedLocal[existsIdx], ...resp };
+                    } else {
+                      parsedLocal.unshift(resp);
+                    }
+                  } catch (ee) {
+                    parsedLocal.unshift(resp);
+                  }
+                  try { safeSetItem('cashFlowDetails', parsedLocal, 'financeUpdated', 'OrdensPage'); } catch(e){}
+                } catch (ee) {}
+              }
+            } catch (eee) {}
         try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch (e) {}
       } else {
         throw new Error('no-supabase-or-fluxo-missing');
