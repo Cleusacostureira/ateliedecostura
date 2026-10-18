@@ -1,14 +1,16 @@
 import { createPortal } from 'react-dom';
 import { dataCurta, dataLocal, dinheiro, telefoneBonito } from '../../data/formato';
 import type { Cliente, Ordem } from '../../data/types';
+import { useAtelie } from '../../data/config';
 
 /** Comprovante para imprimir (fica escondido na tela; só aparece na impressão). */
 export default function Comprovante({ ordem, cliente }: { ordem: Ordem; cliente?: Cliente }) {
+  const c = useAtelie();
   return createPortal(
     <div id="print-area" className="hidden print:block text-black" style={{ fontFamily: 'Inter, sans-serif', fontSize: 12, padding: 16, maxWidth: 380 }}>
       <div style={{ textAlign: 'center', borderBottom: '1px dashed #999', paddingBottom: 8, marginBottom: 8 }}>
-        <div style={{ fontFamily: '"Playfair Display", serif', fontSize: 20 }}>Cleusa Ateliê de Costura</div>
-        <div>Fone/WhatsApp: (45) 99912-6130</div>
+        <div style={{ fontFamily: '"Playfair Display", serif', fontSize: 20 }}>{c.nome}</div>
+        <div>Fone/WhatsApp: {c.telefone}</div>{c.endereco && <div>{c.endereco}</div>}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 700 }}>
         <span>OS Nº {ordem.numero}</span><span>{dataLocal(ordem.criadaEm)}</span>
@@ -34,7 +36,7 @@ export default function Comprovante({ ordem, cliente }: { ordem: Ordem; cliente?
       </div>
       <div style={{ marginTop: 4 }}>Pagamento: {ordem.pago ? 'PAGO' : 'A RECEBER'}</div>
       {ordem.observacoes && <div style={{ marginTop: 6 }}>Obs.: {ordem.observacoes}</div>}
-      <div style={{ marginTop: 10, fontSize: 11 }}>PIX: Cleusa Belani David · Tel. 45 99912-6130</div>
+      <div style={{ marginTop: 10, fontSize: 11 }}>PIX: {c.pixNome} · {c.pixChave}</div>
       <div style={{ textAlign: 'center', marginTop: 12 }}>Obrigada pela preferência! ✂️</div>
     </div>,
     document.body,

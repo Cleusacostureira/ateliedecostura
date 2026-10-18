@@ -143,7 +143,7 @@ export function Indicador({ rotulo, valor, anterior, formato = 'brl', icone, des
   }
   const Tag: any = onClick ? 'button' : 'div';
   return (
-    <Tag onClick={onClick} className={cx('text-left rounded-2xl border p-4 transition-all', destaque ? 'bg-at-wine border-at-wine text-white shadow-lift' : 'bg-white border-at-line shadow-soft', onClick && 'hover:shadow-lift cursor-pointer', ativo && !destaque && 'ring-2 ring-at-rose')}>
+    <Tag onClick={onClick} className={cx('w-full text-left rounded-2xl border p-4 transition-all', destaque ? 'bg-at-wine border-at-wine text-white shadow-lift' : 'bg-white border-at-line shadow-soft', onClick && 'hover:shadow-lift cursor-pointer', ativo && !destaque && 'ring-2 ring-at-rose')}>
       <div className={cx('flex items-center gap-2 text-xs font-medium', destaque ? 'text-white/80' : 'text-at-muted')}>{icone}{rotulo}</div>
       <div className={cx('font-display text-2xl mt-1.5 tabular-nums', destaque ? 'text-white' : 'text-at-ink')}>{fmt(valor)}</div>
       {(variacao || rodape) && <div className={cx('text-xs mt-1', destaque && '[&_*]:!text-white/85 text-white/85')}>{variacao}{variacao && rodape ? ' · ' : ''}{rodape}</div>}

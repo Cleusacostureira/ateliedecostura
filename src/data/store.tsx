@@ -3,6 +3,7 @@ import { carregarCatalogo, carregarClientes, carregarOrdens } from './db';
 import type { Cliente, Ordem, PecaCatalogo, ServicoCatalogo } from './types';
 import { safeSetItem } from '../lib/storageHelpers';
 import { dataCurta } from './formato';
+import { sincronizarConfig } from './config';
 
 type Estado = {
   clientes: Cliente[];
@@ -51,7 +52,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  useEffect(() => { recarregar(); }, [recarregar]);
+  useEffect(() => { recarregar(); sincronizarConfig(); }, [recarregar]);
 
   // Ao voltar para o app (outra aba/aparelho pode ter mudado algo), atualiza
   useEffect(() => {

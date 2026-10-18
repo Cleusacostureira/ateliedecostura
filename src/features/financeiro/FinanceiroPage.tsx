@@ -10,17 +10,17 @@ import { dataCurta, dataLocal, dinheiro, iniciais, linkWhatsApp, semAcento } fro
 import { comparavel, dentro, fatias, periodo, type TipoPeriodo } from '../../data/periodo';
 import type { Ordem } from '../../data/types';
 import OrdemDetalheSheet from '../ordens/OrdemDetalheSheet';
+import { configAtual, textoPix } from '../../data/config';
 import { PecasResumo } from '../ordens/OrdemCard';
 
 type Aba = 'movimentacoes' | 'receber' | 'despesas';
 type FiltroMov = 'todas' | 'entradas' | 'saidas' | 'pendentes';
 
-const PIX = '\n\n*DADOS PARA PAGAMENTO PIX:*\n*Nome:* Cleusa Belani David\n*Telefone:* 45999126130\n*CPF:* 64166724053';
 
 function mensagemCobranca(nome: string, ordens: Ordem[]) {
   const total = ordens.reduce((s, o) => s + o.total, 0);
   const linhas = ordens.map(o => `• OS ${o.numero} (${dataLocal(o.criadaEm)}): ${textoServicos(o.pecas)} — ${dinheiro(o.total)}`).join('\n');
-  return `Olá ${nome.split(' ')[0]}! 😊\n\n*Cleusa Ateliê de Costura*\n\nEsperamos que suas peças tenham ficado perfeitas!\n\nGostaríamos de lembrar sobre ${ordens.length > 1 ? 'os pagamentos pendentes' : 'o pagamento pendente'}:\n\n${linhas}\n\n*Total:* ${dinheiro(total)}${PIX}\n\nQualquer dúvida, estamos à disposição! ✨`;
+  return `Olá ${nome.split(' ')[0]}! 😊\n\n*${configAtual().nome}*\n\nEsperamos que suas peças tenham ficado perfeitas!\n\nGostaríamos de lembrar sobre ${ordens.length > 1 ? 'os pagamentos pendentes' : 'o pagamento pendente'}:\n\n${linhas}\n\n*Total:* ${dinheiro(total)}\n\n${textoPix()}\n\nQualquer dúvida, estamos à disposição! ✨`;
 }
 
 export default function FinanceiroPage() {

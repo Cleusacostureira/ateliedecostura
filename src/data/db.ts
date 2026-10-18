@@ -246,6 +246,7 @@ export type Despesa = {
   valor: number;
   forma: string;
   status: string;
+  observacoes: string;
   itens: Array<{ produto: string; tipo: string; quantidade: number; unidade: string; valor: number }>;
 };
 
@@ -266,11 +267,109 @@ export async function carregarDespesas(): Promise<Despesa[]> {
   return [
     ...compras.map(c => ({
       id: c.id, data: String(c.data || c.created_at || '').slice(0, 10), fornecedor: String(c.fornecedor || '').trim(),
-      valor: Number(c.valor_total || 0), forma: c.forma_pagamento || '', status: c.status || '', itens: porCompra.get(c.id) || [],
+      valor: Number(c.valor_total || 0), forma: c.forma_pagamento || '', status: c.status || '', observacoes: c.observacoes || '', itens: porCompra.get(c.id) || [],
     })),
     ...fluxo.filter(f => !ids.has(f.orderid)).map(f => ({
       id: f.id, data: String(f.date || f.created_at || '').slice(0, 10), fornecedor: String(f.client || '').trim(),
-      valor: Math.abs(Number(f.value || 0)), forma: '', status: f.status || '', itens: [],
+      valor: Math.abs(Number(f.value || 0)), forma: '', status: f.status || '', observacoes: '', itens: [],
     })),
   ];
+}
+
+// ---------- catálogo: serviços, peças e materiais ----------
+
+export type ServicoCadastro = { id: string; titulo: string; preco: number; categoria: string; duracao: number | null; descricaoBruta: string | null };
+export type Material = { id: string; nome: string; unidade: string; preco: number; estoque: number };
+
+export async function listarServicos(): Promise<ServicoCadastro[]> {
+  const l = await lerTudo<any>('servicos');
+  return l.map(x => {
+    let categoria = '';
+    try { categoria = JSON.parse(x.descricao || '{}').category || ''; } catch { /* texto livre */ }
+    return { id: x.id, titulo: String(x.titulo || '').trim(), preco: Number(x.preco || 0), categoria, duracao: x.duracao_minutos ?? null, descricaoBruta: x.descricao };
+  });
+}
+
+export async function salvarServico(s: { id?: string; titulo: string; preco: number; categoria: string; duracao: number | null; descricaoBruta?: string | null }) {
+  // a descrição guarda a categoria em JSON (formato que as telas antigas já usam)
+  let desc: any = {};
+  try { desc = JSON.parse(s.descricaoBruta || '{}') || {}; } catch { desc = {}; }
+  desc.category = s.categoria || undefined;
+  const row = { titulo: s.titulo.trim(), preco: Number(s.preco) || 0, duracao_minutos: s.duracao, descricao: JSON.stringify(desc), updated_at: new Date().toISOString() };
+  const q = s.id ? supabase.from('servicos').update(row).eq('id', s.id) : supabase.from('servicos').insert(row);
+  const { error } = await q.select().single();
+  if (error) falha('Não foi possível salvar o serviço', error);
+}
+
+export async function excluirServico(id: string) {
+  const { error } = await supabase.from('servicos').delete().eq('id', id);
+  if (error) falha('Não foi possível excluir o serviço', error);
+}
+
+export async function salvarPeca(p: { id?: string; nome: string; categoria: string; icone?: string }) {
+  const row = { nome: p.nome.trim(), categoria: p.categoria.trim().toUpperCase() || 'OUTRAS', icone: p.icone || '🧵' };
+  const q = p.id ? supabase.from('pecas').update(row).eq('id', p.id) : supabase.from('pecas').insert(row);
+  const { error } = await q.select().single();
+  if (error) falha('Não foi possível salvar a peça', error);
+}
+
+export async function excluirPeca(id: string) {
+  const { error } = await supabase.from('pecas').delete().eq('id', id);
+  if (error) falha('Não foi possível excluir a peça', error);
+}
+
+export async function listarMateriais(): Promise<Material[]> {
+  const l = await lerTudo<any>('materiais');
+  return l.map(x => ({ id: x.id, nome: String(x.nome || '').trim(), unidade: x.unidade || '', preco: Number(x.preco || 0), estoque: Number(x.estoque || 0) }));
+}
+
+export async function salvarMaterial(m: { id?: string; nome: string; unidade: string; preco: number; estoque: number }) {
+  const row = { nome: m.nome.trim(), unidade: m.unidade, preco: Number(m.preco) || 0, estoque: Number(m.estoque) || 0, updated_at: new Date().toISOString() };
+  const q = m.id ? supabase.from('materiais').update(row).eq('id', m.id) : supabase.from('materiais').insert(row);
+  const { error } = await q.select().single();
+  if (error) falha('Não foi possível salvar o material', error);
+}
+
+export async function excluirMaterial(id: string) {
+  const { error } = await supabase.from('materiais').delete().eq('id', id);
+  if (error) falha('Não foi possível excluir o material', error);
+}
+
+// ---------- compras ----------
+
+export type CompraForm = {
+  data: string; fornecedor: string; forma: string; status: string; observacoes: string;
+  itens: Array<{ produto: string; tipo: string; quantidade: number; unidade: string; valor: number }>;
+};
+
+/** Grava a compra, seus itens e o lançamento de despesa no financeiro. */
+export async function salvarCompra(id: string | null, f: CompraForm) {
+  const total = Math.round(f.itens.reduce((s, i) => s + (Number(i.valor) || 0), 0) * 100) / 100;
+  const row = { data: f.data, fornecedor: f.fornecedor.trim(), valor_total: total, forma_pagamento: f.forma, status: f.status, observacoes: f.observacoes.trim(), updated_at: new Date().toISOString() };
+  const r = id ? await supabase.from('compras').update(row).eq('id', id).select().single() : await supabase.from('compras').insert(row).select().single();
+  if (r.error) falha('Não foi possível salvar a compra', r.error);
+  const compraId = (r.data as any).id as string;
+
+  const del = await supabase.from('compras_itens').delete().eq('compra_id', compraId);
+  if (del.error) falha('Não foi possível atualizar os itens', del.error);
+  const itens = f.itens.filter(i => i.produto.trim() || i.valor).map(i => ({
+    compra_id: compraId, produto: i.produto.trim(), tipo_material: i.tipo.trim(), quantidade: Number(i.quantidade) || 0, unidade: i.unidade,
+    valor_unitario: i.quantidade ? Math.round((Number(i.valor) / Number(i.quantidade)) * 100) / 100 : Number(i.valor) || 0, valor_total: Number(i.valor) || 0,
+  }));
+  if (itens.length) {
+    const ins = await supabase.from('compras_itens').insert(itens);
+    if (ins.error) falha('Não foi possível gravar os itens', ins.error);
+  }
+
+  const lanc = { date: f.data, client: f.fornecedor.trim(), service: 'Compra', value: total, status: f.status, orderid: compraId, tipo: 'despesa', updated_at: new Date().toISOString() };
+  const up = await supabase.from('fluxo_caixa').update(lanc).eq('orderid', compraId).select('id');
+  if (!up.error && (!up.data || up.data.length === 0)) await supabase.from('fluxo_caixa').insert(lanc);
+}
+
+export async function excluirCompra(id: string) {
+  await supabase.from('fluxo_caixa').delete().eq('orderid', id).eq('tipo', 'despesa');
+  await supabase.from('compras_itens').delete().eq('compra_id', id);
+  const { data, error } = await supabase.from('compras').delete().eq('id', id).select('id');
+  if (error) falha('Não foi possível excluir a compra', error);
+  if (!data?.length) throw new Error('A compra não foi encontrada no banco.');
 }

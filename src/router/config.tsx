@@ -13,14 +13,14 @@ const ClientesPage = lazy(() => import('../features/clientes/ClientesPage'));
 const ClienteDetalhePage = lazy(() => import('../features/clientes/ClienteDetalhePage'));
 
 // Telas da versão anterior (serão renovadas aos poucos)
-const DashboardPage = lazy(() => import('../pages/dashboard/page'));
+const DashboardPage = lazy(() => import('../features/inicio/InicioPage'));
 const AgendaPage = lazy(() => import('../pages/agenda/page'));
-const ServicosPage = lazy(() => import('../pages/servicos/page'));
+const ServicosPage = lazy(() => import('../features/servicos/ServicosPage'));
 const FinanceiroPage = lazy(() => import('../features/financeiro/FinanceiroPage'));
-const ComprasPage = lazy(() => import('../pages/compras/page'));
+const ComprasPage = lazy(() => import('../features/compras/ComprasPage'));
 const RelatoriosPage = lazy(() => import('../features/relatorios/RelatoriosPage'));
-const DisparosPage = lazy(() => import('../pages/disparos/page'));
-const ConfiguracoesPage = lazy(() => import('../pages/configuracoes/page'));
+const DisparosPage = lazy(() => import('../features/disparos/DisparosPage'));
+const ConfiguracoesPage = lazy(() => import('../features/configuracoes/ConfiguracoesPage'));
 const DebugExportPage = lazy(() => import('../pages/debug-export/page'));
 const DebugResetPage = lazy(() => import('../pages/debug-reset/page'));
 const DebugServerPage = lazy(() => import('../pages/debug-server/page'));
