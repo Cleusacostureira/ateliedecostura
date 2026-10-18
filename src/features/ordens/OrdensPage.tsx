@@ -5,7 +5,7 @@ import { Button, EmptyState, IconButton, Input, Page, PageHeader, Spinner, cx } 
 import { useDados } from '../../data/store';
 import { atrasada, diasAte, dinheiro, ROTULO_STATUS, semAcento } from '../../data/formato';
 import type { Ordem, StatusOrdem } from '../../data/types';
-import OrdemCard from './OrdemCard';
+import OrdemCard, { ESTILO_ETAPA } from './OrdemCard';
 import OrdemDetalheSheet from './OrdemDetalheSheet';
 
 type Aba = 'abertas' | StatusOrdem;
@@ -125,9 +125,34 @@ export default function OrdensPage() {
       ) : (
         <>
           <div className="text-xs text-at-muted mb-2">{lista.length} {lista.length === 1 ? 'ordem' : 'ordens'} · {dinheiro(totalLista)}</div>
-          <div className="grid lg:grid-cols-2 gap-2.5">
-            {lista.slice(0, limite).map(o => <OrdemCard key={o.id} ordem={o} nomeCliente={nome(o)} onClick={() => abrir(o.id)} />)}
-          </div>
+          {aba === 'abertas' && !busca ? (
+            // Em aberto: separado por etapa, na ordem do trabalho
+            <div className="space-y-6">
+              {(['Em costura', 'Recebido', 'Pronto'] as StatusOrdem[]).map(s => {
+                const grupo = lista.filter(o => o.status === s);
+                if (grupo.length === 0) return null;
+                const e = ESTILO_ETAPA[s];
+                const Icone = e.icone;
+                return (
+                  <section key={s}>
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <span className={cx('w-7 h-7 rounded-lg flex items-center justify-center', e.bloco)}><Icone className={cx('w-4 h-4', e.texto)} /></span>
+                      <h2 className="font-display text-lg text-at-ink">{e.titulo}</h2>
+                      <span className={cx('text-xs font-semibold rounded-full px-2 py-0.5', e.bloco, e.texto)}>{grupo.length}</span>
+                      <span className="text-xs text-at-muted ml-auto">{dinheiro(grupo.reduce((t, o) => t + o.total, 0))}</span>
+                    </div>
+                    <div className="grid lg:grid-cols-2 gap-2.5">
+                      {grupo.map(o => <OrdemCard key={o.id} ordem={o} nomeCliente={nome(o)} onClick={() => abrir(o.id)} />)}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid lg:grid-cols-2 gap-2.5">
+              {lista.slice(0, limite).map(o => <OrdemCard key={o.id} ordem={o} nomeCliente={nome(o)} onClick={() => abrir(o.id)} />)}
+            </div>
+          )}
           {lista.length > limite && (
             <div className="text-center mt-5">
               <Button variant="secondary" onClick={() => setLimite(l => l + POR_PAGINA)}>Mostrar mais ({lista.length - limite} restantes)</Button>

@@ -10,6 +10,7 @@ import { mensagemStatus } from '../../data/mensagens';
 import { STATUS, type Ordem, type StatusOrdem } from '../../data/types';
 import { PagamentoBadge, StatusBadge } from './OrdemCard';
 import Comprovante from './Comprovante';
+import PecaIcone from '../../ui/PecaIcone';
 
 export default function OrdemDetalheSheet({ ordemId, onClose }: { ordemId: string | null; onClose: () => void }) {
   const { ordens, clientePorId, guardarOrdem, tirarOrdem } = useDados();
@@ -170,7 +171,7 @@ export default function OrdemDetalheSheet({ ordemId, onClose }: { ordemId: strin
           <div className="rounded-2xl bg-white border border-at-line divide-y divide-at-line">
             {ordem.pecas.map((pc, i) => (
               <div key={pc.id + i} className="p-3.5 flex gap-3">
-                <div className="w-10 h-10 rounded-xl bg-at-soft flex items-center justify-center text-xl shrink-0">{pc.icone || '🧵'}</div>
+                <PecaIcone nome={pc.tipo} />
                 <div className="min-w-0 flex-1">
                   <div className="font-medium text-at-ink">{pc.tipo}{pc.cor && <span className="text-at-muted font-normal"> · {pc.cor}</span>}</div>
                   {pc.modelo && <div className="text-xs text-at-muted">{pc.modelo}</div>}

@@ -1,8 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import { lerTudo } from '../../data/db';
 import { supabase } from '../../lib/supabaseClient';
 import { readOrdersFromStorage, safeSetItem } from '../../lib/storageHelpers';
+
+const brl = (v: number) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function RelatoriosPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('mes');
@@ -27,12 +30,14 @@ export default function RelatoriosPage() {
   useEffect(() => {
     let mounted = true;
     async function fetchOrders() {
+      let servidorOk = false;
       // fetch orders and clients in sequence but ensure both attempts run
       try {
         if (supabase && typeof supabase.from === 'function') {
-          const res = await supabase.from('ordens').select('*');
-          if (!(res as any).error && Array.isArray((res as any).data)) {
-            if (mounted) setOrders((res as any).data);
+          const dados = await lerTudo<any>('ordens', '*', 'numero');
+          if (dados) {
+            if (mounted) setOrders(dados);
+            servidorOk = true;
             // do not return here: continue to attempt loading clients
           }
         }
@@ -43,8 +48,8 @@ export default function RelatoriosPage() {
       // also try to load clients for better name resolution (always attempt)
       try {
         if (supabase && typeof supabase.from === 'function') {
-          const cRes = await supabase.from('clientes').select('*');
-          if (!(cRes as any).error && Array.isArray((cRes as any).data) && mounted) {
+          const cRes = { data: await lerTudo<any>('clientes'), error: null };
+          if (Array.isArray(cRes.data) && mounted) {
             try {
               const sorted = (cRes as any).data.slice().sort((a:any,b:any) => String((a.nome||'')).localeCompare(String((b.nome||''))));
               setClientsList(sorted);
@@ -53,7 +58,8 @@ export default function RelatoriosPage() {
         }
       } catch (e) { console.warn('relatorios fetch clients error', e); }
 
-      // fallback to localStorage
+      // cópia do navegador só se o banco falhou
+      if (servidorOk) return;
       try {
         const parsed = readOrdersFromStorage();
         if (Array.isArray(parsed) && mounted) {
@@ -173,10 +179,17 @@ export default function RelatoriosPage() {
       const svcTop = (o.service || o.servico || '').toString();
       if (svcTop) items.push(svcTop);
     } catch {}
-    // dedupe items
-    items = Array.from(new Set((items || []).map((s:any)=>String(s).trim()).filter(Boolean)));
-    items.forEach((s: string) => {
-      const key = s.trim();
+    // serviços ficam dentro de cada peça (notas.pieces[].services): conta cada um
+    let servicosDasPecas: string[] = [];
+    try {
+      const notas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : null;
+      const pecas = (notas && notas.pieces) || o.pieces || [];
+      if (Array.isArray(pecas)) servicosDasPecas = pecas.flatMap((p:any) => (p?.services || []).map((s:any) => String(s?.name || s?.titulo || '').trim())).filter(Boolean);
+    } catch {}
+    // formatos antigos (sem peças): uma contagem por ordem
+    if (servicosDasPecas.length === 0) items = Array.from(new Set((items || []).map((s:any)=>String(s).trim()).filter(Boolean)));
+    (servicosDasPecas.length ? servicosDasPecas : items).forEach((s: string) => {
+      const key = s.trim().replace(/^./, c => c.toUpperCase());
       if (!key) return;
       servicesCountMap[key] = (servicesCountMap[key] || 0) + 1;
     });
@@ -416,7 +429,7 @@ export default function RelatoriosPage() {
                 </div>
                 <div>
                   <p className="text-xs lg:text-sm text-gray-600 mb-1">Faturamento</p>
-                  <p className="text-lg lg:text-2xl font-bold text-gray-900">R$ {totalRevenue.toFixed(2)}</p>
+                  <p className="text-lg lg:text-2xl font-bold text-gray-900">{brl(totalRevenue)}</p>
                 </div>
               </div>
             </div>
@@ -440,7 +453,7 @@ export default function RelatoriosPage() {
                 </div>
                 <div>
                   <p className="text-xs lg:text-sm text-gray-600 mb-1">Ticket Médio</p>
-                  <p className="text-lg lg:text-2xl font-bold text-gray-900">R$ {ticketAverage.toFixed(2)}</p>
+                  <p className="text-lg lg:text-2xl font-bold text-gray-900">{brl(ticketAverage)}</p>
                 </div>
               </div>
             </div>
@@ -497,8 +510,8 @@ export default function RelatoriosPage() {
                     return (
                       <div key={idx} className="flex flex-col items-center" style={{ width: 40 }}>
                         <div className="flex flex-col items-center">
-                          <div className="w-8 bg-green-500 rounded-t" style={{ height: `${revHeight}%` }} title={`R$ ${d.revenue.toFixed(2)}`}>
-                            <div className="text-[10px] text-white text-center" style={{opacity: d.revenue>0?1:0}}>{d.revenue>0?`R$ ${d.revenue.toFixed(2)}`:''}</div>
+                          <div className="w-8 bg-green-500 rounded-t" style={{ height: `${revHeight}%` }} title={brl(d.revenue)}>
+                            <div className="text-[10px] text-white text-center" style={{opacity: d.revenue>0?1:0}}>{d.revenue>0?brl(d.revenue):''}</div>
                           </div>
                           <div className="w-8 bg-rose-400 mt-0.5 rounded-t" style={{ height: `${svcHeight}%` }} title={`${d.services} serviços`}>
                             <div className="text-[9px] text-white text-center" style={{opacity: d.services>0?1:0}}>{d.services>0?d.services:''}</div>
@@ -539,7 +552,7 @@ export default function RelatoriosPage() {
                     return (
                       <div key={index} className="flex-1 flex flex-col items-center gap-1">
                         <div className="w-full bg-rose-500 rounded-t transition-colors" style={{ height: `${h}%`, minHeight: 6, border: '1px solid rgba(0,0,0,0.06)' }} title={`${m}: R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
-                          <div className="text-[10px] text-white text-center" style={{opacity: value>0?1:0}}>{value>0?`R$ ${Number(value).toFixed(2)}`:''}</div>
+                          <div className="text-[10px] text-white text-center" style={{opacity: value>0?1:0}}>{value>0?brl(Number(value)):''}</div>
                         </div>
                         <span className="text-xs text-gray-600 mt-2">{m}</span>
                       </div>
@@ -559,7 +572,7 @@ export default function RelatoriosPage() {
                       return (
                         <div key={index} className="flex-1 flex flex-col items-center gap-1">
                           <div className="w-full bg-rose-500 rounded-t hover:bg-rose-600 transition-colors cursor-pointer" style={{ height: `${h}%`, minHeight: 6, border: '1px solid rgba(0,0,0,0.06)' }} title={`${m}: R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
-                            <div className="text-[10px] text-white text-center" style={{opacity: value>0?1:0}}>{value>0?`R$ ${Number(value).toFixed(2)}`:''}</div>
+                            <div className="text-[10px] text-white text-center" style={{opacity: value>0?1:0}}>{value>0?brl(Number(value)):''}</div>
                           </div>
                           <span className="text-xs text-gray-600 mt-2">{m}</span>
                         </div>

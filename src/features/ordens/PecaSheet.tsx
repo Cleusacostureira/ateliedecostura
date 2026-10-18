@@ -4,6 +4,7 @@ import { Button, Field, Input, Sheet, cx } from '../../ui';
 import { useDados } from '../../data/store';
 import { dinheiro, semAcento } from '../../data/formato';
 import type { Peca, ServicoPeca } from '../../data/types';
+import { PecaSvg } from '../../ui/PecaIcone';
 
 export const CORES: Record<string, string> = {
   Preto: '#111111', Branco: '#FFFFFF', Cinza: '#9CA3AF', Azul: '#3B82F6', 'Azul marinho': '#1E3A8A', Jeans: '#5B7DB1',
@@ -107,7 +108,7 @@ export default function PecaSheet({ open, onClose, peca, onSalvar }: {
       </div>
     }>
       {/* 1. Tipo */}
-      <Secao n={1} titulo="Qual peça?" valor={tipo ? `${icone} ${tipo}` : undefined} onLimpar={() => setTipo('')}>
+      <Secao n={1} titulo="Qual peça?" valor={tipo || undefined} onLimpar={() => setTipo('')}>
         {!tipo && <>
           <div className="relative mb-2.5">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-at-muted" />
@@ -116,8 +117,8 @@ export default function PecaSheet({ open, onClose, peca, onSalvar }: {
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-56 overflow-y-auto pr-1">
             {tiposOrdenados.map(p => (
               <button key={p.id} type="button" onClick={() => { setTipo(p.nome); setIcone(p.icone); }}
-                className="flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl bg-white border border-at-line hover:border-at-rose hover:bg-at-blush/40 text-xs text-at-ink transition">
-                <span className="text-xl">{p.icone}</span><span className="leading-tight text-center">{p.nome}</span>
+                className="flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl bg-white border border-at-line hover:border-at-rose hover:bg-at-blush/40 text-xs text-at-ink transition">
+                <PecaSvg nome={p.nome} className="w-7 h-7 text-at-wine" /><span className="leading-tight text-center">{p.nome}</span>
               </button>
             ))}
             {buscaTipo.trim() && (
@@ -171,8 +172,8 @@ export default function PecaSheet({ open, onClose, peca, onSalvar }: {
           ))}
         </div>
         <div className="flex gap-2 mt-3">
-          <Input value={novoServ.nome} onChange={e => setNovoServ(v => ({ ...v, nome: e.target.value }))} placeholder="Outro serviço" className="h-10 flex-1" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addServPersonalizado(); } }} />
-          <Input value={novoServ.preco} onChange={e => setNovoServ(v => ({ ...v, preco: e.target.value }))} placeholder="R$" inputMode="decimal" className="h-10 w-20" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addServPersonalizado(); } }} />
+          <Input value={novoServ.nome} onChange={e => setNovoServ(v => ({ ...v, nome: e.target.value }))} placeholder="Outro serviço" className="h-10 flex-1 min-w-0" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addServPersonalizado(); } }} />
+          <Input value={novoServ.preco} onChange={e => setNovoServ(v => ({ ...v, preco: e.target.value }))} placeholder="R$" inputMode="decimal" className="h-10 !w-24 shrink-0" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addServPersonalizado(); } }} />
           <Button type="button" variant="secondary" className="h-10" onClick={addServPersonalizado} disabled={!novoServ.nome.trim()}><Plus className="w-4 h-4" /></Button>
         </div>
       </Secao>

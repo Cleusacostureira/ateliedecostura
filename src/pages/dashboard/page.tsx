@@ -5,12 +5,18 @@ import StatCard from '../../components/dashboard/StatCard';
 import { clientsSummaryForMonth } from '../../lib/clients';
 import { supabase } from '../../lib/supabaseClient';
 import { readOrdersFromStorage } from '../../lib/storageHelpers';
+import { lerTudo } from '../../data/db';
 import { listCompras } from '../../lib/compras';
 
 const formatDate = (d: any) => {
   if (!d) return '';
   // already dd/mm/yyyy
   if (typeof d === 'string' && d.includes('/')) return d;
+  // data de entrega vem como meia-noite UTC: usar só o dia, sem converter fuso
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}(T00:00:00(\.0+)?(Z|\+00:00))?$/.test(d)) {
+    const [a, m, dia] = d.slice(0, 10).split('-');
+    return `${dia}/${m}/${a}`;
+  }
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return '';
   return dt.toLocaleDateString('pt-BR');
@@ -121,9 +127,11 @@ export default function DashboardPage() {
     } catch (e) {}
 
     async function fetchData() {
+      let servidorOk = false;
       try {
         if (supabase && typeof supabase.from === 'function') {
-          const oRes = await supabase.from('ordens').select('*');
+          const oRes = { data: await lerTudo<any>('ordens', '*', 'numero'), error: null };
+          servidorOk = true;
           if (!(oRes as any).error && Array.isArray((oRes as any).data) && mounted) {
             const mapped = (oRes as any).data.map((o: any) => ({
               ...o,
@@ -139,7 +147,7 @@ export default function DashboardPage() {
               setOrders(mapped);
             }
           }
-          const cRes = await supabase.from('clientes').select('*');
+          const cRes = { data: await lerTudo<any>('clientes'), error: null };
           const oiRes = await supabase.from('ordem_itens').select('*');
           const sRes = await supabase.from('servicos').select('*');
           if (!(cRes as any).error && Array.isArray((cRes as any).data) && mounted) {
@@ -161,7 +169,8 @@ export default function DashboardPage() {
         console.warn('dashboard fetch error', e);
       }
 
-      // fallback localStorage
+      // cópia do navegador só se o banco falhou
+      if (servidorOk) return;
       try {
         const parsed = readOrdersFromStorage();
         if (Array.isArray(parsed) && mounted) setOrders(parsed);
@@ -243,7 +252,7 @@ export default function DashboardPage() {
           let fcData: any[] = [];
           try {
             if (supabase && typeof supabase.from === 'function') {
-              const fc = await supabase.from('fluxo_caixa').select('*');
+              const fc = { data: await lerTudo<any>('fluxo_caixa'), error: null };
               if (!(fc as any).error && Array.isArray((fc as any).data)) {
                 fcData = (fc as any).data;
                 (fc as any).data.forEach((r:any) => {
@@ -386,7 +395,11 @@ export default function DashboardPage() {
           });
           try {
             const notas = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : null;
-            const servicesFromNotas = notas && (notas.services || notas.servicos || []);
+            // serviços ficam dentro de cada peça (notas.pieces[].services)
+            const servicesFromNotas = [
+              ...((notas && (notas.services || notas.servicos)) || []),
+              ...(((notas && notas.pieces) || []).flatMap((p:any) => p?.services || [])),
+            ];
             (servicesFromNotas || []).forEach((s:any) => {
               try {
                 const nm = (s.name || s.titulo || s.nome || s.servico || s.title || '').toString();
@@ -619,7 +632,7 @@ export default function DashboardPage() {
             <div className="bg-white rounded-lg p-4 lg:p-6 border border-gray-200">
               <h2 className="text-sm lg:text-lg font-bold text-gray-900 mb-4">Serviços Mais Realizados</h2>
               <div className="space-y-3">
-                {(topServices.length ? topServices : []).map((item) => (
+                {topServices.slice(0, 8).map((item) => (
                   <div key={item.name}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[10px] lg:text-sm text-gray-700 truncate pr-2">{item.name}</span>

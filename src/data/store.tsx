@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { carregarCatalogo, carregarClientes, carregarOrdens } from './db';
 import type { Cliente, Ordem, PecaCatalogo, ServicoCatalogo } from './types';
+import { safeSetItem } from '../lib/storageHelpers';
+import { dataCurta } from './formato';
 
 type Estado = {
   clientes: Cliente[];
@@ -64,11 +66,55 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const tirarCliente = useCallback((id: string) => setClientes(l => l.filter(x => x.id !== id)), []);
   const clientePorId = useMemo(() => new Map(clientes.map(c => [c.id, c])), [clientes]);
 
+  // Ponte para as telas antigas (Financeiro, Agenda...), que ainda leem a cópia do navegador.
+  // Ela é sempre reescrita a partir do banco, nunca o contrário.
+  useEffect(() => {
+    if (carregando || erro || ordens.length === 0) return;
+    atualizarCopiaAntiga(ordens, clientes, clientePorId);
+  }, [ordens, clientes, clientePorId, carregando, erro]);
+
   const valor = useMemo(() => ({
     clientes, ordens, servicos, pecasCatalogo, carregando, erro, recarregar, guardarOrdem, tirarOrdem, guardarCliente, tirarCliente, clientePorId,
   }), [clientes, ordens, servicos, pecasCatalogo, carregando, erro, recarregar, guardarOrdem, tirarOrdem, guardarCliente, tirarCliente, clientePorId]);
 
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>;
+}
+
+function atualizarCopiaAntiga(ordens: Ordem[], clientes: Cliente[], porId: Map<string, Cliente>) {
+  try {
+    const legado = [...ordens].sort((a, b) => b.numero - a.numero).map(o => {
+      const c = o.clienteId ? porId.get(o.clienteId) : undefined;
+      const notas: any = { pieces: o.pecas };
+      if (o.observacoes) notas.observacoes = o.observacoes;
+      return {
+        id: o.id,
+        numero: o.numero,
+        cliente_id: o.clienteId,
+        status: o.status,
+        total: o.total,
+        value: o.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+        data_criacao: o.criadaEm,
+        created_at: o.criadaEm,
+        updated_at: o.atualizadaEm,
+        data_entrega: o.entrega,
+        dateOut: dataCurta(o.entrega) === '—' ? '' : dataCurta(o.entrega),
+        notas: JSON.stringify(notas),
+        pieces: o.pecas,
+        services: [],
+        service: o.pecas.map(p => p.tipo).join(', '),
+        client: c?.nome || '',
+        phone: c?.telefone || '',
+        paymentStatus: o.pago ? 'Pago' : null,
+      };
+    });
+    safeSetItem('orders', legado, 'ordersUpdated', 'DataProvider');
+    // as telas antigas leem `clientes` como lista simples
+    const txt = JSON.stringify(clientes);
+    if (localStorage.getItem('clientes') !== txt) {
+      localStorage.setItem('clientes', txt);
+      window.dispatchEvent(new CustomEvent('clientsUpdated'));
+    }
+  } catch { /* a cópia é só conveniência para telas antigas */ }
 }
 
 export function useDados() {

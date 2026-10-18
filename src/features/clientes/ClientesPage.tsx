@@ -33,7 +33,7 @@ export default function ClientesPage() {
   const resumo = useResumoClientes();
   const navigate = useNavigate();
   const [busca, setBusca] = useState('');
-  const [ord, setOrd] = useState<Ordenacao>('recentes');
+  const [ord, setOrd] = useState<Ordenacao>('nome');
   const [novo, setNovo] = useState(false);
 
   const lista = useMemo(() => {
@@ -63,8 +63,8 @@ export default function ClientesPage() {
           <Input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome ou telefone" className="pl-10" />
         </div>
         <Segmented<Ordenacao> value={ord} onChange={setOrd} options={[
-          { value: 'recentes', label: 'Recentes' },
           { value: 'nome', label: 'A–Z' },
+          { value: 'recentes', label: 'Recentes' },
           { value: 'gasto', label: 'Mais fiéis' },
         ]} />
       </div>
@@ -76,29 +76,42 @@ export default function ClientesPage() {
           text={busca ? 'Confira a grafia ou cadastre uma nova cliente.' : 'Cadastre sua primeira cliente.'}
           action={<Button onClick={() => setNovo(true)}><UserPlus className="w-4 h-4" /> Nova cliente</Button>} />
       ) : (
-        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {lista.slice(0, 300).map(c => {
+        <div className="bg-white rounded-2xl border border-at-line shadow-soft overflow-hidden">
+          {/* cabeçalho das colunas (computador) */}
+          <div className="hidden md:grid grid-cols-[minmax(0,2fr)_150px_90px_120px_110px] gap-3 px-4 py-2.5 text-[11px] uppercase tracking-wider text-at-muted bg-at-soft/60 border-b border-at-line">
+            <span>Cliente</span><span>Telefone</span><span className="text-right">Ordens</span><span className="text-right">Total gasto</span><span className="text-right">Última</span>
+          </div>
+          {lista.map((c, i) => {
             const r = resumo.get(c.id);
+            const letra = (semAcento(c.nome.trim())[0] || '#').toUpperCase();
+            const letraAnterior = i > 0 ? (semAcento(lista[i - 1].nome.trim())[0] || '#').toUpperCase() : '';
             return (
-              <button key={c.id} onClick={() => navigate(`/clientes/${c.id}`)}
-                className="text-left bg-white rounded-2xl border border-at-line shadow-soft hover:border-at-nude hover:shadow-lift transition-all p-4 flex gap-3 items-center">
-                <div className="w-11 h-11 rounded-full bg-at-blush text-at-wine flex items-center justify-center font-semibold text-sm shrink-0">{iniciais(c.nome)}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium text-at-ink truncate">{c.nome}</div>
-                  <div className="text-xs text-at-muted flex items-center gap-1 truncate">
-                    {c.telefone ? <><Phone className="w-3 h-3" /> {telefoneBonito(c.telefone)}</> : 'Sem telefone'}
-                  </div>
-                  <div className="text-xs text-at-muted mt-1">
-                    {r ? <>{r.ordens} {r.ordens === 1 ? 'ordem' : 'ordens'} · {dinheiro(r.gasto)} · última {dataLocal(r.ultima)}</> : 'Nenhuma ordem ainda'}
-                  </div>
-                </div>
-                {r && r.abertas > 0 && <span className="text-[11px] font-medium bg-amber-50 text-amber-700 rounded-full px-2 py-0.5 shrink-0">{r.abertas} em aberto</span>}
-              </button>
+              <div key={c.id}>
+                {ord === 'nome' && !busca && letra !== letraAnterior && (
+                  <div className="px-4 py-1 text-xs font-semibold text-at-wine bg-at-blush/50 border-y border-at-line/70 first:border-t-0">{letra}</div>
+                )}
+                <button onClick={() => navigate(`/clientes/${c.id}`)}
+                  className="w-full text-left px-4 py-3 hover:bg-at-soft/60 transition grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,2fr)_150px_90px_120px_110px] gap-3 items-center border-b border-at-line/70 last:border-b-0">
+                  <span className="flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-full bg-at-blush text-at-wine flex items-center justify-center font-semibold text-xs shrink-0">{iniciais(c.nome)}</span>
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-2">
+                        <span className="font-medium text-at-ink truncate">{c.nome}</span>
+                        {r && r.abertas > 0 && <span className="text-[10px] font-medium bg-amber-50 text-amber-700 rounded-full px-1.5 py-0.5 shrink-0">{r.abertas} em aberto</span>}
+                      </span>
+                      <span className="md:hidden block text-xs text-at-muted truncate">{c.telefone ? telefoneBonito(c.telefone) : 'Sem telefone'}{r ? ` · ${r.ordens} ${r.ordens === 1 ? 'ordem' : 'ordens'}` : ''}</span>
+                    </span>
+                  </span>
+                  <span className="hidden md:flex items-center gap-1 text-sm text-at-muted truncate">{c.telefone ? <><Phone className="w-3 h-3" /> {telefoneBonito(c.telefone)}</> : '—'}</span>
+                  <span className="hidden md:block text-sm text-at-ink text-right">{r?.ordens || 0}</span>
+                  <span className="text-sm font-medium text-at-ink text-right">{r ? dinheiro(r.gasto) : '—'}</span>
+                  <span className="hidden md:block text-sm text-at-muted text-right">{r ? dataLocal(r.ultima) : '—'}</span>
+                </button>
+              </div>
             );
           })}
         </div>
       )}
-      {lista.length > 300 && <p className="text-center text-sm text-at-muted mt-4">Mostrando 300 de {lista.length}. Use a busca para encontrar outras.</p>}
 
       <ClienteFormSheet open={novo} onClose={() => setNovo(false)} nomeInicial={/\d/.test(busca) ? '' : busca.trim()} onSalvo={c => navigate(`/clientes/${c.id}`)} />
     </Page>

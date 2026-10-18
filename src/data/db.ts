@@ -236,3 +236,41 @@ export async function excluirOrdem(o: Ordem) {
   const fx = await supabase.from('fluxo_caixa').delete().eq('orderid', o.id);
   if (fx.error) console.warn('Lançamento financeiro não excluído', fx.error);
 }
+
+// ---------- despesas (compras) ----------
+
+export type Despesa = {
+  id: string;
+  data: string;            // AAAA-MM-DD
+  fornecedor: string;
+  valor: number;
+  forma: string;
+  status: string;
+  itens: Array<{ produto: string; tipo: string; quantidade: number; unidade: string; valor: number }>;
+};
+
+/** Compras + lançamentos de despesa do financeiro que não vieram de uma compra. */
+export async function carregarDespesas(): Promise<Despesa[]> {
+  const [compras, itens, fluxo] = await Promise.all([
+    lerTudo<any>('compras'),
+    lerTudo<any>('compras_itens'),
+    lerTudo<any>('fluxo_caixa').then(l => l.filter(x => String(x.tipo || '').toLowerCase() === 'despesa')),
+  ]);
+  const porCompra = new Map<string, Despesa['itens']>();
+  itens.forEach(i => {
+    const l = porCompra.get(i.compra_id) || [];
+    l.push({ produto: i.produto || '', tipo: i.tipo_material || '', quantidade: Number(i.quantidade || 0), unidade: i.unidade || '', valor: Number(i.valor_total || 0) });
+    porCompra.set(i.compra_id, l);
+  });
+  const ids = new Set(compras.map(c => c.id));
+  return [
+    ...compras.map(c => ({
+      id: c.id, data: String(c.data || c.created_at || '').slice(0, 10), fornecedor: String(c.fornecedor || '').trim(),
+      valor: Number(c.valor_total || 0), forma: c.forma_pagamento || '', status: c.status || '', itens: porCompra.get(c.id) || [],
+    })),
+    ...fluxo.filter(f => !ids.has(f.orderid)).map(f => ({
+      id: f.id, data: String(f.date || f.created_at || '').slice(0, 10), fornecedor: String(f.client || '').trim(),
+      valor: Math.abs(Number(f.value || 0)), forma: '', status: f.status || '', itens: [],
+    })),
+  ];
+}

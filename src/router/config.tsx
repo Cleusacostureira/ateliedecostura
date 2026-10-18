@@ -16,9 +16,9 @@ const ClienteDetalhePage = lazy(() => import('../features/clientes/ClienteDetalh
 const DashboardPage = lazy(() => import('../pages/dashboard/page'));
 const AgendaPage = lazy(() => import('../pages/agenda/page'));
 const ServicosPage = lazy(() => import('../pages/servicos/page'));
-const FinanceiroPage = lazy(() => import('../pages/financeiro/page'));
+const FinanceiroPage = lazy(() => import('../features/financeiro/FinanceiroPage'));
 const ComprasPage = lazy(() => import('../pages/compras/page'));
-const RelatoriosPage = lazy(() => import('../pages/relatorios/page'));
+const RelatoriosPage = lazy(() => import('../features/relatorios/RelatoriosPage'));
 const DisparosPage = lazy(() => import('../pages/disparos/page'));
 const ConfiguracoesPage = lazy(() => import('../pages/configuracoes/page'));
 const DebugExportPage = lazy(() => import('../pages/debug-export/page'));

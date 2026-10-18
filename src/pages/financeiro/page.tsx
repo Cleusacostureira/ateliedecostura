@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import { readOrdersFromStorage, safeSetItem } from '../../lib/storageHelpers';
 import { listCompras } from '../../lib/compras';
+import { lerTudo } from '../../data/db';
 import { supabase } from '../../lib/supabaseClient';
 
 // Simple in-memory cache for fetched clientes to avoid repeated network requests
@@ -66,7 +67,7 @@ export default function FinanceiroPage() {
       try { console.debug('[financeiro] fetchFinanceiro start'); } catch(e){}
       try {
         if (isFluxoAvailable() && supabase && typeof supabase.from === 'function') {
-          const res = await supabase.from('fluxo_caixa').select('*');
+          const res: any = await lerTudo<any>('fluxo_caixa').then(data => ({ data, error: null })).catch(e => ({ data: null, error: { message: String(e?.message || e) } }));
           if ((res as any).error) {
             if ((res as any).error.code === 'PGRST205') { markFluxoMissing(); }
             console.warn('Supabase fetch fluxo_caixa error', (res as any).error);
@@ -79,7 +80,7 @@ export default function FinanceiroPage() {
             // prefer server-side orders when available so we don't rely on possibly stale localStorage
             let serverOrders: any[] | null = null;
             try {
-              const ordRes = await supabase.from('ordens').select('id,numero,cliente_id,total,status');
+              const ordRes: any = await lerTudo<any>('ordens', 'id,numero,cliente_id,total,status', 'numero').then(data => ({ data, error: null })).catch(e => ({ data: null, error: { message: String(e?.message || e) } }));
               if (!(ordRes as any).error && Array.isArray((ordRes as any).data)) {
                 serverOrders = (ordRes as any).data as any[];
                 // attach client names using cached helper to avoid repeated requests
@@ -146,6 +147,7 @@ export default function FinanceiroPage() {
                 try {
                   const comprasArr = await listCompras();
                   if (Array.isArray(comprasArr) && comprasArr.length > 0) {
+                    try { (window as any).__comprasListCached = comprasArr; } catch(_) {}
                     try { (window as any).__comprasTotalCached = (comprasArr || []).reduce((s:any,c:any)=> s + Number(c.valor_total ?? c.valor ?? 0), 0); } catch(_) { }
                   } else {
                     try { (window as any).__comprasTotalCached = 0; } catch(_){}
@@ -798,11 +800,39 @@ export default function FinanceiroPage() {
 
   // include merged paid orders when computing receitas/recebido so totals align with orders-based reports
   // compute receitas/recebido from aggregated per-order totals to avoid double-counting
-  const receitas = (_aggregatedByOrder || []).reduce((sum, g) => {
+  // ----- período escolhido (Semana / Mês / Ano) -----
+  const dataDe = (raw: any): Date | null => {
+    const t = String(raw || '').trim();
+    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+    m = t.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+    return null;
+  };
+  const inicioPeriodo = (() => {
+    const h = new Date(); h.setHours(0, 0, 0, 0);
+    if (selectedPeriod === 'semana') { const dia = (h.getDay() + 6) % 7; h.setDate(h.getDate() - dia); return h; } // segunda-feira
+    if (selectedPeriod === 'ano') return new Date(h.getFullYear(), 0, 1);
+    return new Date(h.getFullYear(), h.getMonth(), 1);
+  })();
+  const fimPeriodo = (() => {
+    const i = new Date(inicioPeriodo);
+    if (selectedPeriod === 'semana') return new Date(i.getFullYear(), i.getMonth(), i.getDate() + 7);
+    if (selectedPeriod === 'ano') return new Date(i.getFullYear() + 1, 0, 1);
+    return new Date(i.getFullYear(), i.getMonth() + 1, 1);
+  })();
+  const noPeriodo = (raw: any) => { const d = dataDe(raw); return !!d && d >= inicioPeriodo && d < fimPeriodo; };
+  const rotuloPeriodo = selectedPeriod === 'semana'
+    ? `Semana de ${inicioPeriodo.toLocaleDateString('pt-BR')} a ${new Date(fimPeriodo.getTime() - 86400000).toLocaleDateString('pt-BR')}`
+    : selectedPeriod === 'ano' ? `Ano de ${inicioPeriodo.getFullYear()}`
+    : inicioPeriodo.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^./, c => c.toUpperCase());
+  const gruposDoPeriodo = (_aggregatedByOrder || []).filter((g: any) => noPeriodo(g.date));
+
+  const receitas = gruposDoPeriodo.reduce((sum: number, g: any) => {
     const v = parseCurrency(g.total ?? 0);
     return sum + (v > 0 ? v : 0);
   }, 0);
-  const recebido = (_aggregatedByOrder || []).reduce((sum, g) => {
+  const recebido = gruposDoPeriodo.reduce((sum: number, g: any) => {
     if (String(g.status || '').toLowerCase() === 'pago') return sum + parseCurrency(g.total ?? 0);
     return sum;
   }, 0);
@@ -818,7 +848,7 @@ export default function FinanceiroPage() {
           if (idKey) seen.add(idKey);
           const v = parseCurrency(it.value ?? it.valor ?? it.total ?? 0);
           const tipo = (it.tipo || it.type || '').toString().toLowerCase();
-          if (tipo === 'despesa' || v < 0) total += Math.abs(v);
+          if ((tipo === 'despesa' || v < 0) && noPeriodo(it.date || it.data || it.created_at)) total += Math.abs(v);
         } catch (e) {}
       };
       // include raw local entries
@@ -826,7 +856,12 @@ export default function FinanceiroPage() {
       // include merged entries (may contain synthetic paid orders) but skip duplicates
       try { (_mergedEntries || []).forEach(addIfDespesa); } catch (e) {}
       // include compras total (do not add individual compras to fluxo detalhado)
-      try { total += Number((window as any).__comprasTotalCached || 0); } catch(_) {}
+      // compras do período (as que já viraram lançamento de despesa foram somadas acima)
+      try {
+        const lista: any[] = (window as any).__comprasListCached || [];
+        const jaLancadas = new Set((cashFlowDetails || []).filter((x: any) => String(x.tipo || '').toLowerCase() === 'despesa').map((x: any) => String(x.orderId || x.orderid || '')));
+        lista.forEach((c: any) => { if (!jaLancadas.has(String(c.id)) && noPeriodo(c.data || c.created_at)) total += Number(c.valor_total ?? c.valor ?? 0); });
+      } catch(_) {}
       return total;
     } catch (e) { return 0; }
   })();
@@ -867,7 +902,7 @@ export default function FinanceiroPage() {
                 <h1 className="text-lg lg:text-2xl font-bold text-gray-900 mb-0.5 lg:mb-1">Financeiro</h1>
                 {/* fluxoStatus hidden near title per UX request */}
               </div>
-              <p className="text-xs lg:text-sm text-gray-600">Controle suas receitas e despesas</p>
+              <p className="text-xs lg:text-sm text-gray-600">Controle suas receitas e despesas · <span className="font-medium text-gray-800">{rotuloPeriodo}</span></p>
               
             </div>
             {/* Botões de teste: mobile e desktop */}
@@ -997,8 +1032,8 @@ export default function FinanceiroPage() {
                   <i className="ri-time-line text-sm lg:text-2xl text-amber-600 w-3.5 h-3.5 lg:w-6 lg:h-6 flex items-center justify-center"></i>
                 </div>
                 <div>
-                  <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">A Receber</p>
-                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ {totalPending.toFixed(2)}</p>
+                  <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">A Receber <span className="text-[8px] lg:text-xs text-gray-400">(todo o período)</span></p>
+                  <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ {totalPending.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   <p className="text-[8px] lg:text-xs text-amber-600 font-medium mt-0.5">
                     {pendingPayments.length} {pendingPayments.length === 1 ? 'cliente' : 'clientes'}
                   </p>

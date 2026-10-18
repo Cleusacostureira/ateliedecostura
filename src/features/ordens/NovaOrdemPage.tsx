@@ -11,6 +11,7 @@ import type { Cliente, Ordem, Peca } from '../../data/types';
 import ClienteFormSheet from '../clientes/ClienteFormSheet';
 import PecaSheet from './PecaSheet';
 import Comprovante from './Comprovante';
+import PecaIcone from '../../ui/PecaIcone';
 
 export default function NovaOrdemPage() {
   const { id } = useParams();
@@ -178,7 +179,7 @@ export default function NovaOrdemPage() {
               <div className="rounded-xl border border-at-line divide-y divide-at-line mb-3">
                 {pecas.map((p, i) => (
                   <div key={p.id} className="flex items-start gap-3 p-3">
-                    <div className="w-10 h-10 rounded-xl bg-at-soft flex items-center justify-center text-xl shrink-0">{p.icone || '🧵'}</div>
+                    <PecaIcone nome={p.tipo} />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-at-ink text-sm">{p.tipo}{p.cor && <span className="text-at-muted font-normal"> · {p.cor}</span>}</div>
                       <div className="text-xs text-at-muted truncate">{p.services.map(s => `${s.name} ${dinheiro(s.price)}`).join(' · ')}</div>
