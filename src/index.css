@@ -75,3 +75,13 @@ body { background-color: var(--bg); color: var(--text); }
 .input:placeholder-shown { border-style: dashed; border-color: rgba(251,146,60,0.5); }
 .dark .input { border-color: rgba(255,255,255,0.06); }
 .dark .input:placeholder-shown { border-color: rgba(251,146,60,0.25); }
+/* ===== Visual novo (ateliê) ===== */
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes sheetUp { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: translateY(0) } }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+@media print {
+  body * { visibility: hidden !important; }
+  #print-area, #print-area * { visibility: visible !important; }
+  #print-area { position: absolute; left: 0; top: 0; width: 100%; }
+}
