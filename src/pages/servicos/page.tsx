@@ -298,8 +298,8 @@ export default function ServicosPage() {
               setServices((prev) => (prev || []).map(s => s.id === newId ? mapped : s));
               try {
                 const raw = localStorage.getItem('services');
-                const arr = raw ? JSON.parse(raw) : (prev || []);
-                const newArr = Array.isArray(arr) ? arr.map((s:any) => s.id === newId ? mapped : s) : (prev || []);
+                const arr = raw ? JSON.parse(raw) : [];
+                const newArr = Array.isArray(arr) ? arr.map((s:any) => s.id === newId ? mapped : s) : [];
                 localStorage.setItem('services', JSON.stringify(newArr));
                 localStorage.setItem('servicesOrder', JSON.stringify(newArr.map((s:any)=>s.id)));
               } catch {}

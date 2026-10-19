@@ -902,7 +902,7 @@ export default function FinanceiroPage() {
                 <h1 className="text-lg lg:text-2xl font-bold text-gray-900 mb-0.5 lg:mb-1">Financeiro</h1>
                 {/* fluxoStatus hidden near title per UX request */}
               </div>
-              <p className="text-xs lg:text-sm text-gray-600">Controle suas receitas e despesas · <span className="font-medium text-gray-800">{rotuloPeriodo}</span></p>
+              <p className="text-xs lg:text-sm text-gray-600">Controle suas receitas e despesas</p>
               
             </div>
             {/* Botões de teste: mobile e desktop */}
@@ -1032,7 +1032,7 @@ export default function FinanceiroPage() {
                   <i className="ri-time-line text-sm lg:text-2xl text-amber-600 w-3.5 h-3.5 lg:w-6 lg:h-6 flex items-center justify-center"></i>
                 </div>
                 <div>
-                  <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">A Receber <span className="text-[8px] lg:text-xs text-gray-400">(todo o período)</span></p>
+                  <p className="text-[9px] lg:text-sm text-gray-600 mb-0.5">A Receber</p>
                   <p className="text-xs lg:text-2xl font-bold text-gray-900">R$ {totalPending.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   <p className="text-[8px] lg:text-xs text-amber-600 font-medium mt-0.5">
                     {pendingPayments.length} {pendingPayments.length === 1 ? 'cliente' : 'clientes'}

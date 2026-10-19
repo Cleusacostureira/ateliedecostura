@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { supabase } from './supabaseClient';
+import { lerTudo } from '../data/db';
 import { readOrdersFromStorage } from './storageHelpers';
 
 export type Cliente = {
@@ -54,7 +55,7 @@ export async function loadClients(): Promise<Cliente[]> {
     if (supabase && typeof supabase.from === 'function') {
       const p = (async () => {
         try {
-          const res = await supabase.from('clientes').select('*');
+          const res: any = await lerTudo<any>('clientes').then(data => ({ data, error: null })).catch(e => ({ data: null, error: { message: String(e?.message || e) } }));
           if (!(res as any).error && Array.isArray((res as any).data)) {
             const mapped = (res as any).data.map((r: any) => ({
               id: r.id,

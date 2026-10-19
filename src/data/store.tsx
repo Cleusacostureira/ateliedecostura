@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { carregarCatalogo, carregarClientes, carregarOrdens } from './db';
 import type { Cliente, Ordem, PecaCatalogo, ServicoCatalogo } from './types';
-import { safeSetItem } from '../lib/storageHelpers';
+import { readOrdersFromStorage, safeSetItem } from '../lib/storageHelpers';
 import { dataCurta } from './formato';
 import { sincronizarConfig } from './config';
 
@@ -108,7 +108,13 @@ function atualizarCopiaAntiga(ordens: Ordem[], clientes: Cliente[], porId: Map<s
         paymentStatus: o.pago ? 'Pago' : null,
       };
     });
-    safeSetItem('orders', legado, 'ordersUpdated', 'DataProvider');
+    // nunca descarta ordens que ainda só existem neste aparelho (não subiram para o banco)
+    const idsBanco = new Set(legado.map(o => String(o.id)));
+    const numsBanco = new Set(legado.map(o => String(o.numero)));
+    const soLocais = readOrdersFromStorage().filter((o: any) =>
+      o && (o._unsynced === true || o._local === true || String(o.id || '').startsWith('local-')) &&
+      !idsBanco.has(String(o.id)) && !(o.numero && numsBanco.has(String(o.numero).replace(/\D/g, '').replace(/^0+/, ''))));
+    safeSetItem('orders', [...soLocais, ...legado], 'ordersUpdated', 'DataProvider');
     // as telas antigas leem `clientes` como lista simples
     const txt = JSON.stringify(clientes);
     if (localStorage.getItem('clientes') !== txt) {

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { loadClients, upsertClient, deleteClient } from '../../lib/clients';
 import { supabase } from '../../lib/supabaseClient';
+import { lerTudo } from '../../data/db';
 import { readOrdersFromStorage } from '../../lib/storageHelpers';
 import ClienteModal from './components/ClienteModal';
 import { useNavigate } from 'react-router-dom';
@@ -24,7 +25,7 @@ export default function ClientesPage() {
         const ids = (clients || []).map(c => c.id).filter(Boolean);
         let ordersFromServer: any[] = [];
         if (supabase && ids.length > 0) {
-          const r = await supabase.from('ordens').select('cliente_id,total,notas').in('cliente_id', ids as any[]);
+          const r: any = await lerTudo<any>('ordens', 'id,cliente_id,total,notas').then(d => { const set = new Set((ids as any[]).map(String)); return { data: d.filter((o: any) => set.has(String(o.cliente_id))), error: null }; }).catch(e => ({ data: null, error: { message: String(e?.message || e) } }));
           if (!(r as any).error && Array.isArray((r as any).data)) ordersFromServer = (r as any).data;
         }
 
@@ -53,7 +54,7 @@ export default function ClientesPage() {
                 piecesSum = pieces.reduce((acc:any, p:any) => {
                   try {
                     const svc = (p.services || []);
-                    const sumSvc = Array.isArray(svc) ? svc.reduce((s:any, it:any) => s + (Number(it.value || it.valor || 0) || 0), 0) : 0;
+                    const sumSvc = Array.isArray(svc) ? svc.reduce((s:any, it:any) => s + (Number(it.price ?? it.value ?? it.valor ?? 0) || 0), 0) : 0;
                     return acc + sumSvc;
                   } catch (e) { return acc; }
                 }, 0);
@@ -65,7 +66,7 @@ export default function ClientesPage() {
                 const notas2 = o.notas ? (typeof o.notas === 'string' ? JSON.parse(o.notas) : o.notas) : {};
                 const sv = notas2?.services || notas2?.servicos || [];
                 if (Array.isArray(sv) && sv.length > 0) {
-                  t = sv.reduce((s:any, it:any) => s + (Number(it.value || it.valor || 0) || 0), 0);
+                  t = sv.reduce((s:any, it:any) => s + (Number(it.price ?? it.value ?? it.valor ?? 0) || 0), 0);
                 }
               } catch (e) {}
               accumulate(cid, t, piecesCount);

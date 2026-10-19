@@ -4,15 +4,8 @@ import { useEffect } from 'react';
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { useCompanyLogo } from '../../lib/useCompanyLogo';
 import OfflineBanner from '../OfflineBanner';
-import { useInShell } from '../../layout/AppShell';
 
 export default function Sidebar() {
-  // Dentro do visual novo o menu é o do AppShell
-  if (useInShell()) return null;
-  return <SidebarAntigo />;
-}
-
-function SidebarAntigo() {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(() => location.pathname.startsWith('/compras'));
   const [theme, setTheme] = useState<'light'|'dark'>(() => {

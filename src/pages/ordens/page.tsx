@@ -4,6 +4,15 @@ import Sidebar from '../../components/layout/Sidebar';
 import NewOsWizard from './NewOsWizard';
 import { addPointsForOrder, loadClients, upsertClient, getClientById } from '../../lib/clients';
 import { formatMessageForStatus } from '../../lib/messages';
+import { lerTudo } from '../../data/db';
+
+// Nomes usados abaixo que nunca foram definidos nesta tela: sem eles, excluir uma OS
+// ou mudar o pagamento não atualizava o financeiro (dava erro em silêncio).
+const isFluxoAvailable = () => !((window as any).__fluxoCaixaMissing === true);
+const markFluxoMissing = () => { (window as any).__fluxoCaixaMissing = true; };
+const COLORS = ['Preto', 'Branco', 'Cinza', 'Azul', 'Vermelho', 'Verde', 'Amarelo', 'Rosa', 'Bege', 'Marrom', 'Vinho', 'Roxo', 'Laranja'];
+const DEFAULT_PECAS: any[] = [];
+const fetchDebugInfo = () => {};
 import { supabase } from '../../lib/supabaseClient';
 import { debugLog } from '../../lib/debugLogger';
 import { safeSetItem } from '../../lib/storageHelpers';
@@ -260,7 +269,7 @@ export default function OrdensPage() {
         // expose client for manual debugging in browser console
         try { (window as any).supabase = supabase; } catch(e){}
         if (!(supabase && typeof supabase.from === 'function')) return;
-        const r = await supabase.from('ordens').select('*').order('numero', { ascending: false });
+        const r: any = await lerTudo<any>('ordens', '*', 'numero').then(d => ({ data: d.slice().reverse(), error: null })).catch(e => ({ data: null, error: { message: String(e?.message || e) } }));
         console.debug('initial fetch supabase ordens response', r);
         if ((r as any).error) {
           // store debug info so dev can inspect in UI
@@ -826,8 +835,8 @@ export default function OrdensPage() {
               }
             }
           }
-          if (!deletedOnServer) {
-            // try a best-effort fallback: delete rows that match cliente+data_entrega+total
+          if (false as boolean) {
+            // (desativado) exclusão por aproximação podia apagar a ordem errada
             try {
               const maybe = await supabase.from('ordens').select('*').ilike('cliente', String(selectedOrder?.client || selectedOrder?.cliente || '')).limit(5);
               if (!(maybe as any).error && Array.isArray((maybe as any).data)) {
@@ -1817,7 +1826,7 @@ export default function OrdensPage() {
     setSelectedOrder(updatedOrder);
     setStatusChangeMessage(composeStatusMessage(updatedOrder, newStatus));
     setShowStatusMessageOptions(true);
-    if (newStatus !== 'Pronto') setShowStatusOnlyModal(true);
+    if (newStatus !== 'Pronto' && newStatus !== 'Em costura') setShowStatusOnlyModal(true);
 
     // When marking as Pronto, open the fidelização message so the user can copy/send it
     if (newStatus === 'Pronto') {
@@ -2337,7 +2346,7 @@ export default function OrdensPage() {
         try { setDebugInfo((prev:any) => ({ ...(prev||{}), runFetch: 'supabase-not-available' })); } catch(e){}
         return;
       }
-      const r = await supabase.from('ordens').select('*').order('numero', { ascending: false });
+      const r: any = await lerTudo<any>('ordens', '*', 'numero').then(d => ({ data: d.slice().reverse(), error: null })).catch(e => ({ data: null, error: { message: String(e?.message || e) } }));
       try { setDebugInfo((prev:any) => ({ ...(prev||{}), runFetch: r })); } catch(e){}
       if (!(r as any).error && Array.isArray((r as any).data)) {
         const raw = (r as any).data;
@@ -3707,6 +3716,8 @@ export default function OrdensPage() {
                         setOrders(next);
                         try { safeSetItem('orders', next, 'ordersUpdated', 'OrdensPage'); } catch (e) {}
                         (async () => { try { if (supabase && typeof supabase.from === 'function') await supabase.from('ordens').update({ status: updatedOrder.status }).eq('id', updatedOrder.id); } catch(e){console.warn('Failed to persist status-only change to Supabase', e);} })();
+                        // "Em costura" não envia aviso (confundia a cliente)
+                        if (statusSelection === 'Em costura') { setShowStatusOnlyModal(false); return; }
                         const msg = composeStatusMessage(updatedOrder, statusSelection);
                         setStatusChangeMessage(msg);
                         setShowStatusMessageOptions(true);
