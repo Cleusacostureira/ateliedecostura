@@ -3,6 +3,7 @@ import { Send, Check, PackageCheck, CalendarClock, Wallet, Heart, Users, Calenda
 import { Badge, Button, Card, Page, PageHeader, Textarea, cx } from '../../ui';
 import { useDados } from '../../data/store';
 import { configAtual, textoPix } from '../../data/config';
+import { listaPecas } from '../../data/mensagens';
 import { dataLocal, diasAte, dinheiro, iniciais, linkWhatsApp, telefoneBonito } from '../../data/formato';
 import type { Cliente, Ordem } from '../../data/types';
 
@@ -10,7 +11,7 @@ type Publico = 'prontas' | 'hoje' | 'amanha' | 'receber' | 'sumidas' | 'todas';
 type Dest = { cliente: Cliente; ordens: Ordem[]; extra?: string };
 
 const MODELOS: Record<Publico, string> = {
-  prontas: 'Olá, {nome}! 🎉\nSua(s) peça(s) da OS {os} já está(ão) pronta(s) aqui no *{atelie}* ✂️✨\nPode retirar quando quiser. Estamos te esperando! 💕',
+  prontas: 'Olá, {nome}! 🎉\n\n*{atelie}*\n\nSua(s) peça(s) da OS {os} está(ão) pronta(s)! ✂️✨\n\n{pecas}\n\n💰 *Valor total: {valor}*\n\n{pagamento}\n\nAguardamos você! ✨',
   hoje: 'Olá, {nome}! 😊\nPassando para lembrar que a OS {os} tem entrega prevista para *hoje* no *{atelie}*.\nQualquer novidade te avisamos! 🧵',
   amanha: 'Olá, {nome}! 😊\nSua OS {os} tem entrega prevista para *amanhã* no *{atelie}*. Te avisamos assim que ficar pronta! ✂️',
   receber: 'Olá, {nome}! 😊\nTudo bem? Passando para lembrar do valor em aberto aqui no *{atelie}*: *{valor}* (OS {os}).\n\n{pix}\n\nQualquer dúvida, estamos à disposição! ✨',
@@ -36,11 +37,11 @@ export default function DisparosPage() {
   const { ordens, clientes, clientePorId } = useDados();
   const [publico, setPublico] = useState<Publico>('prontas');
   const [modelos, setModelos] = useState<Record<Publico, string>>(() => {
-    try { return { ...MODELOS, ...(JSON.parse(localStorage.getItem('disparos_modelos') || '{}') || {}) }; } catch { return MODELOS; }
+    try { return { ...MODELOS, ...(JSON.parse(localStorage.getItem('disparos_modelos_v2') || '{}') || {}) }; } catch { return MODELOS; }
   });
   const [enviados, setEnviados] = useState<Record<string, string[]>>(lerEnviados);
 
-  useEffect(() => { try { localStorage.setItem('disparos_modelos', JSON.stringify(modelos)); } catch { /* ignora */ } }, [modelos]);
+  useEffect(() => { try { localStorage.setItem('disparos_modelos_v2', JSON.stringify(modelos)); } catch { /* ignora */ } }, [modelos]);
   useEffect(() => { try { localStorage.setItem(CHAVE_ENVIADOS, JSON.stringify({ dia: new Date().toDateString(), lista: enviados })); } catch { /* ignora */ } }, [enviados]);
 
   const grupos = useMemo(() => {
@@ -76,6 +77,8 @@ export default function DisparosPage() {
       .split('{atelie}').join(c.nome)
       .split('{os}').join(d.ordens.map(o => o.numero).join(', ') || '-')
       .split('{valor}').join(dinheiro(total))
+      .split('{pecas}').join(d.ordens.map(o => (d.ordens.length > 1 ? `OS ${o.numero}:\n` : '') + listaPecas(o)).join('\n\n'))
+      .split('{pagamento}').join(d.ordens.length && d.ordens.every(o => o.pago) ? '✅ *Pagamento já realizado!*' : textoPix(c))
       .split('{pix}').join(textoPix(c));
   };
 
@@ -105,7 +108,7 @@ export default function DisparosPage() {
       <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-5 items-start">
         <Card className="p-4 sm:p-5 lg:sticky lg:top-8">
           <h2 className="font-display text-lg text-at-ink mb-1">Mensagem</h2>
-          <p className="text-xs text-at-muted mb-3">Use {'{nome}'}, {'{os}'}, {'{valor}'}, {'{pix}'} e {'{atelie}'} — são trocados para cada cliente.</p>
+          <p className="text-xs text-at-muted mb-3">Use {'{nome}'}, {'{os}'}, {'{pecas}'}, {'{valor}'}, {'{pagamento}'}, {'{pix}'} e {'{atelie}'} — são trocados para cada cliente.</p>
           <Textarea value={modelos[publico]} onChange={e => setModelos(m => ({ ...m, [publico]: e.target.value }))} className="min-h-[170px] text-sm" />
           <button onClick={() => setModelos(m => ({ ...m, [publico]: MODELOS[publico] }))} className="text-xs text-at-muted hover:text-at-ink mt-1">restaurar texto sugerido</button>
           {lista[0] && (

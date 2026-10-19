@@ -113,6 +113,7 @@ export default function ConfiguracoesPage() {
               <button key={s} onClick={() => setStatusTpl(s)} className={cx('h-8 px-3 rounded-full text-xs font-medium border', statusTpl === s ? 'bg-at-wine border-at-wine text-white' : 'bg-white border-at-line text-at-ink')}>{ROTULO_STATUS[s]}</button>
             ))}
           </div>
+          {statusTpl === 'Pronto' && <p className="text-xs text-at-muted bg-at-soft rounded-xl px-3 py-2 mb-2">Ao marcar a OS como pronta, o app envia a mensagem completa: cada peça com cor, os serviços com valor, o valor total e os dados do PIX (ou “pagamento já realizado”). O texto abaixo não é usado para essa etapa.</p>}
           <Textarea value={tpl[statusTpl] || ''} onChange={e => setTpl({ ...tpl, [statusTpl]: e.target.value })} className="min-h-[180px] text-sm" />
           <div className="flex flex-wrap gap-1.5 mt-2">
             {VARIAVEIS.map(([v, r]) => (
