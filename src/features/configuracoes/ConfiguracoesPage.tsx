@@ -109,7 +109,7 @@ export default function ConfiguracoesPage() {
 
         <Secao icone={<MessageSquareText className="w-4 h-4" />} titulo="Mensagens de andamento" texto="Texto sugerido ao avisar a cliente no WhatsApp quando a OS muda de etapa">
           <div className="flex flex-wrap gap-1.5 mb-3">
-            {STATUS.map(s => (
+            {STATUS.filter(s => s !== 'Em costura').map(s => (
               <button key={s} onClick={() => setStatusTpl(s)} className={cx('h-8 px-3 rounded-full text-xs font-medium border', statusTpl === s ? 'bg-at-wine border-at-wine text-white' : 'bg-white border-at-line text-at-ink')}>{ROTULO_STATUS[s]}</button>
             ))}
           </div>

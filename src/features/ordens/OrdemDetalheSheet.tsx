@@ -36,7 +36,9 @@ export default function OrdemDetalheSheet({ ordemId, onClose }: { ordemId: strin
       const nova = await mudarStatus(o, s);
       guardarOrdem(nova);
       toast(`OS ${nova.numero}: ${ROTULO_STATUS[s]}`);
-      setAviso({ status: s, texto: mensagemStatus(nova, nome, s) });
+      // "Em costura" não gera aviso: a cliente se confundia com a mensagem de andamento
+      if (s !== 'Em costura') setAviso({ status: s, texto: mensagemStatus(nova, nome, s) });
+      else setAviso(null);
     } catch (e: any) { toast(e.message, 'erro'); } finally { setSalvando(null); }
   }
 
@@ -110,7 +112,7 @@ export default function OrdemDetalheSheet({ ordemId, onClose }: { ordemId: strin
             </span>
           </button>
           {cliente?.telefone && (
-            <Button size="sm" variant="whatsapp" onClick={() => { const l = linkWhatsApp(cliente.telefone, mensagemStatus(ordem, nome)); if (l) window.open(l, '_blank'); }}>
+            <Button size="sm" variant="whatsapp" onClick={() => { const l = linkWhatsApp(cliente.telefone, mensagemStatus(ordem, nome, ordem.status === 'Em costura' ? 'Recebido' : ordem.status)); if (l) window.open(l, '_blank'); }}>
               <MessageCircle className="w-4 h-4" /> <span className="hidden sm:inline">Mensagem</span>
             </Button>
           )}
