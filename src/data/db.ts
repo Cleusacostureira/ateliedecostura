@@ -373,3 +373,27 @@ export async function excluirCompra(id: string) {
   if (error) falha('Não foi possível excluir a compra', error);
   if (!data?.length) throw new Error('A compra não foi encontrada no banco.');
 }
+
+/**
+ * Garante que toda ordem tenha seu lançamento no financeiro.
+ * Ordens criadas há mais de 10 minutos sem lançamento ganham um (o atraso evita
+ * duplicar enquanto a tela de nova OS ainda está gravando).
+ */
+export async function completarLancamentos(ordens: Ordem[], nomePorCliente: (id: string | null) => string): Promise<number> {
+  const fx = await lerTudo<any>('fluxo_caixa', 'id,orderid,tipo');
+  const comLanc = new Set(fx.filter(x => String(x.tipo || '').toLowerCase() !== 'despesa').map(x => String(x.orderid)));
+  const limite = Date.now() - 10 * 60_000;
+  const faltando = ordens.filter(o => !comLanc.has(o.id) && new Date(o.criadaEm).getTime() < limite);
+  if (!faltando.length) return 0;
+  const linhas = faltando.map(o => {
+    const d = new Date(o.criadaEm);
+    return {
+      date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+      client: nomePorCliente(o.clienteId), service: `${textoServicos(o.pecas)} — ${numeroFormatado(o.numero)}`,
+      value: o.total, status: o.pago ? 'Pago' : 'Não pago', orderid: o.id, numero: String(o.numero), pecas: o.pecas,
+    };
+  });
+  const { error } = await supabase.from('fluxo_caixa').insert(linhas);
+  if (error) { console.warn('Não foi possível completar lançamentos', error); return 0; }
+  return linhas.length;
+}

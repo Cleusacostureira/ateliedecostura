@@ -4,6 +4,7 @@ import Sidebar from '../../components/layout/Sidebar';
 import { readOrdersFromStorage, safeSetItem } from '../../lib/storageHelpers';
 import { listCompras } from '../../lib/compras';
 import { lerTudo } from '../../data/db';
+import { useDados } from '../../data/store';
 import { supabase } from '../../lib/supabaseClient';
 
 // Simple in-memory cache for fetched clientes to avoid repeated network requests
@@ -49,6 +50,7 @@ export default function FinanceiroPage() {
 
   // Fluxo de caixa detalhado por cliente e serviço
   const [cashFlowDetails, setCashFlowDetails] = useState<any[]>([]);
+  const { recarregar } = useDados();
 
   // fetch financeiro data from Supabase on mount; fallback to localStorage
   useEffect(() => {
@@ -80,7 +82,7 @@ export default function FinanceiroPage() {
             // prefer server-side orders when available so we don't rely on possibly stale localStorage
             let serverOrders: any[] | null = null;
             try {
-              const ordRes: any = await lerTudo<any>('ordens', 'id,numero,cliente_id,total,status', 'numero').then(data => ({ data, error: null })).catch(e => ({ data: null, error: { message: String(e?.message || e) } }));
+              const ordRes: any = await lerTudo<any>('ordens', 'id,numero,cliente_id,total,status,paymentStatus,created_at', 'numero').then(data => ({ data, error: null })).catch(e => ({ data: null, error: { message: String(e?.message || e) } }));
               if (!(ordRes as any).error && Array.isArray((ordRes as any).data)) {
                 serverOrders = (ordRes as any).data as any[];
                 // attach client names using cached helper to avoid repeated requests
@@ -544,6 +546,46 @@ export default function FinanceiroPage() {
     } catch (e) { console.warn('markOrderNotPaid failed', e); }
   };
 
+  // Lixeira: exclui o lançamento e todo o registro ligado a ele (a OS, ou a compra no caso de despesa)
+  const excluirLancamento = async (grp: any) => {
+    const entradas: any[] = grp?.entradas || [];
+    const ehUuid = (v: any) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || ''));
+    const despesa = entradas.some((e: any) => String(e.tipo || '').toLowerCase() === 'despesa');
+    const ligados = Array.from(new Set(entradas.map((e: any) => e.orderId || e.orderid).filter(ehUuid))) as string[];
+    const lancamentos = (Array.from(new Set(entradas.map((e: any) => e.id).filter(ehUuid))) as string[]).filter(id => !ligados.includes(id));
+    const valor = `R$ ${(Number(grp?.total) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    const os = grp?.numero ? `a OS N${String(grp.numero).replace(/\D/g, '').padStart(6, '0')}` : 'este lançamento';
+    const msg = despesa
+      ? `Deseja realmente excluir esta despesa de ${grp?.client || 'fornecedor'} (${valor})?\n\nA compra e o lançamento no financeiro serão apagados. Essa ação não pode ser desfeita.`
+      : `Deseja realmente excluir ${os} de ${grp?.client || 'cliente'} (${valor})?\n\nO lançamento no financeiro e a ordem de serviço serão apagados de vez. Essa ação não pode ser desfeita.`;
+    if (!window.confirm(msg)) return;
+    try {
+      if (lancamentos.length) {
+        const r = await supabase.from('fluxo_caixa').delete().in('id', lancamentos);
+        if ((r as any).error) throw (r as any).error;
+      }
+      if (ligados.length) {
+        const r1 = await supabase.from('fluxo_caixa').delete().in('orderid', ligados);
+        if ((r1 as any).error) throw (r1 as any).error;
+        if (despesa) {
+          await supabase.from('compras_itens').delete().in('compra_id', ligados);
+          const r2 = await supabase.from('compras').delete().in('id', ligados);
+          if ((r2 as any).error) throw (r2 as any).error;
+        } else {
+          const r2 = await supabase.from('ordens').delete().in('id', ligados);
+          if ((r2 as any).error) throw (r2 as any).error;
+        }
+      }
+      setCashFlowDetails(prev => (prev || []).filter((e: any) => !entradas.includes(e) && !ligados.includes(String(e.orderId || e.orderid))));
+      try { safeSetItem('orders', readOrdersFromStorage().filter((o: any) => !ligados.includes(String(o.id))), 'ordersUpdated', 'Financeiro.excluir'); } catch (_) {}
+      try { recarregar(); } catch (_) {}
+      try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch (_) {}
+      alert('Lançamento excluído.');
+    } catch (e: any) {
+      alert('Não foi possível excluir: ' + (e?.message || String(e)));
+    }
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     alert('Mensagem copiada!');
@@ -685,7 +727,8 @@ export default function FinanceiroPage() {
       (entries || []).forEach((e:any) => {
         try {
           const key = String(e.numero || e.orderId || e.id || 'unassigned');
-          if (!map[key]) map[key] = { key, numero: e.numero, orderId: e.orderId, client: e.client || '', lines: [], total: 0, status: e.status || '', date: '' };
+          if (!map[key]) map[key] = { key, numero: e.numero, orderId: e.orderId, client: e.client || '', lines: [], total: 0, status: e.status || '', date: '', entradas: [] };
+          map[key].entradas.push(e);
           // populate date if available (keep first non-empty)
           try {
             map[key].date = map[key].date || (e.date || e.data || e.data_entrega || e.dataEntrega || e.created_at || e.createdAt || e.dateOut || '');
@@ -1155,6 +1198,7 @@ export default function FinanceiroPage() {
                           >
                             {grp.status || ''}
                           </span>
+                          <button onClick={(e) => { e.stopPropagation(); excluirLancamento(grp); }} title="Excluir lançamento" className="ml-2 w-7 h-7 inline-flex items-center justify-center text-red-600 bg-red-50 rounded hover:bg-red-100 align-middle"><i className="ri-delete-bin-line"></i></button>
                         </div>
                       </div>
                     </div>
@@ -1173,6 +1217,7 @@ export default function FinanceiroPage() {
                     <th className="px-3 lg:px-6 py-2 lg:py-3 text-left text-[9px] lg:text-xs font-medium text-gray-600 uppercase tracking-wider">Serviço</th>
                     <th className="px-3 lg:px-6 py-2 lg:py-3 text-left text-[9px] lg:text-xs font-medium text-gray-600 uppercase tracking-wider">Valor</th>
                     <th className="px-3 lg:px-6 py-2 lg:py-3 text-left text-[9px] lg:text-xs font-medium text-gray-600 uppercase tracking-wider">Status</th>
+                    <th className="px-3 lg:px-6 py-2 lg:py-3"></th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -1221,6 +1266,9 @@ export default function FinanceiroPage() {
                               }`}>
                                 {grp.status}
                               </span>
+                            </td>
+                            <td className="px-3 lg:px-6 py-2 lg:py-4 whitespace-nowrap text-right">
+                              <button onClick={(e) => { e.stopPropagation(); excluirLancamento(grp); }} title="Excluir lançamento" className="w-8 h-8 inline-flex items-center justify-center text-red-600 bg-red-50 rounded hover:bg-red-100"><i className="ri-delete-bin-line text-base"></i></button>
                             </td>
                           </tr>
                         ));

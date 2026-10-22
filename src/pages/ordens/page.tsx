@@ -824,7 +824,8 @@ export default function OrdensPage() {
               deletedOnServer = true;
             }
           }
-          if (!deletedOnServer && numeroToDelete) {
+          // (desativado) apagar pelo número podia apagar a OS verdadeira ao excluir uma cópia local
+          if ((false as boolean) && !deletedOnServer && numeroToDelete) {
             const numDigits = String(numeroToDelete).replace(/\D/g, '');
             if (numDigits) {
               const res2 = await supabase.from('ordens').delete().eq('numero', Number(numDigits));
@@ -865,11 +866,13 @@ export default function OrdensPage() {
           }
           // tentar remover lançamentos financeiros relacionados (por orderId e por numero)
           try {
-            if (isFluxoAvailable() && supabase && typeof supabase.from === 'function') {
+            // só mexe no financeiro se a OS foi realmente apagada do banco (pelo id)
+            if (deletedOnServer && isFluxoAvailable() && supabase && typeof supabase.from === 'function') {
               const del1 = await supabase.from('fluxo_caixa').delete().eq('orderid', idToDelete);
               if (del1 && (del1 as any).error && (del1 as any).error.code === 'PGRST205') { markFluxoMissing(); }
               if (numeroToDelete) {
-                const del2 = await supabase.from('fluxo_caixa').delete().eq('numero', numeroToDelete);
+                // pelo número, apenas lançamentos soltos (sem ligação a outra OS)
+                const del2 = await supabase.from('fluxo_caixa').delete().eq('numero', String(numeroToDelete)).is('orderid', null).is('tipo', null);
                 if (del2 && (del2 as any).error && (del2 as any).error.code === 'PGRST205') { markFluxoMissing(); }
               }
             }

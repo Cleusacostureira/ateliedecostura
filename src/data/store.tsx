@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { carregarCatalogo, carregarClientes, carregarOrdens } from './db';
+import { carregarCatalogo, carregarClientes, carregarOrdens, completarLancamentos } from './db';
 import type { Cliente, Ordem, PecaCatalogo, ServicoCatalogo } from './types';
 import { readOrdersFromStorage, safeSetItem } from '../lib/storageHelpers';
 import { dataCurta } from './formato';
@@ -42,6 +42,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const [c, o, cat] = await Promise.all([carregarClientes(), carregarOrdens(), carregarCatalogo()]);
       setClientes(c);
       setOrdens(o);
+      // conserta ordens que ficaram sem lançamento no financeiro (uma vez por carga)
+      const nomes = new Map(c.map(x => [x.id, x.nome]));
+      completarLancamentos(o, id => (id ? nomes.get(id) || '' : '')).then(n => { if (n) { console.info(`[financeiro] ${n} lançamento(s) completado(s)`); window.dispatchEvent(new CustomEvent('financeUpdated')); } }).catch(() => {});
       setServicos(cat.servicos);
       setPecas(cat.pecas);
       setErro(null);
