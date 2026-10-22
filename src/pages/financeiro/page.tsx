@@ -546,6 +546,13 @@ export default function FinanceiroPage() {
     } catch (e) { console.warn('markOrderNotPaid failed', e); }
   };
 
+  // Fluxo de caixa: mais recentes no topo (pelo número da OS; sem número, pela data)
+  const ordemRecentesPrimeiro = (a: any, b: any) => {
+    const na = Number(String(a.numero || '').replace(/\D/g, '')) || 0, nb = Number(String(b.numero || '').replace(/\D/g, '')) || 0;
+    if (na !== nb) return nb - na;
+    return String(b.date || '').localeCompare(String(a.date || ''));
+  };
+
   // Lixeira: exclui o lançamento e todo o registro ligado a ele (a OS, ou a compra no caso de despesa)
   const excluirLancamento = async (grp: any) => {
     const entradas: any[] = grp?.entradas || [];
@@ -1161,7 +1168,7 @@ export default function FinanceiroPage() {
                   return (Number(ad) || 0) - (Number(bd) || 0);
                 });
                 const aggregated = aggregateByOrder(sorted || []);
-                const filtered = filterPaid ? (aggregated || []).filter((g:any) => String(g.status || '').toLowerCase() === 'pago') : aggregated;
+                const filtered = (filterPaid ? (aggregated || []).filter((g:any) => String(g.status || '').toLowerCase() === 'pago') : (aggregated || [])).slice().sort(ordemRecentesPrimeiro);
                 return filtered.map((grp:any) => (
                   <div key={grp.key} className="bg-white p-3 rounded-lg border">
                     <div className="flex flex-col">
@@ -1234,7 +1241,7 @@ export default function FinanceiroPage() {
                       return (Number(ad) || 0) - (Number(bd) || 0);
                     });
                     const aggregated = aggregateByOrder(sortedAgg || []);
-                    const filtered = filterPaid ? (aggregated || []).filter((g:any) => String(g.status || '').toLowerCase() === 'pago') : aggregated;
+                    const filtered = (filterPaid ? (aggregated || []).filter((g:any) => String(g.status || '').toLowerCase() === 'pago') : (aggregated || [])).slice().sort(ordemRecentesPrimeiro);
                     return filtered.map((grp:any) => (
                           <tr 
                             key={grp.key}
