@@ -47,6 +47,7 @@ export default function FinanceiroPage() {
 
   // Dados de clientes com pagamentos pendentes (inicialmente vazio — carregado do Supabase)
   const [pendingPayments, setPendingPayments] = useState<any[]>([]);
+  const [buscaReceber, setBuscaReceber] = useState('');
 
   // Fluxo de caixa detalhado por cliente e serviço
   const [cashFlowDetails, setCashFlowDetails] = useState<any[]>([]);
@@ -584,6 +585,7 @@ export default function FinanceiroPage() {
         }
       }
       setCashFlowDetails(prev => (prev || []).filter((e: any) => !entradas.includes(e) && !ligados.includes(String(e.orderId || e.orderid))));
+      setPendingPayments(prev => (prev || []).filter((e: any) => !entradas.includes(e) && !ligados.includes(String(e.orderId || e.orderid))));
       try { safeSetItem('orders', readOrdersFromStorage().filter((o: any) => !ligados.includes(String(o.id))), 'ordersUpdated', 'Financeiro.excluir'); } catch (_) {}
       try { recarregar(); } catch (_) {}
       try { window.dispatchEvent(new CustomEvent('financeUpdated')); } catch (_) {}
@@ -1109,8 +1111,20 @@ export default function FinanceiroPage() {
                   </button>
                 </div>
               </div>
+              <div className="px-3 lg:px-6 pt-3 lg:pt-4">
+                <div className="relative">
+                  <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                  <input value={buscaReceber} onChange={(e) => setBuscaReceber(e.target.value)} placeholder="Buscar por cliente, nº da OS ou serviço" className="w-full pl-9 pr-3 py-2 border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-200" />
+                </div>
+              </div>
               <div className="p-3 lg:p-6 space-y-2 lg:space-y-3">
-                {pendingPayments.map((payment) => (
+                {(() => {
+                  const q = buscaReceber.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                  const lista = (pendingPayments || [])
+                    .filter((p: any) => !q || `${p.client || ''} ${p.numero || ''} ${p.service || ''}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(q))
+                    .slice().sort(ordemRecentesPrimeiro);
+                  if (lista.length === 0) return <p className="text-sm text-gray-500 text-center py-4">{q ? 'Nenhum valor em aberto encontrado.' : 'Nenhum valor em aberto.'}</p>;
+                  return lista.map((payment) => (
                   <div key={payment.id} className="flex items-center justify-between p-3 lg:p-4 bg-amber-50 rounded-lg border border-amber-200">
                         <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -1141,10 +1155,18 @@ export default function FinanceiroPage() {
                           <i className="ri-check-line text-xs lg:text-sm w-3 h-3 lg:w-4 lg:h-4 flex items-center justify-center"></i>
                           Pago
                         </button>
+                        <button
+                          onClick={() => excluirLancamento({ entradas: [payment], numero: payment.numero, client: payment.client, total: parseCurrency(payment.value) })}
+                          title="Excluir lançamento"
+                          className="px-2 lg:px-2.5 py-1 lg:py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all cursor-pointer flex items-center"
+                        >
+                          <i className="ri-delete-bin-line text-xs lg:text-sm w-3 h-3 lg:w-4 lg:h-4 flex items-center justify-center"></i>
+                        </button>
                       </div>
                     </div>
                   </div>
-                ))}
+                  ));
+                })()}
               </div>
             </div>
           )}
